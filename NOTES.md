@@ -1246,6 +1246,9 @@ first commit made. A few decisions worth recording:
   github.com. `app/SETUP.md`'s "Sharing this project (and its APK) on
   GitHub" section has the exact steps.
 
+- **Pushed and live**: the repo is now at
+  `github.com/RaphaelRohner/devikins-legacy-companion`.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
