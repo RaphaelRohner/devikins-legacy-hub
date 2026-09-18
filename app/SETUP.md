@@ -211,28 +211,94 @@ assistant's sandbox.
 
 ## Sharing this project (and its APK) on GitHub
 
-If you'd like a permanent, easy-to-reach place to keep this project's
-code and hand out the built `.apk` file (to yourself on another device,
-or to anyone else), GitHub is a solid free option for both:
+This project now *is* a GitHub-ready repository: it lives at
+`~/Documents/devikins-app` (the folder that contains this `app/` folder,
+plus `NOTES.md` and a couple of research scripts), it's already tracked
+with git, and the first commit has been made. What's left is a short,
+one-time step to create the actual home for it on GitHub's website and
+connect this folder to it. This step involves talking to github.com over
+the internet, so it needs to be run from your **regular Mac Terminal**
+(Spotlight → type `Terminal` → open it) — not from within a chat with
+this assistant, which can't reach github.com directly.
 
-1. **The code itself** goes into a GitHub *repository* ("repo") — this is
-   just the project's files, tracked with version history. Since this app
-   only ever reads public blockchain data with your own wallet address
-   (there are no passwords or private API keys anywhere in the code), it's
-   safe to make this repo public if you want, though private is just as
-   easy to set up if you'd rather keep it to yourself.
-2. **The built app** goes into a GitHub *Release* attached to that repo —
-   a Release is basically a labeled page (e.g. "v1.0") that can have files
-   attached to it for people to download, which is exactly what the
-   `.apk` from the EAS Build steps above needs. Unlike Expo's own build
-   download link (which can expire), a GitHub Release link stays up for
-   as long as the repo exists.
+**1. Create the empty repository on GitHub's website**
 
-This project folder isn't a git repository yet, so there's a short
-one-time setup involved (creating the repo on GitHub's website, then
-connecting this folder to it) before the first upload. Happy to walk
-through that with you, or set up the initial groundwork myself, whenever
-you're ready to do this part — just say the word.
+- Go to [github.com/new](https://github.com/new) (sign in as
+  `RaphaelRohner` first if you aren't already).
+- Repository name: `devikins-legacy-companion` (or anything else you'd
+  prefer — it doesn't have to match the app name).
+- Leave it **Public** (or switch to Private if you'd rather - either
+  works, and you can change this later in the repo's Settings).
+- **Do not** check "Add a README", "Add .gitignore", or "Choose a
+  license" - this project already has a `.gitignore` and its first
+  commit, and starting the GitHub repo completely empty avoids a
+  conflict when we connect it.
+- Click **Create repository**. GitHub will show you a page with some
+  setup commands - you can ignore those, since the commands below cover
+  it.
+
+**2. Connect this folder to it and push**
+
+Open Terminal and run these, one at a time:
+
+```
+cd ~/Documents/devikins-app
+git remote add origin https://github.com/RaphaelRohner/devikins-legacy-companion.git
+git push -u origin main
+```
+
+(If you picked a different repository name in step 1, swap it into that
+second line.)
+
+**3. Authenticating**
+
+GitHub no longer accepts your regular account password for this - the
+first time you push, it'll prompt for a username and password in the
+Terminal, and you'll need to give it a **Personal Access Token** instead
+of your real password:
+
+- Go to
+  [github.com/settings/tokens](https://github.com/settings/tokens) →
+  **Generate new token** → **Generate new token (classic)**.
+- Give it any name (e.g. "Mac push access"), leave the expiration at its
+  default or pick something like 90 days, and check the **repo**
+  checkbox (this grants exactly what's needed to push code - nothing
+  more).
+- Click **Generate token** at the bottom, then **copy the token
+  immediately** - GitHub only shows it once.
+- Back in Terminal, when `git push` asks for:
+  - **Username**: `RaphaelRohner`
+  - **Password**: paste the token (not your real GitHub password)
+- Your Mac's Keychain will remember this after the first successful
+  push, so you shouldn't have to paste it again for future pushes from
+  this folder.
+
+Once that finishes, refreshing the repository's page on github.com
+should show all of this project's files.
+
+**Publishing future changes**
+
+Any time changes are made and you'd like to update the GitHub copy to
+match, the same three-line pattern (minus the `remote add`, which is
+only needed once) does it:
+
+```
+cd ~/Documents/devikins-app
+git add -A
+git commit -m "short description of what changed"
+git push
+```
+
+**Attaching a built APK to a Release**
+
+Once the repo exists on GitHub and you have a built `.apk` (see the
+sections above), go to the repo's page → **Releases** (right-hand
+sidebar) → **Create a new release** → give it a tag like `v1.0` → drag
+the `.apk` file into the attachments area at the bottom → **Publish
+release**. Anyone with the repo link (if public) can then download the
+`.apk` straight from that release page, without needing GitHub, EAS, or
+this assistant at all.
+
 
 ## Building an APK completely locally, with no cloud service at all
 

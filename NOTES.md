@@ -1212,6 +1212,40 @@ What was generated:
   App.js); `favicon.png` only matters if this app is ever run with
   `expo start --web`, which it hasn't been.
 
+## Version control and GitHub
+
+The whole project (not just `app/`) is now tracked with git, with its
+first commit made. A few decisions worth recording:
+
+- **The repo root is `/devikins-app/` (this folder), not `/devikins-app/app/`.**
+  An earlier, narrower attempt only tracked the `app/` folder, which would
+  have left this NOTES.md file and the research scripts/samples out of the
+  repo entirely. Since nothing had been pushed anywhere yet, the repo was
+  simply reinitialized at the right level rather than trying to preserve
+  the narrower history.
+- **A few things are deliberately excluded** (via `.gitignore` at the repo
+  root): `node_modules/` and other regeneratable build output (standard
+  for any JS project); `_to_delete/` (old pre-refactor backup files kept
+  locally for reference, not meant for the project's public history); a
+  `Claude outputs/` folder (this assistant's own delivered-file previews
+  from along the way, like icon candidate images); and `app/.claude/`
+  (this assistant's own local tooling config, not part of the app).
+- **The original `LICENSE` file was removed.** It was the unedited
+  default template from when the Expo project was first created, and
+  incorrectly attributed copyright to "650 Industries, Inc. (aka Expo)"
+  rather than Raphael. Caught and removed before the first push, rather
+  than left in a public repo with the wrong author.
+- **Commits are authored as `Raphael Rohner
+  <36210810+RaphaelRohner@users.noreply.github.com>`** — GitHub's private
+  "noreply" email format, so a real email address doesn't end up baked
+  into public commit history.
+- Just like installing packages (see "Development environment note"
+  below), talking to github.com itself (creating the remote repository,
+  authenticating, and the actual `git push`) has to happen from a real
+  Terminal window on this Mac — the assistant's own sandbox can't reach
+  github.com. `app/SETUP.md`'s "Sharing this project (and its APK) on
+  GitHub" section has the exact steps.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
