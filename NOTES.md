@@ -1212,6 +1212,31 @@ What was generated:
   App.js); `favicon.png` only matters if this app is ever run with
   `expo start --web`, which it hasn't been.
 
+## Icon crop widened for more padding
+
+Feedback after the first APK install: the crop was a bit tight - the
+yellow cat's ear tip and the arrow's point were right at the edge of
+the circular mask. Widened the crop by 20% around the exact same
+center (measured previously - see "Real app icon" above), so the same
+neon cluster now has visible breathing room on every side instead of
+touching the edge.
+
+This meant regenerating all six icon files from scratch, not just
+resizing the old ones, since the monochrome silhouette in particular is
+derived pixel-by-pixel from the source screenshot. Re-running the same
+color-threshold approach at this wider crop initially bridged gaps shut
+again (the same failure mode as the very first monochrome attempt) -
+because a wider crop means less magnification, so the neon outlines end
+up relatively thinner in the resized 1024px image, and the same amount
+of edge-smoothing that worked fine before now blurs adjacent lines into
+each other. Fixed by smoothing through the resize itself (a high-quality
+resize instead of a nearest-neighbor one, so edges come out anti-aliased
+without needing a separate blur pass afterward) and cleaning up the
+result by keeping only its real connected shapes (the main cluster, plus
+the arrowhead tip that the color threshold treats as a separate piece)
+rather than blurring everything, which discards small unrelated bright
+specks (background/window reflections) without softening real structure.
+
 ## Version control and GitHub
 
 The whole project (not just `app/`) is now tracked with git, with its
