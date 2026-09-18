@@ -472,7 +472,7 @@ function AppContent() {
         !isFetching && (
           <View style={styles.centeredContainer}>
             <Text style={[styles.hintText, { color: colors.secondaryText }]}>
-              Tap Wallets below to add a wallet address, then tap Fetch/Update to see its Devikins, Weapons, and Equipment.
+              Tap Wallets above to add a wallet address, then tap Fetch/Update to see its Devikins, Weapons, and Equipment.
             </Text>
           </View>
         )

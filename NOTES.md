@@ -1249,6 +1249,14 @@ first commit made. A few decisions worth recording:
 - **Pushed and live**: the repo is now at
   `github.com/RaphaelRohner/devikins-legacy-companion`.
 
+## Bug fixed: empty-state hint pointed the wrong direction
+
+The very first screen (before any wallet is added) told players to "Tap
+Wallets below" - true in an earlier layout, but the Fetch/Update/Wallets
+buttons had since moved to the top of the screen, above that message, not
+below it. Caught during real-device testing of the first APK build.
+Changed the wording to "Tap Wallets above" to match the actual layout.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
