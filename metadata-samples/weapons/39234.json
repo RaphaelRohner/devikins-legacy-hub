@@ -1,0 +1,84 @@
+{
+  "description": "Devikins Weapon is a collection of weapons for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/39234",
+  "image": "https://imgweapon.devikins.com/0/39234.png",
+  "name": "Fine Neutral Common Bow #39234",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Common"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Projectile"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Fine"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "None"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Weapons/bow_common.png"
+    },
+    {
+      "trait_type": "Element",
+      "value": "Neutral"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Scaling",
+      "value": 92
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "Power"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Chance",
+      "value": 3
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Damage",
+      "value": 9
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Speed Modifier",
+      "value": -10
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 150
+    },
+    {
+      "trait_type": "Gene Sync",
+      "value": "None"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Base Durability",
+      "value": 65
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Durability",
+      "value": 32
+    },
+    {
+      "display_type": "number",
+      "trait_type": "ImprovementLevel",
+      "value": 2
+    }
+  ]
+}

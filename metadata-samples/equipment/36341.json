@@ -1,0 +1,66 @@
+{
+  "description": "Devikins Equipment is a collection of combat gear for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/36341",
+  "image": "https://imgequipment.devikins.com/0/36341.png",
+  "name": "Rusty Eldritch Bracelet #36341",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Eldritch"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Bracelet"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Rusty"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "None"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Equipment/bracelet_eldritch.png"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Protection",
+      "value": 0
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Evasion",
+      "value": 0
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Guard",
+      "value": 0
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "Bad Luck"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Resistance",
+      "value": 50
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Improvement Level",
+      "value": 1
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 0
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "description": "Devikins Weapon is a collection of weapons for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/43593",
+  "image": "https://imgweapon.devikins.com/0/43593.png",
+  "name": "Rusty Cosmic Common Wand #43593",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Common"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Wand"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Rusty"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "None"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Weapons/wand_common.png"
+    },
+    {
+      "trait_type": "Element",
+      "value": "Cosmic"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Scaling",
+      "value": 74
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "Sanity"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Chance",
+      "value": 7
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Damage",
+      "value": 9
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Speed Modifier",
+      "value": -5
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 0
+    },
+    {
+      "trait_type": "Gene Sync",
+      "value": "None"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Base Durability",
+      "value": 69
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Durability",
+      "value": 69
+    },
+    {
+      "display_type": "number",
+      "trait_type": "ImprovementLevel",
+      "value": 1
+    }
+  ]
+}

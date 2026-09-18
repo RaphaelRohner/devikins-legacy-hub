@@ -1,0 +1,84 @@
+{
+  "description": "Devikins Weapon is a collection of weapons for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/10899",
+  "image": "https://imgweapon.devikins.com/0/10899.png",
+  "name": "Fine Candy Rare Hammer #10899",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Rare"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Hammer"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Fine"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "None"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Weapons/hammer_rare.png"
+    },
+    {
+      "trait_type": "Element",
+      "value": "Candy"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Scaling",
+      "value": 131
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "Power"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Chance",
+      "value": 14
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Damage",
+      "value": 25
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Speed Modifier",
+      "value": -15
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 77
+    },
+    {
+      "trait_type": "Gene Sync",
+      "value": "Unique Sync"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Base Durability",
+      "value": 84
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Durability",
+      "value": 15
+    },
+    {
+      "display_type": "number",
+      "trait_type": "ImprovementLevel",
+      "value": 1
+    }
+  ]
+}

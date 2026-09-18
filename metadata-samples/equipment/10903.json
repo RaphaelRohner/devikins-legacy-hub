@@ -1,0 +1,66 @@
+{
+  "description": "Devikins Equipment is a collection of combat gear for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/10903",
+  "image": "https://imgequipment.devikins.com/0/10903.png",
+  "name": "Fine Common Necklace #10903",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Common"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Necklace"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Fine"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "Slotted"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Equipment/necklace_common.png"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Protection",
+      "value": 0
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Evasion",
+      "value": 0
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Guard",
+      "value": 5
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "HP"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Resistance",
+      "value": 0
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Improvement Level",
+      "value": 3
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 150
+    }
+  ]
+}

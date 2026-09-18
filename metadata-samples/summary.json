@@ -1,0 +1,637 @@
+{
+  "collections": {
+    "characters": {
+      "sampledNonces": [
+        1,
+        38990,
+        77979,
+        116968,
+        155957,
+        194947,
+        233936,
+        272925,
+        311914,
+        350903,
+        389892,
+        428881,
+        467870,
+        506859,
+        545848,
+        584838,
+        623827,
+        662816,
+        701805,
+        740794,
+        779783,
+        818772,
+        857761,
+        896750,
+        935739,
+        974729,
+        1013718,
+        1052707,
+        1091696,
+        1130685
+      ],
+      "successCount": 29,
+      "failureCount": 1,
+      "failures": [
+        {
+          "nonce": 116968,
+          "error": "Failed to fetch https://1fl8e08843.execute-api.us-east-1.amazonaws.com/devikin/116968 after 4 attempt(s): Timed out after 10000ms"
+        }
+      ],
+      "traits": {
+        "Rarity": {
+          "seenCount": 29,
+          "type": "categorical",
+          "distinctValues": [
+            "Common",
+            "Mythic",
+            "Rare",
+            "Uncommon"
+          ]
+        },
+        "Overall Affinity": {
+          "seenCount": 29,
+          "type": "number",
+          "min": 13,
+          "max": 41,
+          "hasNegative": false
+        },
+        "Ancestry": {
+          "seenCount": 29,
+          "type": "categorical",
+          "distinctValues": [
+            "Glyesian",
+            "Khoroth",
+            "Lunarian",
+            "Maarish",
+            "Ochran"
+          ]
+        },
+        "Personality": {
+          "seenCount": 29,
+          "type": "categorical",
+          "distinctValues": [
+            "Angry",
+            "Curious",
+            "Glitched",
+            "Nerdy",
+            "Polite",
+            "Reckless",
+            "Resilient",
+            "Sassy",
+            "Shy"
+          ]
+        },
+        "Eyes Gene": {
+          "seenCount": 29,
+          "type": "categorical",
+          "distinctValues": [
+            "Co-Dominant",
+            "Dominant",
+            "Recessive"
+          ]
+        },
+        "Mouth Gene": {
+          "seenCount": 29,
+          "type": "categorical",
+          "distinctValues": [
+            "Co-Dominant",
+            "Dominant",
+            "Recessive"
+          ]
+        },
+        "Ears Gene": {
+          "seenCount": 29,
+          "type": "categorical",
+          "distinctValues": [
+            "Co-Dominant",
+            "Dominant",
+            "Recessive"
+          ]
+        },
+        "Hair Gene": {
+          "seenCount": 29,
+          "type": "categorical",
+          "distinctValues": [
+            "Co-Dominant",
+            "Dominant",
+            "Recessive"
+          ]
+        },
+        "Horns Gene": {
+          "seenCount": 29,
+          "type": "categorical",
+          "distinctValues": [
+            "Co-Dominant",
+            "Dominant",
+            "Recessive"
+          ]
+        },
+        "Vitality Affinity": {
+          "seenCount": 29,
+          "type": "number",
+          "min": 2,
+          "max": 10,
+          "hasNegative": false
+        },
+        "Power Affinity": {
+          "seenCount": 29,
+          "type": "number",
+          "min": 1,
+          "max": 10,
+          "hasNegative": false
+        },
+        "Fortitude Affinity": {
+          "seenCount": 29,
+          "type": "number",
+          "min": 1,
+          "max": 10,
+          "hasNegative": false
+        },
+        "Agility Affinity": {
+          "seenCount": 29,
+          "type": "number",
+          "min": 1,
+          "max": 10,
+          "hasNegative": false
+        },
+        "Sanity Affinity": {
+          "seenCount": 29,
+          "type": "number",
+          "min": 2,
+          "max": 10,
+          "hasNegative": false
+        },
+        "Vitality Attribute": {
+          "seenCount": 29,
+          "type": "number",
+          "min": 39,
+          "max": 1193,
+          "hasNegative": false
+        },
+        "Power Attribute": {
+          "seenCount": 29,
+          "type": "number",
+          "min": 31,
+          "max": 1395,
+          "hasNegative": false
+        },
+        "Fortitude Attribute": {
+          "seenCount": 29,
+          "type": "number",
+          "min": 39,
+          "max": 1258,
+          "hasNegative": false
+        },
+        "Agility Attribute": {
+          "seenCount": 29,
+          "type": "number",
+          "min": 42,
+          "max": 1665,
+          "hasNegative": false
+        },
+        "Sanity Attribute": {
+          "seenCount": 29,
+          "type": "number",
+          "min": 44,
+          "max": 1395,
+          "hasNegative": false
+        },
+        "Procreations Left": {
+          "seenCount": 29,
+          "type": "number",
+          "min": 4,
+          "max": 10,
+          "hasNegative": false
+        },
+        "Life Stage": {
+          "seenCount": 29,
+          "type": "categorical",
+          "distinctValues": [
+            "Adult",
+            "Embryo",
+            "Toddler"
+          ]
+        }
+      }
+    },
+    "weapons": {
+      "sampledNonces": [
+        1,
+        2181,
+        4360,
+        6540,
+        8719,
+        10899,
+        13079,
+        15258,
+        17438,
+        19617,
+        21797,
+        23976,
+        26156,
+        28336,
+        30515,
+        32695,
+        34874,
+        37054,
+        39234,
+        41413,
+        43593,
+        45772,
+        47952,
+        50131,
+        52311,
+        54491,
+        56670,
+        58850,
+        61029,
+        63209
+      ],
+      "successCount": 26,
+      "failureCount": 4,
+      "failures": [
+        {
+          "nonce": 2181,
+          "error": "Failed to fetch https://1fl8e08843.execute-api.us-east-1.amazonaws.com/weapon/2181 after 4 attempt(s): Timed out after 10000ms"
+        },
+        {
+          "nonce": 19617,
+          "error": "Failed to fetch https://1fl8e08843.execute-api.us-east-1.amazonaws.com/weapon/19617 after 4 attempt(s): HTTP 500 Internal Server Error"
+        },
+        {
+          "nonce": 32695,
+          "error": "Failed to fetch https://1fl8e08843.execute-api.us-east-1.amazonaws.com/weapon/32695 after 4 attempt(s): Timed out after 10000ms"
+        },
+        {
+          "nonce": 50131,
+          "error": "Failed to fetch https://1fl8e08843.execute-api.us-east-1.amazonaws.com/weapon/50131 after 4 attempt(s): Timed out after 10000ms"
+        }
+      ],
+      "traits": {
+        "Rarity": {
+          "seenCount": 26,
+          "type": "categorical",
+          "distinctValues": [
+            "Common",
+            "Rare",
+            "Uncommon"
+          ]
+        },
+        "Type": {
+          "seenCount": 26,
+          "type": "categorical",
+          "distinctValues": [
+            "Big Gun",
+            "Book",
+            "Dagger",
+            "Fist",
+            "Great Sword",
+            "Hammer",
+            "Projectile",
+            "Scythe",
+            "Small Gun",
+            "Spear",
+            "Staff",
+            "Sword And Shield",
+            "Wand"
+          ]
+        },
+        "Quality": {
+          "seenCount": 26,
+          "type": "categorical",
+          "distinctValues": [
+            "Decent",
+            "Excellent",
+            "Fine",
+            "Rusty"
+          ]
+        },
+        "Shiny": {
+          "seenCount": 26,
+          "type": "categorical",
+          "distinctValues": [
+            "Regular"
+          ]
+        },
+        "Slot": {
+          "seenCount": 26,
+          "type": "categorical",
+          "distinctValues": [
+            "None",
+            "Slotted"
+          ]
+        },
+        "Icon Image": {
+          "seenCount": 26,
+          "type": "categorical",
+          "distinctValues": [
+            "Weapons/big_gun_rare.png",
+            "Weapons/book_common.png",
+            "Weapons/book_rare.png",
+            "Weapons/bow_common.png",
+            "Weapons/bow_uncommon.png",
+            "Weapons/dagger_common.png",
+            "Weapons/dagger_uncommon.png",
+            "Weapons/fist_common.png",
+            "Weapons/fist_rare.png",
+            "Weapons/greatsword_common.png",
+            "Weapons/hammer_common.png",
+            "Weapons/hammer_rare.png",
+            "Weapons/scythe_common.png",
+            "Weapons/small_gun_rare.png",
+            "Weapons/spear_common.png",
+            "Weapons/staff_common.png",
+            "Weapons/staff_rare.png",
+            "Weapons/swordshield_uncommon.png",
+            "Weapons/wand_common.png"
+          ]
+        },
+        "Element": {
+          "seenCount": 26,
+          "type": "categorical",
+          "distinctValues": [
+            "Candy",
+            "Chill",
+            "Cosmic",
+            "Life",
+            "Lux",
+            "Neutral",
+            "Plasma",
+            "Shadow",
+            "Void"
+          ]
+        },
+        "Scaling": {
+          "seenCount": 26,
+          "type": "number",
+          "min": 72,
+          "max": 131,
+          "hasNegative": false
+        },
+        "Resistance Type": {
+          "seenCount": 26,
+          "type": "categorical",
+          "distinctValues": [
+            "Power",
+            "Sanity"
+          ]
+        },
+        "Critical Chance": {
+          "seenCount": 26,
+          "type": "number",
+          "min": 0,
+          "max": 20,
+          "hasNegative": false
+        },
+        "Critical Damage": {
+          "seenCount": 26,
+          "type": "number",
+          "min": 0,
+          "max": 38,
+          "hasNegative": false
+        },
+        "Speed Modifier": {
+          "seenCount": 26,
+          "type": "number",
+          "min": -15,
+          "max": 10,
+          "hasNegative": true
+        },
+        "Refine XP": {
+          "seenCount": 26,
+          "type": "number",
+          "min": 0,
+          "max": 300,
+          "hasNegative": false
+        },
+        "Gene Sync": {
+          "seenCount": 26,
+          "type": "categorical",
+          "distinctValues": [
+            "Codominant Sync",
+            "Dominant Sync",
+            "None",
+            "Recessive Sync",
+            "Set Sync",
+            "Unique Sync"
+          ]
+        },
+        "Base Durability": {
+          "seenCount": 26,
+          "type": "number",
+          "min": 60,
+          "max": 88,
+          "hasNegative": false
+        },
+        "Durability": {
+          "seenCount": 26,
+          "type": "number",
+          "min": 0,
+          "max": 84,
+          "hasNegative": false
+        },
+        "ImprovementLevel": {
+          "seenCount": 26,
+          "type": "number",
+          "min": 1,
+          "max": 3,
+          "hasNegative": false
+        }
+      }
+    },
+    "equipment": {
+      "sampledNonces": [
+        1,
+        1818,
+        3635,
+        5452,
+        7269,
+        9086,
+        10903,
+        12720,
+        14537,
+        16354,
+        18171,
+        19988,
+        21805,
+        23622,
+        25439,
+        27256,
+        29073,
+        30890,
+        32707,
+        34524,
+        36341,
+        38158,
+        39975,
+        41792,
+        43609,
+        45426,
+        47243,
+        49060,
+        50877,
+        52694
+      ],
+      "successCount": 27,
+      "failureCount": 3,
+      "failures": [
+        {
+          "nonce": 1,
+          "error": "Failed to fetch https://1fl8e08843.execute-api.us-east-1.amazonaws.com/equipment/1 after 4 attempt(s): Timed out after 10000ms"
+        },
+        {
+          "nonce": 1818,
+          "error": "Failed to fetch https://1fl8e08843.execute-api.us-east-1.amazonaws.com/equipment/1818 after 4 attempt(s): Timed out after 10000ms"
+        },
+        {
+          "nonce": 3635,
+          "error": "Failed to fetch https://1fl8e08843.execute-api.us-east-1.amazonaws.com/equipment/3635 after 4 attempt(s): Timed out after 10000ms"
+        }
+      ],
+      "traits": {
+        "Rarity": {
+          "seenCount": 27,
+          "type": "categorical",
+          "distinctValues": [
+            "Common",
+            "Eldritch",
+            "Mythic",
+            "Rare",
+            "Uncommon"
+          ]
+        },
+        "Type": {
+          "seenCount": 27,
+          "type": "categorical",
+          "distinctValues": [
+            "Bracelet",
+            "Necklace",
+            "Socks",
+            "Undies"
+          ]
+        },
+        "Quality": {
+          "seenCount": 27,
+          "type": "categorical",
+          "distinctValues": [
+            "Decent",
+            "Excellent",
+            "Fine",
+            "Masterpiece",
+            "Rusty"
+          ]
+        },
+        "Shiny": {
+          "seenCount": 27,
+          "type": "categorical",
+          "distinctValues": [
+            "Regular"
+          ]
+        },
+        "Slot": {
+          "seenCount": 27,
+          "type": "categorical",
+          "distinctValues": [
+            "None",
+            "Slotted"
+          ]
+        },
+        "Icon Image": {
+          "seenCount": 27,
+          "type": "categorical",
+          "distinctValues": [
+            "Equipment/bracelet_common.png",
+            "Equipment/bracelet_defender.png",
+            "Equipment/bracelet_eldritch.png",
+            "Equipment/bracelet_uncommon.png",
+            "Equipment/necklace_antibody.png",
+            "Equipment/necklace_common.png",
+            "Equipment/necklace_uncommon.png",
+            "Equipment/socks_common.png",
+            "Equipment/socks_defender.png",
+            "Equipment/socks_evasion.png",
+            "Equipment/socks_mythic.png",
+            "Equipment/socks_rare.png",
+            "Equipment/undies_aggro.png",
+            "Equipment/undies_common.png",
+            "Equipment/undies_critical.png",
+            "Equipment/undies_mythic.png",
+            "Equipment/undies_tanker.png",
+            "Equipment/undies_uncommon.png"
+          ]
+        },
+        "Protection": {
+          "seenCount": 27,
+          "type": "number",
+          "min": 0,
+          "max": 28,
+          "hasNegative": false
+        },
+        "Evasion": {
+          "seenCount": 27,
+          "type": "number",
+          "min": 0,
+          "max": 22,
+          "hasNegative": false
+        },
+        "Guard": {
+          "seenCount": 27,
+          "type": "number",
+          "min": 0,
+          "max": 9,
+          "hasNegative": false
+        },
+        "Resistance Type": {
+          "seenCount": 27,
+          "type": "categorical",
+          "distinctValues": [
+            "Bad Luck",
+            "Evasion",
+            "HP",
+            "Poison",
+            "Strength",
+            "Unarmed"
+          ]
+        },
+        "Resistance": {
+          "seenCount": 27,
+          "type": "number",
+          "min": 0,
+          "max": 51,
+          "hasNegative": false
+        },
+        "Improvement Level": {
+          "seenCount": 27,
+          "type": "number",
+          "min": 1,
+          "max": 5,
+          "hasNegative": false
+        },
+        "Refine XP": {
+          "seenCount": 27,
+          "type": "number",
+          "min": 0,
+          "max": 1200,
+          "hasNegative": false
+        }
+      }
+    }
+  },
+  "namingInconsistencies": [
+    {
+      "normalized": "improvementlevel",
+      "variants": {
+        "weapons": [
+          "ImprovementLevel"
+        ],
+        "equipment": [
+          "Improvement Level"
+        ]
+      }
+    }
+  ]
+}

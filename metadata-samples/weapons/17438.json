@@ -1,0 +1,84 @@
+{
+  "description": "Devikins Weapon is a collection of weapons for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/17438",
+  "image": "https://imgweapon.devikins.com/0/17438.png",
+  "name": "Excellent Cosmic Common Bow #17438",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Common"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Projectile"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Excellent"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "None"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Weapons/bow_common.png"
+    },
+    {
+      "trait_type": "Element",
+      "value": "Cosmic"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Scaling",
+      "value": 91
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "Power"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Chance",
+      "value": 1
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Damage",
+      "value": 7
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Speed Modifier",
+      "value": -10
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 0
+    },
+    {
+      "trait_type": "Gene Sync",
+      "value": "None"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Base Durability",
+      "value": 69
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Durability",
+      "value": 69
+    },
+    {
+      "display_type": "number",
+      "trait_type": "ImprovementLevel",
+      "value": 1
+    }
+  ]
+}

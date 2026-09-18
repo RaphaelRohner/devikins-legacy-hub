@@ -1,0 +1,84 @@
+{
+  "description": "Devikins Weapon is a collection of weapons for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/28336",
+  "image": "https://imgweapon.devikins.com/0/28336.png",
+  "name": "Excellent Void Common Book #28336",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Common"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Book"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Excellent"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "Slotted"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Weapons/book_common.png"
+    },
+    {
+      "trait_type": "Element",
+      "value": "Void"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Scaling",
+      "value": 80
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "Sanity"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Chance",
+      "value": 4
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Damage",
+      "value": 15
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Speed Modifier",
+      "value": 0
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 150
+    },
+    {
+      "trait_type": "Gene Sync",
+      "value": "None"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Base Durability",
+      "value": 62
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Durability",
+      "value": 32
+    },
+    {
+      "display_type": "number",
+      "trait_type": "ImprovementLevel",
+      "value": 3
+    }
+  ]
+}

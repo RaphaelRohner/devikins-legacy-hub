@@ -1,0 +1,84 @@
+{
+  "description": "Devikins Weapon is a collection of weapons for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/8719",
+  "image": "https://imgweapon.devikins.com/0/8719.png",
+  "name": "Fine Candy Uncommon Daggers #8719",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Uncommon"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Dagger"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Fine"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "None"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Weapons/dagger_uncommon.png"
+    },
+    {
+      "trait_type": "Element",
+      "value": "Candy"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Scaling",
+      "value": 89
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "Power"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Chance",
+      "value": 11
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Damage",
+      "value": 11
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Speed Modifier",
+      "value": 5
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 300
+    },
+    {
+      "trait_type": "Gene Sync",
+      "value": "None"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Base Durability",
+      "value": 72
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Durability",
+      "value": 0
+    },
+    {
+      "display_type": "number",
+      "trait_type": "ImprovementLevel",
+      "value": 2
+    }
+  ]
+}

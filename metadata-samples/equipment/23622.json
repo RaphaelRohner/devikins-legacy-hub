@@ -1,0 +1,66 @@
+{
+  "description": "Devikins Equipment is a collection of combat gear for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/23622",
+  "image": "https://imgequipment.devikins.com/0/23622.png",
+  "name": "Decent Common Socks #23622",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Common"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Socks"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Decent"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "None"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Equipment/socks_common.png"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Protection",
+      "value": 0
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Evasion",
+      "value": 2
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Guard",
+      "value": 0
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "HP"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Resistance",
+      "value": 0
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Improvement Level",
+      "value": 2
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 50
+    }
+  ]
+}

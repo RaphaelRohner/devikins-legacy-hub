@@ -1,0 +1,104 @@
+{
+  "description": "Devikin are the playable characters of the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/701805",
+  "image": "https://img.devikins.com/7/701805.png",
+  "name": "#701805",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Uncommon"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Overall Affinity",
+      "value": 32
+    },
+    {
+      "trait_type": "Ancestry",
+      "value": "Maarish"
+    },
+    {
+      "trait_type": "Personality",
+      "value": "Shy"
+    },
+    {
+      "trait_type": "Eyes Gene",
+      "value": "Dominant"
+    },
+    {
+      "trait_type": "Mouth Gene",
+      "value": "Recessive"
+    },
+    {
+      "trait_type": "Ears Gene",
+      "value": "Dominant"
+    },
+    {
+      "trait_type": "Hair Gene",
+      "value": "Recessive"
+    },
+    {
+      "trait_type": "Horns Gene",
+      "value": "Recessive"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Vitality Affinity",
+      "value": 2
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Power Affinity",
+      "value": 10
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Fortitude Affinity",
+      "value": 10
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Agility Affinity",
+      "value": 5
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Sanity Affinity",
+      "value": 5
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Vitality Attribute",
+      "value": 55
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Power Attribute",
+      "value": 62
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Fortitude Attribute",
+      "value": 59
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Agility Attribute",
+      "value": 46
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Sanity Attribute",
+      "value": 58
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Procreations Left",
+      "value": 10
+    },
+    {
+      "trait_type": "Life Stage",
+      "value": "Embryo"
+    }
+  ]
+}

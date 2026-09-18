@@ -1,0 +1,159 @@
+/**
+ * DevikinSummaryRow.js
+ *
+ * The compact row shown for each Devikin in the main list (as opposed to
+ * NftCard.js's full detailed layout, which now only shows up when you
+ * tap one of these rows - see CollectionView.js for that list/detail
+ * switch). Deliberately minimal, per feedback: just the picture on the
+ * left, and Rarity / Ancestry / Personality stacked on the right. The
+ * whole row is tappable to open the full detail view for that Devikin.
+ */
+
+import { useEffect, useState } from 'react';
+import { Image, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { useTheme } from '../context/ThemeContext';
+
+export default function DevikinSummaryRow({ nft, onPress }) {
+  const { colors } = useTheme();
+
+  // Same "prefer the locally-saved copy" logic as NftCard.js - see
+  // src/api/imageStorage.js for why. If neither exists (never fetched, or
+  // the fetch didn't succeed), show a clearly-labeled placeholder rather
+  // than an empty box the user might mistake for a loading state.
+  const imageSource = nft.local_image_path || nft.image;
+
+  // Greyed out (see styles.deletedRow) and tagged when the user has
+  // marked this NFT as deleted from its detail view (see NftCard.js's
+  // "Mark as Deleted" button) - still tappable to open the detail view,
+  // where it can be Restored. The "Deleted" switch next to "Show
+  // filters" (see CollectionView.js) is what hides these entirely,
+  // rather than just greying them out here.
+  const isDeleted = Boolean(nft.deleted);
+
+  // Some items have an imageSource (a URL, or an old local path) that no
+  // longer actually loads - most often an item fetched a while ago that
+  // never got a local copy cached, whose original remote image host has
+  // since gone offline or moved. Without this check, a broken
+  // imageSource would just render as a blank box instead of the clear
+  // "Unavailable" message below. onError fires whenever the Image fails
+  // to load; the effect resets that flag back to false whenever
+  // imageSource itself changes (e.g. once a background retry
+  // successfully caches a local copy), so a since-fixed image gets a
+  // fresh chance to load instead of being stuck showing the placeholder
+  // forever.
+  const [imageLoadFailed, setImageLoadFailed] = useState(false);
+  useEffect(() => {
+    setImageLoadFailed(false);
+  }, [imageSource]);
+
+  const image = imageSource && !imageLoadFailed ? (
+    <Image
+      source={{ uri: imageSource }}
+      style={styles.thumbnail}
+      resizeMode="contain"
+      onError={() => setImageLoadFailed(true)}
+    />
+  ) : (
+    <View style={[styles.thumbnail, styles.thumbnailPlaceholder, { backgroundColor: colors.placeholderBackground }]}>
+      <Text style={[styles.thumbnailPlaceholderText, { color: colors.placeholderText }]}>Unavailable</Text>
+    </View>
+  );
+
+  // If this item's status isn't 'ok', its metadata (and therefore
+  // Rarity/Ancestry/Personality) was never successfully fetched - all
+  // three would just be blank. Show one clear "Unavailable" message
+  // instead of three empty-looking lines. See NftCard.js's statusBadge
+  // for the same wording used elsewhere in the app.
+  const statsAvailable = nft.status === 'ok';
+  const unavailableMessage = nft.status === 'unavailable'
+    ? 'Details unavailable'
+    : 'Fetch failed - will retry';
+
+  return (
+    <TouchableOpacity
+      style={[styles.row, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }, isDeleted && styles.deletedRow]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      {image}
+      <View style={styles.infoColumn}>
+        {isDeleted && (
+          <Text style={[styles.deletedTag, { color: colors.cancelText }]}>Deleted</Text>
+        )}
+        {/* The NFT's on-chain ID (nonce) - always shown, even when the
+            metadata fetch failed and the stats below can't be, since the
+            ID itself is always known. */}
+        <Text style={[styles.idLine, { color: colors.secondaryText }]}>#{nft.nonce}</Text>
+        {statsAvailable ? (
+          <>
+            <Text style={[styles.line, { color: colors.text }]}>Rarity: {nft.rarity ?? '—'}</Text>
+            <Text style={[styles.line, { color: colors.text }]}>Ancestry: {nft.ancestry ?? '—'}</Text>
+            <Text style={[styles.line, { color: colors.text }]}>Personality: {nft.personality ?? '—'}</Text>
+          </>
+        ) : (
+          <Text style={[styles.line, { color: colors.statusText }]}>{unavailableMessage}</Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    marginHorizontal: 12,
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  // Greyed out when marked deleted (see isDeleted above) - opacity
+  // alone rather than a different background, so it reads as "faded/
+  // inactive" in both light and dark mode without needing its own
+  // theme colors.
+  deletedRow: {
+    opacity: 0.45,
+  },
+  deletedTag: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  idLine: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  thumbnail: {
+    width: 112,
+    height: 112,
+    borderRadius: 12,
+  },
+  thumbnailPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbnailPlaceholderText: {
+    // "Unavailable" is a much longer word than the old "?" placeholder
+    // was, so this needs to be small enough to actually fit and wrap
+    // inside the thumbnail box instead of overflowing it.
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingHorizontal: 6,
+  },
+  infoColumn: {
+    marginLeft: 12,
+    flex: 1,
+    gap: 6,
+  },
+  line: {
+    fontSize: 14,
+  },
+});

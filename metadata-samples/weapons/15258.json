@@ -1,0 +1,84 @@
+{
+  "description": "Devikins Weapon is a collection of weapons for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/15258",
+  "image": "https://imgweapon.devikins.com/0/15258.png",
+  "name": "Fine Lux Uncommon Sword #15258",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Uncommon"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Sword And Shield"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Fine"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "None"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Weapons/swordshield_uncommon.png"
+    },
+    {
+      "trait_type": "Element",
+      "value": "Lux"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Scaling",
+      "value": 98
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "Power"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Chance",
+      "value": 8
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Damage",
+      "value": 16
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Speed Modifier",
+      "value": -5
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 0
+    },
+    {
+      "trait_type": "Gene Sync",
+      "value": "None"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Base Durability",
+      "value": 71
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Durability",
+      "value": 71
+    },
+    {
+      "display_type": "number",
+      "trait_type": "ImprovementLevel",
+      "value": 1
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "description": "Devikins Weapon is a collection of weapons for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/34874",
+  "image": "https://imgweapon.devikins.com/0/34874.png",
+  "name": "Excellent Neutral Rare Fist #34874",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Rare"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Fist"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Excellent"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "Slotted"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Weapons/fist_rare.png"
+    },
+    {
+      "trait_type": "Element",
+      "value": "Neutral"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Scaling",
+      "value": 107
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "Power"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Chance",
+      "value": 12
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Damage",
+      "value": 22
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Speed Modifier",
+      "value": 10
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 200
+    },
+    {
+      "trait_type": "Gene Sync",
+      "value": "None"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Base Durability",
+      "value": 83
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Durability",
+      "value": 6
+    },
+    {
+      "display_type": "number",
+      "trait_type": "ImprovementLevel",
+      "value": 2
+    }
+  ]
+}

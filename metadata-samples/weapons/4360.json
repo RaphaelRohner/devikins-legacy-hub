@@ -1,0 +1,84 @@
+{
+  "description": "Devikins Weapon is a collection of weapons for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/4360",
+  "image": "https://imgweapon.devikins.com/0/4360.png",
+  "name": "Rusty Cosmic Rare Big Gun #4360",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Rare"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Big Gun"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Rusty"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "None"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Weapons/big_gun_rare.png"
+    },
+    {
+      "trait_type": "Element",
+      "value": "Cosmic"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Scaling",
+      "value": 112
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "Power"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Chance",
+      "value": 19
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Damage",
+      "value": 29
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Speed Modifier",
+      "value": -10
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 1
+    },
+    {
+      "trait_type": "Gene Sync",
+      "value": "None"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Base Durability",
+      "value": 80
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Durability",
+      "value": 70
+    },
+    {
+      "display_type": "number",
+      "trait_type": "ImprovementLevel",
+      "value": 1
+    }
+  ]
+}

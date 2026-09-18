@@ -1,0 +1,685 @@
+/**
+ * CollectionView.js
+ *
+ * The content shown for whichever tab is currently active (Devikins,
+ * Weapons, or Equipment): the filter controls on top, and the filtered
+ * list of NFTs below it. Handles three distinct situations gracefully:
+ *
+ *   1. No wallet has been fetched yet -> a hint message.
+ *   2. A wallet was fetched but holds nothing in THIS collection -> a
+ *      plain "you don't have any of these" message, not an error.
+ *   3. Filters are active but nothing matches them -> a different message
+ *      explaining that filters (not an empty wallet) are why the list is
+ *      empty.
+ *
+ * Every collection now has its own compact summary row (see
+ * SUMMARY_ROW_COMPONENTS below), so this also handles a fourth thing:
+ * tapping an item in the list. The list shows that collection's summary
+ * row (a compact picture + a few key fields); tapping one switches this
+ * whole view to show that item's full NftCard instead, with a "Back"
+ * link to return to the list.
+ *
+ * Filtering itself is split across two places, per feedback that the
+ * "Show/Hide filters" toggle and "Apply/Remove Filters" button should
+ * stay fixed on screen while the individual filter rows underneath them
+ * scroll with the list:
+ *   - THIS file owns all of the filter STATE (which options are
+ *     available, what's picked but not yet applied, what's actually
+ *     applied) and renders the toggle + Apply/Remove button as a plain
+ *     sibling directly above the FlatList - never inside it, so it can
+ *     never be scrolled out of view no matter how tall the filter list
+ *     gets.
+ *   - FilterPanel.js renders the actual rows (dropdowns / min-max boxes)
+ *     and is only ever placed inside the FlatList's `ListHeaderComponent`
+ *     - and only while `expanded` is true - so it scrolls together with
+ *     the results underneath it, and disappears entirely once the
+ *     Apply/Remove button is pressed (see handleApplyPress/
+ *     handleRemovePress below, which both close the panel again).
+ */
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Switch, BackHandler } from 'react-native';
+import FilterPanel, { NO_FILTER } from './FilterPanel';
+import NftCard from './NftCard';
+import DevikinSummaryRow from './DevikinSummaryRow';
+import WeaponSummaryRow from './WeaponSummaryRow';
+import EquipmentSummaryRow from './EquipmentSummaryRow';
+import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange } from '../db/database';
+import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER } from '../constants/schema';
+import { useTheme } from '../context/ThemeContext';
+
+// Which collections show a compact tappable summary row (with a
+// separate detail view) vs. their full NftCard directly in the list.
+// Add a new kind here (and its own SummaryRow component) to give another
+// collection the same tap-to-open treatment.
+const SUMMARY_ROW_COMPONENTS = {
+  devikin: DevikinSummaryRow,
+  weapon: WeaponSummaryRow,
+  equipment: EquipmentSummaryRow,
+};
+
+export default function CollectionView({ kind, ownerAddresses, refreshKey }) {
+  const { colors } = useTheme();
+  const [filters, setFilters] = useState({});
+  const [rows, setRows] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Remembers which kind (devikin/weapon/equipment) `rows` currently
+  // holds data for - see reloadRows below for why.
+  const previousKindRef = useRef(kind);
+
+  // The "Deleted" switch next to the filters toggle - off by default, so
+  // items marked deleted still show (just greyed-out, see the summary row
+  // components) rather than disappearing the moment they're marked.
+  // Switching this on excludes them from the query entirely.
+  const [excludeDeleted, setExcludeDeleted] = useState(false);
+
+  // How many NOT-deleted items this wallet has in this category - shown
+  // next to "Show filters" as a quick "142 Devikins"-style count. This is
+  // deliberately its own number, not tied to the filters or the Deleted
+  // switch above - it's meant to answer "how many active items do I
+  // have here", not "how many rows are in the currently-filtered list".
+  const [notDeletedCount, setNotDeletedCount] = useState(0);
+
+  // Which item (by nonce) is currently open in detail view, if any. Only
+  // meaningful for a kind listed in SUMMARY_ROW_COMPONENTS above.
+  const [selectedNonce, setSelectedNonce] = useState(null);
+
+  // --- Filter state (moved here from FilterPanel.js so the toggle and
+  // Apply/Remove button can be pinned outside the scrollable list while
+  // still sharing this same state with the rows rendered inside it -
+  // see the file comment above.) ---
+  const [expanded, setExpanded] = useState(false);
+  // availableOptions describes what CAN be filtered on right now, based
+  // on what's actually in the database - e.g.
+  //   { rarity: { kind: 'text', values: ['Common', 'Rare'] },
+  //     scaling: { kind: 'integer', min: 72, max: 131 } }
+  const [availableOptions, setAvailableOptions] = useState({});
+  const [pendingFilters, setPendingFilters] = useState({});
+  const [appliedFilters, setAppliedFilters] = useState({});
+
+  const reloadRows = useCallback(async () => {
+    if (!ownerAddresses || ownerAddresses.length === 0) {
+      setRows([]);
+      setIsLoading(false);
+      return;
+    }
+
+    // Only clear the currently-shown rows when we're switching to a
+    // DIFFERENT collection (e.g. Devikins -> Weapons) - otherwise we'd
+    // briefly show the wrong tab's items while the new one loads. A
+    // same-kind reload (a background Fetch/Update finishing, applying
+    // filters, flipping the Deleted switch, etc.) instead leaves the old
+    // rows on screen until the new ones are ready and swaps them in
+    // directly - no empty gap in between means the list never has
+    // "nothing to scroll", which is what was causing it to jump back to
+    // the top after every fetch.
+    const kindChanged = previousKindRef.current !== kind;
+    previousKindRef.current = kind;
+    if (kindChanged) {
+      setRows([]);
+    }
+
+    setIsLoading(true);
+    const result = await queryNfts(kind, ownerAddresses, filters, excludeDeleted);
+    setRows(result);
+    setIsLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, ownerAddresses, filters, excludeDeleted, refreshKey]);
+
+  useEffect(() => {
+    reloadRows();
+  }, [reloadRows]);
+
+  // Leaving a detail view open across a tab switch (or a brand new
+  // wallet) would be confusing - go back to the list whenever either of
+  // those changes. Also collapse the filter panel if it was expanded -
+  // per feedback that leaving it open across tabs was confusing (the
+  // expanded rows are a different set of traits for each collection),
+  // and this also means the filter options get a clean, fresh reload
+  // next time you open the panel rather than showing whatever was
+  // already loaded for the tab you just left.
+  useEffect(() => {
+    setSelectedNonce(null);
+    setExpanded(false);
+  }, [kind, ownerAddresses]);
+
+  // Makes Android's system Back button/gesture close an open NFT detail
+  // view (back to this tab's list) instead of exiting the app - without
+  // this, pressing Back while looking at one NFT would quit the app
+  // entirely, since this app doesn't use a navigation library that would
+  // normally handle that automatically. Only takes over Back while a
+  // detail view is actually open (`isDetailViewOpen`, the same
+  // condition the render logic below uses to decide whether to show
+  // one) - otherwise it steps aside (returns false) and lets Android do
+  // its normal thing. See App.js's matching listener for the Wallets
+  // screen - the two never conflict, since this component isn't even
+  // mounted while that screen is showing.
+  const isDetailViewOpen = Boolean(SUMMARY_ROW_COMPONENTS[kind]) && selectedNonce !== null;
+  useEffect(() => {
+    function handleBackPress() {
+      if (isDetailViewOpen) {
+        setSelectedNonce(null);
+        return true; // handled - don't also exit the app
+      }
+      return false; // no detail view open - let Android do its normal thing
+    }
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+    return () => subscription.remove();
+  }, [isDetailViewOpen]);
+
+  // Derives the filter options from what's actually in the database for
+  // this wallet (moved here from FilterPanel.js - see the file comment
+  // above, and FilterPanel.js's own comments, for why this is derived
+  // rather than hardcoded). Reloaded whenever the underlying data might
+  // have changed - that's what `refreshKey` is for (App.js increments it
+  // after each fetch completes).
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAvailableOptions() {
+      const traitColumns = TRAIT_COLUMNS[kind];
+      const options = {};
+
+      for (const [columnName, definition] of Object.entries(traitColumns)) {
+        if (definition.filterable === false) continue;
+
+        if (definition.kind === 'text') {
+          const values = await getDistinctColumnValues(kind, columnName, ownerAddresses);
+
+          // Rarity reads much better as an actual rarity ladder (Common
+          // -> Eldritch) than the database's default alphabetical order
+          // (which would list Common after Eldritch) - see RARITY_ORDER's
+          // own comment in schema.js. Every other text filter keeps the
+          // alphabetical order the database already returned.
+          if (columnName === 'rarity') {
+            values.sort((a, b) => {
+              const indexA = RARITY_ORDER.indexOf(a);
+              const indexB = RARITY_ORDER.indexOf(b);
+              // A rarity we don't recognize yet (e.g. the game adds a
+              // new tier before this list is updated) sorts after all
+              // the known ones, rather than disappearing or crashing.
+              if (indexA === -1 && indexB === -1) return a.localeCompare(b);
+              if (indexA === -1) return 1;
+              if (indexB === -1) return -1;
+              return indexA - indexB;
+            });
+          }
+
+          if (values.length > 0) {
+            options[columnName] = { kind: 'text', values };
+          }
+        } else {
+          const { min, max } = await getColumnRange(kind, columnName, ownerAddresses);
+          if (min !== null && max !== null) {
+            options[columnName] = { kind: 'integer', min, max };
+          }
+        }
+      }
+
+      if (!cancelled) {
+        setAvailableOptions(options);
+      }
+    }
+
+    if (ownerAddresses && ownerAddresses.length > 0) {
+      loadAvailableOptions();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [kind, ownerAddresses, refreshKey]);
+
+  // Keeps the "142 Devikins" count next to "Show filters" up to date.
+  // Always counts with deleted items excluded, regardless of the Deleted
+  // switch's own current position - see the state comment above.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadNotDeletedCount() {
+      if (!ownerAddresses || ownerAddresses.length === 0) {
+        if (!cancelled) setNotDeletedCount(0);
+        return;
+      }
+      const count = await countNfts(kind, ownerAddresses, true);
+      if (!cancelled) setNotDeletedCount(count);
+    }
+
+    loadNotDeletedCount();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, ownerAddresses, refreshKey]);
+
+  function handleTextFilterChange(columnName, value) {
+    const nextFilters = { ...pendingFilters };
+    if (value === NO_FILTER) {
+      delete nextFilters[columnName];
+    } else {
+      nextFilters[columnName] = value;
+    }
+    setPendingFilters(nextFilters);
+  }
+
+  function handleRangeFilterChange(columnName, bound, text) {
+    const nextFilters = { ...pendingFilters };
+    const existingRange = nextFilters[columnName] || {};
+    const updatedRange = { ...existingRange, [bound]: text };
+
+    // If the user has cleared both boxes, drop the filter entirely rather
+    // than keeping an empty { min: '', max: '' } object around.
+    const minIsEmpty = updatedRange.min === undefined || updatedRange.min === '';
+    const maxIsEmpty = updatedRange.max === undefined || updatedRange.max === '';
+    if (minIsEmpty && maxIsEmpty) {
+      delete nextFilters[columnName];
+    } else {
+      nextFilters[columnName] = updatedRange;
+    }
+
+    setPendingFilters(nextFilters);
+  }
+
+  // Only now does the actual database query find out about the
+  // selection - see the file comment at the top. Also closes the
+  // (scrollable) filter rows panel, per feedback that the filter rows
+  // should disappear once you've actually applied your pick.
+  function handleApplyPress() {
+    setAppliedFilters(pendingFilters);
+    setFilters(pendingFilters);
+    setExpanded(false);
+  }
+
+  // Clears everything - both what's applied and what's showing in the
+  // controls - and re-queries with no filter at all. This is what the
+  // button above turns into once filters are actually applied and
+  // there's nothing new pending, per feedback: a quick way to undo the
+  // whole selection rather than having to change each control back to
+  // "All" by hand. Also closes the filter rows panel, same as Apply.
+  function handleRemovePress() {
+    setPendingFilters({});
+    setAppliedFilters({});
+    setFilters({});
+    setExpanded(false);
+  }
+
+  if (!ownerAddresses || ownerAddresses.length === 0) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
+          Add a wallet address (via the Wallets button) and tap Fetch/Update to get started.
+        </Text>
+      </View>
+    );
+  }
+
+  // Detail view: only reachable for a kind with its own summary row, and
+  // only while the tapped nonce is still present in the current
+  // (filtered) rows - if a filter change makes it disappear, we fall back
+  // to the list rather than show a detail view for an item that's no
+  // longer part of the results.
+  // Reuses isDetailViewOpen (set up above, right next to the Back-button
+  // handling that depends on the exact same condition) rather than
+  // recomputing it separately here.
+  const selectedRow = isDetailViewOpen
+    ? rows.find((row) => row.nonce === selectedNonce)
+    : null;
+
+  if (selectedRow) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <TouchableOpacity
+          style={[styles.backButton, { backgroundColor: colors.primary }]}
+          onPress={() => setSelectedNonce(null)}
+        >
+          <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹ Back to Home</Text>
+        </TouchableOpacity>
+        <ScrollView contentContainerStyle={styles.detailScrollContent}>
+          <NftCard kind={kind} nft={selectedRow} onNftUpdated={reloadRows} />
+        </ScrollView>
+      </View>
+    );
+  }
+
+  const hasActiveFilters = Object.keys(filters).length > 0;
+
+  // Whether anything picked in the controls hasn't been applied yet -
+  // the "Apply Filters" button only shows up (below the toggle row)
+  // once this is true, so there's nothing to tap when there's nothing
+  // new to do (a plain object comparison won't work here since these
+  // are freshly-built objects each time, so this compares their
+  // contents instead).
+  const hasPendingChanges = JSON.stringify(pendingFilters) !== JSON.stringify(appliedFilters);
+  // Whether a filter selection is actually live right now - drives the
+  // small "Remove filters" link shown to the right of the "Show
+  // filters" toggle, so a filter can be cleared in one tap without
+  // opening the panel first.
+  const hasAppliedFilters = Object.keys(appliedFilters).length > 0;
+
+  // The item count and Deleted switch - shared between two spots below.
+  // Normally they ride along on the same row as "Show filters" (there's
+  // room, since Remove filters isn't showing). Once Remove filters
+  // appears, that row is full, so this pair drops down onto its own
+  // second row instead - see the two spots that use this below for
+  // exactly when each layout applies. Defined once here rather than
+  // duplicated in both JSX spots below (only one spot ever renders it
+  // at a time, since hasAppliedFilters can't be both true and false, so
+  // reusing the same element reference is safe).
+  const countAndDeletedSwitch = (
+    <>
+      {/* "142 Devikins" - how many active (not-deleted) items this
+          wallet has in this category. See the notDeletedCount
+          state/effect above for why this always counts with deleted
+          items excluded, regardless of the switch below.
+          position: 'absolute' + left/right: 0 (countTextWrap) centers
+          this purely on whichever row it's placed in, completely
+          ignoring how wide the Deleted switch (or Show filters button)
+          next to it is - that's what makes it land at TRUE center
+          instead of drifting toward whichever side has less content.
+          pointerEvents="none" is required now that this sometimes
+          shares a row with the Show filters button - since the box
+          spans the row edge-to-edge (left: 0, right: 0) to center
+          itself, without this it would sit on top of the button and
+          absorb taps meant for it.
+          Set on a wrapping View rather than directly on the <Text>
+          below: pointerEvents="none" on a bare <Text> was unreliable on
+          Android in testing (worked sometimes, not others) - wrapping
+          it in a plain View and putting pointerEvents there instead is
+          the more dependable way to do this on Android. */}
+      <View pointerEvents="none" style={styles.countTextWrap}>
+        <Text style={[styles.countText, { color: colors.secondaryText }]}>
+          {notDeletedCount} {COLLECTIONS[kind].label}
+        </Text>
+      </View>
+
+      {/* Off by default (deleted items stay visible, just greyed out -
+          see the summary row components). Switching this on excludes
+          them from the list entirely, until switched back off again. */}
+      <View style={styles.deletedSwitchGroup}>
+        <Text style={[styles.deletedSwitchLabel, { color: colors.text }]}>Deleted</Text>
+        <Switch
+          value={excludeDeleted}
+          onValueChange={setExcludeDeleted}
+          trackColor={{ false: colors.border, true: colors.primary }}
+          thumbColor={colors.surface}
+        />
+      </View>
+    </>
+  );
+
+  const filterableColumnNames = Object.keys(availableOptions);
+
+  // The filter panel used to sit above the list as a separate, non-
+  // scrolling View - fine while collapsed, but once expanded (a Devikin
+  // can have over 20 filterable traits, each its own row) it could
+  // easily grow taller than the screen, with nothing below it -
+  // including the list itself - reachable by scrolling. The rows below
+  // (FilterPanel, inside ListHeaderComponent) fix that by scrolling
+  // together with the list; the toggle + Apply/Remove button just below
+  // are a separate, plain sibling of the FlatList, so they stay fixed on
+  // screen the whole time, however far you scroll.
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {filterableColumnNames.length > 0 && (
+        <View style={[styles.filterBar, { backgroundColor: colors.surfaceAlt }]}>
+          {/* Normally everything fits on one row: "Show filters" on
+              the left, the item count centered, the Deleted switch on
+              the right - there's room, since "Remove filters" (a real
+              button now, not bare text - see filterToggleButton/
+              removeButton's own comments) isn't showing. Once a filter
+              gets applied and Remove filters needs to appear too, that
+              row is full, so the count and Deleted switch drop down
+              onto their own second row instead, leaving Show filters
+              and Remove filters alone on the first row (left/right).
+              This is per feedback that the count/switch should only
+              move down when Remove filters actually needs the space,
+              rather than always sitting on a second row. */}
+          <View style={[styles.toggleRow, !hasAppliedFilters && styles.toggleRowLast]}>
+            <TouchableOpacity
+              style={[styles.filterToggleButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => setExpanded(!expanded)}
+            >
+              <Text style={[styles.toggleText, { color: colors.primary }]}>
+                {expanded ? 'Hide filters ▲' : 'Show filters ▼'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Rides along on this row only while Remove filters isn't
+                showing - see countAndDeletedSwitch's own comment above
+                for why the same element is reused rather than
+                duplicated. */}
+            {!hasAppliedFilters && countAndDeletedSwitch}
+
+            {/* Only takes up space once a filter is actually applied -
+                when it's hidden, Show filters just stays flush left
+                (space-between with a single child does that
+                automatically). Lets you clear a filter in one tap
+                without even opening the panel - per feedback that having
+                to expand the panel first just to remove a filter was an
+                extra, unnecessary step. */}
+            {hasAppliedFilters && (
+              <TouchableOpacity
+                style={[styles.removeButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={handleRemovePress}
+              >
+                <Text style={[styles.removeLinkText, { color: colors.cancelText }]}>Remove filters ✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Only rendered once Remove filters has pushed the count and
+              Deleted switch off the row above - see the comment on
+              toggleRow above for the full reasoning. */}
+          {hasAppliedFilters && (
+            <View style={styles.secondaryRow}>
+              {countAndDeletedSwitch}
+            </View>
+          )}
+
+          {expanded && hasPendingChanges && (
+            <TouchableOpacity
+              style={[styles.applyButton, { backgroundColor: colors.primary }]}
+              onPress={handleApplyPress}
+            >
+              <Text style={[styles.applyButtonText, { color: colors.primaryText }]}>Apply Filters</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+      <FlatList
+        data={rows}
+        keyExtractor={(item) => String(item.nonce)}
+        renderItem={({ item }) => {
+          const SummaryRow = SUMMARY_ROW_COMPONENTS[kind];
+          return SummaryRow ? (
+            <SummaryRow nft={item} onPress={() => setSelectedNonce(item.nonce)} />
+          ) : (
+            <NftCard kind={kind} nft={item} onNftUpdated={reloadRows} />
+          );
+        }}
+        ListHeaderComponent={
+          expanded ? (
+            <FilterPanel
+              availableOptions={availableOptions}
+              pendingFilters={pendingFilters}
+              onTextFilterChange={handleTextFilterChange}
+              onRangeFilterChange={handleRangeFilterChange}
+            />
+          ) : null
+        }
+        ListEmptyComponent={
+          isLoading ? (
+            <ActivityIndicator style={styles.loadingSpinner} color={colors.primary} />
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
+                {hasActiveFilters
+                  ? 'No NFTs match these filters.'
+                  : `This wallet doesn't hold any ${COLLECTIONS[kind].label} yet.`}
+              </Text>
+            </View>
+          )
+        }
+        contentContainerStyle={styles.listContent}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  // The fixed toggle + Apply/Remove button bar - a plain sibling of the
+  // FlatList below, never inside it, so it can never scroll out of view
+  // no matter how many filter rows are showing. See the file comment at
+  // the top for the full reasoning.
+  filterBar: {
+    paddingHorizontal: 12,
+    paddingTop: 4,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    // Just top padding now (bottom padding moved to secondaryRow below,
+    // with a small gap between the two) - filterToggleButton and
+    // removeButton carry their own vertical padding too, so this stays
+    // trimmed down to avoid padding stacking on padding.
+    paddingTop: 8,
+    // Required so the count text can center itself with position:
+    // 'absolute' against THIS row on the (common) occasions it rides
+    // along here instead of on its own secondaryRow below - see
+    // countTextWrap's own comment.
+    position: 'relative',
+  },
+  // Added on top of toggleRow only when there's no secondaryRow below
+  // it (i.e. no applied filters) - gives the filter bar its bottom
+  // padding here instead, since secondaryRow (which normally provides
+  // it) isn't rendered in that case.
+  toggleRowLast: {
+    paddingBottom: 8,
+  },
+  // Turned into a real button (background, border, generous padding)
+  // rather than bare colored text, per feedback from an Android
+  // touch-target audit - this and removeButton below were the two
+  // smallest tap targets in the whole app (no padding at all, just the
+  // text itself), so they got the biggest bump.
+  filterToggleButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  toggleText: {
+    fontWeight: '600',
+  },
+  countText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  // Bottom row: the NFT count sits at true center, with the Deleted
+  // switch pinned to the right edge - see the JSX comment above for the
+  // full arrangement. position: 'relative' is required here because
+  // countTextWrap (below) positions itself absolutely against this
+  // row; justifyContent: 'flex-end' is what pushes the Deleted switch
+  // (the only thing left in normal flow) to the right edge.
+  secondaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingBottom: 8,
+    position: 'relative',
+  },
+  // Pulls the count text out of the row's normal flow entirely and
+  // centers it purely against the row's own width (left: 0, right: 0,
+  // textAlign: 'center'). This is deliberately independent of whatever
+  // else is in the row - an earlier version tried to center it with a
+  // pair of equal flex: 1 spacers instead, but React Native flex items
+  // don't shrink below their content size by default, so the side
+  // holding the wider Deleted switch quietly claimed more than half the
+  // row and dragged the count off-center. Absolute positioning has no
+  // such issue, since it ignores siblings altogether.
+  // Wraps the count Text so pointerEvents="none" can be set on a plain
+  // View (see the JSX comment above for why it's here and not directly
+  // on the Text).
+  countTextWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+  },
+  deletedSwitchGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  deletedSwitchLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // Same button treatment as filterToggleButton above, for the same
+  // reason - see its comment.
+  removeButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  removeLinkText: {
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  applyButton: {
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  applyButtonText: {
+    fontWeight: '600',
+  },
+  loadingSpinner: {
+    marginTop: 24,
+  },
+  emptyContainer: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  emptyText: {
+    textAlign: 'center',
+  },
+  listContent: {
+    paddingVertical: 12,
+  },
+  // Made into a proper button (filled background, rounded corners)
+  // rather than a plain text link, per feedback that it was easy to
+  // miss - same look as App.js's Fetch/Update button, for consistency.
+  // This is shared code, so the change applies to all three tabs at
+  // once (Devikins, Weapons, Equipment all go through this same detail
+  // view).
+  // Stretches edge-to-edge (minus the same side margins used elsewhere
+  // on screen) per feedback, rather than staying a small centered pill -
+  // alignItems: 'center' keeps its own label centered within that now-
+  // much-wider button.
+  backButton: {
+    borderRadius: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    marginHorizontal: 12,
+    marginVertical: 12,
+    alignItems: 'center',
+  },
+  backButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  detailScrollContent: {
+    paddingBottom: 24,
+  },
+});

@@ -1,0 +1,18 @@
+[
+  {
+    "nonce": 2181,
+    "error": "Failed to fetch https://1fl8e08843.execute-api.us-east-1.amazonaws.com/weapon/2181 after 4 attempt(s): Timed out after 10000ms"
+  },
+  {
+    "nonce": 19617,
+    "error": "Failed to fetch https://1fl8e08843.execute-api.us-east-1.amazonaws.com/weapon/19617 after 4 attempt(s): HTTP 500 Internal Server Error"
+  },
+  {
+    "nonce": 32695,
+    "error": "Failed to fetch https://1fl8e08843.execute-api.us-east-1.amazonaws.com/weapon/32695 after 4 attempt(s): Timed out after 10000ms"
+  },
+  {
+    "nonce": 50131,
+    "error": "Failed to fetch https://1fl8e08843.execute-api.us-east-1.amazonaws.com/weapon/50131 after 4 attempt(s): Timed out after 10000ms"
+  }
+]

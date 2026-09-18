@@ -1,0 +1,50 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders (created by `expo prebuild`)
+/app/ios
+/app/android
+
+# old pre-refactor backup files, kept locally for reference but not
+# meant to ship in the repo's history
+_to_delete/
+
+# this assistant's own delivered-file scratch folder (icon previews
+# etc. sent during the session) - not part of the project itself
+/Claude outputs/
+
+# local Claude Code / assistant tooling config, not part of the app
+/app/.claude/

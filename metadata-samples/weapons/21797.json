@@ -1,0 +1,84 @@
+{
+  "description": "Devikins Weapon is a collection of weapons for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/21797",
+  "image": "https://imgweapon.devikins.com/0/21797.png",
+  "name": "Fine Shadow Common Greatsword #21797",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Common"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Great Sword"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Fine"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "None"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Weapons/greatsword_common.png"
+    },
+    {
+      "trait_type": "Element",
+      "value": "Shadow"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Scaling",
+      "value": 81
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "Power"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Chance",
+      "value": 6
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Damage",
+      "value": 17
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Speed Modifier",
+      "value": -15
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 0
+    },
+    {
+      "trait_type": "Gene Sync",
+      "value": "None"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Base Durability",
+      "value": 61
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Durability",
+      "value": 61
+    },
+    {
+      "display_type": "number",
+      "trait_type": "ImprovementLevel",
+      "value": 1
+    }
+  ]
+}

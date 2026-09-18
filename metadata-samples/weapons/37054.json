@@ -1,0 +1,84 @@
+{
+  "description": "Devikins Weapon is a collection of weapons for the blockchain game Devikins.",
+  "external_url": "https://klevernft.com/asset/37054",
+  "image": "https://imgweapon.devikins.com/0/37054.png",
+  "name": "Fine Life Common Hammer #37054",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Common"
+    },
+    {
+      "trait_type": "Type",
+      "value": "Hammer"
+    },
+    {
+      "trait_type": "Quality",
+      "value": "Fine"
+    },
+    {
+      "trait_type": "Shiny",
+      "value": "Regular"
+    },
+    {
+      "trait_type": "Slot",
+      "value": "None"
+    },
+    {
+      "trait_type": "Icon Image",
+      "value": "Weapons/hammer_common.png"
+    },
+    {
+      "trait_type": "Element",
+      "value": "Life"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Scaling",
+      "value": 107
+    },
+    {
+      "trait_type": "Resistance Type",
+      "value": "Power"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Chance",
+      "value": 6
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Critical Damage",
+      "value": 14
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Speed Modifier",
+      "value": -15
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Refine XP",
+      "value": 150
+    },
+    {
+      "trait_type": "Gene Sync",
+      "value": "Set Sync"
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Base Durability",
+      "value": 61
+    },
+    {
+      "display_type": "number",
+      "trait_type": "Durability",
+      "value": 61
+    },
+    {
+      "display_type": "number",
+      "trait_type": "ImprovementLevel",
+      "value": 3
+    }
+  ]
+}
