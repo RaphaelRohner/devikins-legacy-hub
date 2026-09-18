@@ -14,7 +14,7 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
-export default function ProgressBar({ progress, onCancel }) {
+export default function ProgressBar({ progress, onCancel, isCancelling }) {
   const { colors } = useTheme();
 
   if (!progress || progress.phase === 'done') {
@@ -61,8 +61,14 @@ export default function ProgressBar({ progress, onCancel }) {
         </View>
       )}
 
-      <TouchableOpacity onPress={onCancel} style={styles.cancelButton}>
-        <Text style={[styles.cancelText, { color: colors.cancelText }]}>Stop</Text>
+      <TouchableOpacity
+        onPress={onCancel}
+        disabled={isCancelling}
+        style={[styles.cancelButton, isCancelling && styles.cancelButtonDisabled]}
+      >
+        <Text style={[styles.cancelText, { color: colors.cancelText }]}>
+          {isCancelling ? 'Stopping...' : 'Stop'}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -88,6 +94,9 @@ const styles = StyleSheet.create({
   cancelButton: {
     marginTop: 8,
     alignSelf: 'flex-start',
+  },
+  cancelButtonDisabled: {
+    opacity: 0.5,
   },
   cancelText: {
     fontWeight: '600',

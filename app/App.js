@@ -138,6 +138,12 @@ function AppContent() {
   // whether a fetch is currently running at all.
   const [progress, setProgress] = useState(null);
   const [isFetching, setIsFetching] = useState(false);
+  // True from the moment "Stop" is tapped until the fetch/retry it
+  // stopped actually finishes winding down - purely cosmetic (see
+  // ProgressBar.js), so the Stop button gives some immediate
+  // acknowledgement rather than looking like the tap did nothing while
+  // the in-flight request it's interrupting finishes aborting.
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Bumping this number tells CollectionView/FilterPanel "something in
   // the database may have changed, please reload".
@@ -267,6 +273,7 @@ function AppContent() {
     } finally {
       busyRef.current = false;
       setIsFetching(false);
+      setIsCancelling(false);
       setRefreshKey((key) => key + 1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -274,6 +281,7 @@ function AppContent() {
 
   function handleCancelPress() {
     cancelRequestedRef.current = true;
+    setIsCancelling(true);
   }
 
   // The automatic retry timer: every AUTO_RETRY_INTERVAL_MS, if nothing
@@ -336,6 +344,7 @@ function AppContent() {
       } finally {
         busyRef.current = false;
         setIsRetrying(false);
+        setIsCancelling(false);
         setRetryProgress(null);
         setRefreshKey((key) => key + 1);
 
@@ -460,8 +469,8 @@ function AppContent() {
         </View>
       </View>
 
-      {isFetching && <ProgressBar progress={progress} onCancel={handleCancelPress} />}
-      {isRetrying && <ProgressBar progress={retryProgress} onCancel={handleCancelPress} />}
+      {isFetching && <ProgressBar progress={progress} onCancel={handleCancelPress} isCancelling={isCancelling} />}
+      {isRetrying && <ProgressBar progress={retryProgress} onCancel={handleCancelPress} isCancelling={isCancelling} />}
 
       {walletAddresses.length > 0 ? (
         <>

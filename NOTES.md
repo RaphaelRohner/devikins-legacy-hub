@@ -1270,6 +1270,37 @@ filter state (pending, applied, and active) in the same effect that
 already resets the detail view and collapses the panel on a tab
 change.
 
+## Bug fixed: "Stop" during a fetch looked like it did nothing
+
+Tapping Stop while a fetch was running correctly set a flag telling the
+fetch loop to stop, and that flag WAS being checked before starting each
+new NFT - but it was never checked (or acted on) while an NFT already in
+progress was mid-request. Since a single NFT lookup can take up to about
+a minute in the worst case (5 attempts, each with a 10-second timeout,
+plus waits of 1s/2s/4s/8s between them - see metadataApi.js), tapping
+Stop while one of the 4 concurrently-running lookups happened to be deep
+in that retry sequence meant nothing visibly happened for up to a
+minute, which reads as completely broken even though it would eventually
+have stopped.
+
+Fixed two ways together:
+
+- `fetchNftMetadata` now accepts the same `shouldCancel` function the
+  rest of the fetch pipeline already uses, and actually aborts its
+  in-flight network request (via the same AbortController already used
+  for the 10-second timeout) within about 100ms of a cancel, instead of
+  only checking between whole NFTs. The pause between retry attempts is
+  also cut short the same way, instead of always waiting out the full
+  backoff delay.
+- The Stop button itself now shows "Stopping..." and disables itself the
+  moment it's tapped, rather than giving no visible acknowledgement at
+  all while the (now much shorter, but not always instant) actual stop
+  is in progress.
+
+An NFT interrupted mid-request this way isn't saved as failed - it's
+simply left alone, so it's picked up fresh on the next Fetch/Update or
+automatic retry, same as if it had never been attempted.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth

@@ -74,7 +74,15 @@ async function fetchAndSaveNonces(kind, label, nonces, ownerAddress, { skippedCo
       const nonce = nonces[nextIndex];
       nextIndex += 1;
 
-      const result = await fetchNftMetadata(kind, nonce);
+      const result = await fetchNftMetadata(kind, nonce, shouldCancel);
+
+      if (result.outcome === 'cancelled') {
+        // The user tapped Stop while this nonce's request was in
+        // flight - nothing to save (it's not a real failure, just
+        // interrupted), and this worker is done for good, same as if
+        // the shouldCancel() check above had caught it before starting.
+        return;
+      }
 
       if (result.outcome === 'ok') {
         // Download the image to the phone's own storage so it's still
