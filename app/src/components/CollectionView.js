@@ -139,9 +139,21 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey }) {
   // and this also means the filter options get a clean, fresh reload
   // next time you open the panel rather than showing whatever was
   // already loaded for the tab you just left.
+  //
+  // Also clears any applied/pending filters (rather than just collapsing
+  // the panel) - each collection has its own trait columns, so a filter
+  // picked for Devikins (e.g. a Rarity value) doesn't meaningfully carry
+  // over to Weapons or Equipment anyway. Without this, the previous
+  // tab's filters silently stayed active on the new tab (still narrowing
+  // the list) even though the panel itself looked closed, and the
+  // "Remove filters" button stayed visible with nothing visibly
+  // "expanded" to explain why.
   useEffect(() => {
     setSelectedNonce(null);
     setExpanded(false);
+    setPendingFilters({});
+    setAppliedFilters({});
+    setFilters({});
   }, [kind, ownerAddresses]);
 
   // Makes Android's system Back button/gesture close an open NFT detail

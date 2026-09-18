@@ -1257,6 +1257,19 @@ buttons had since moved to the top of the screen, above that message, not
 below it. Caught during real-device testing of the first APK build.
 Changed the wording to "Tap Wallets above" to match the actual layout.
 
+## Bug fixed: applied filters carried over between tabs
+
+Switching tabs (Devikins -> Weapons, say) already closed the filter
+panel and cleared the open detail view, but it didn't actually clear
+the filter criteria itself - so a filter applied on one tab kept
+narrowing the next tab's list too, silently, with the "Remove filters"
+button still showing even though the panel looked closed. Since each
+collection has its own set of traits, a filter picked for one doesn't
+meaningfully carry over to another anyway. Fixed by clearing the
+filter state (pending, applied, and active) in the same effect that
+already resets the detail view and collapses the panel on a tab
+change.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
