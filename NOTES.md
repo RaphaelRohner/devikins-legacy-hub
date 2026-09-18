@@ -1237,6 +1237,19 @@ the arrowhead tip that the color threshold treats as a separate piece)
 rather than blurring everything, which discards small unrelated bright
 specks (background/window reflections) without softening real structure.
 
+## V1.0 - considered done
+
+After a first standalone APK build and a full round of real-device
+testing turned up four small bugs (all fixed and reflected in the
+sections above: the empty-state hint text, filters carrying over
+between tabs, the Stop button, and the icon crop), a second build
+confirmed all four fixes plus the wider icon crop working correctly.
+Raphael's call: this is a solid V1.0 - everything in TESTING.md's full
+pass has been run against a real installed build, not just Expo Go.
+Ideas for anything further (a hamburger menu, and whatever else comes
+up) belong in a V2 rather than blocking this one - see
+`claude/v2-feature-ideas.md` in the project's claude.ai docs.
+
 ## Version control and GitHub
 
 The whole project (not just `app/`) is now tracked with git, with its
