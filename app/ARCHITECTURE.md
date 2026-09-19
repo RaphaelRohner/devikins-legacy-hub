@@ -221,8 +221,13 @@ being worked on (see `ProgressBar.js`). This is the function `App.js`
 actually calls when you tap "Fetch/Update".
 
 `retryPendingItems`/`retryPendingItemsForWallets` follow the exact same
-single-wallet/multi-wallet pairing, for the background auto-retry timer
-in `App.js`.
+single-wallet/multi-wallet pairing. They used to be driven by a
+background auto-retry timer in `App.js` that ran on its own every
+minute; that timer was removed (per feedback that nothing should fetch
+over the network unless Fetch/Update is actually tapped - see NOTES.md),
+so these two functions are currently unused, kept in place rather than
+deleted in case a manual "retry failed items" action is ever added back
+as its own explicit button.
 
 ## The UI files
 
@@ -249,9 +254,12 @@ notes below.
   the old always-visible Fetch/Update + Wallets buttons and the
   Devikins/Weapons/Equipment tab row are gone — all six of those actions
   now live inside `HamburgerMenu.js`, opened by a ☰ button. Above that
-  sits a persistent search bar (search by name/ID) plus an exact-match
-  1-5 star filter (`StarRating.js`, `mode="exact"`) — see
-  `CollectionView.js` below for how those two feed into `queryNfts`.
+  sits a persistent search bar (search by name/ID) plus the light/dark
+  theme toggle — see `CollectionView.js` below for how the search text
+  feeds into `queryNfts`. The exact-match 1-5 star filter
+  (`StarRating.js`, `mode="exact"`) used to sit in this same top bar;
+  it's since moved down into `FilterPanel.js`, alongside the other
+  filters, with the theme toggle taking its old spot up here instead.
   Both Wallets and Feedback still take over the whole screen exactly as
   Wallets always did, with their own "‹ Back to Home" button that
   returns to whichever collection screen (`lastCollectionScreen`) was
@@ -373,17 +381,24 @@ notes below.
   dance the trait filters use) since there's no "controls" to fiddle
   with first - it's a single on/off choice.
 
-  **V2 additions:** this file now also accepts `searchText`/`starFilter`
-  props from `App.js` (the top search bar and exact star filter) and
-  passes them straight through to `queryNfts` alongside its own trait
-  `filters` - unlike those trait filters, `searchText`/`starFilter`
+  **V2 additions:** this file now also accepts `searchText`/`starFilter`/
+  `onStarFilterChange` props from `App.js` and passes them straight
+  through to `queryNfts` (searchText/starFilter) and down into
+  `FilterPanel.js` (starFilter/onStarFilterChange, which draws the
+  actual Rating row - see that file's own notes below) alongside its own
+  trait `filters` - unlike those trait filters, `searchText`/`starFilter`
   deliberately do NOT get reset by the kind-change effect above, since
   carrying a search across tabs (search "123", then check another
   collection) is the expected behavior, not a bug. It also now owns a
-  **List/Tiles** toggle (`viewMode`, persisted per collection via
-  `getSetting`/`setSetting` in `database.js`, so picking Tiles for
-  Devikins doesn't reset on app restart or affect Weapons/Equipment) —
-  Tiles mode renders `NftTile.js` in a 3-column grid via the `FlatList`'s
+  **List/Tiles** toggle (`viewMode`, persisted via `getSetting`/
+  `setSetting` in `database.js` so it doesn't reset on app restart) —
+  ONE shared choice across Devikins/Weapons/Equipment (picking Tiles on
+  one tab shows Tiles on the others too - this works because `App.js`
+  never remounts `CollectionView` when you switch tabs, it just changes
+  its `kind` prop, so this state was always naturally shared in memory;
+  it's loaded from storage only once, on mount, rather than per `kind`,
+  so switching tabs can't overwrite it with a stale value). Tiles mode
+  renders `NftTile.js` in a 3-column grid via the `FlatList`'s
   `numColumns` prop instead of the usual full-width summary rows. Since
   React Native doesn't support changing `numColumns` on an already-
   mounted `FlatList`, the list is `key`-ed by `viewMode` so toggling
@@ -391,8 +406,15 @@ notes below.
 
 - **`components/FilterPanel.js`** — just the dropdowns and range boxes
   themselves (no toggle, no Apply/Remove button - those live in
-  `CollectionView.js`, see above). `CollectionView.js` places this
-  component inside its `FlatList`'s `ListHeaderComponent`, and only
+  `CollectionView.js`, see above), plus one extra row of its own at the
+  top: the exact-match 1-5 star **Rating** filter (`StarRating.js`,
+  `mode="exact"`) - unlike every row below it, this one isn't derived
+  from the database and isn't part of the pending/Apply flow, it takes
+  effect the instant a star is tapped (`starFilter`/`onStarFilterChange`
+  props, passed straight through from `App.js` via `CollectionView.js`
+  - see that file's own V2-additions note above). `CollectionView.js`
+  places this whole component inside its `FlatList`'s
+  `ListHeaderComponent`, and only
   while the panel is expanded, so these rows scroll together with the
   results underneath them (this is also what fixes an earlier bug where
   a long list of expanded filters — 20+ for Devikins — could grow taller
@@ -465,14 +487,20 @@ notes below.
   NOTES.md's "Marking NFTs as deleted" section for the full reasoning.
 
   **Name & Rating (V2):** an editable nickname (saved to the
-  `custom_name` column via `setNftCustomName` the moment the field loses
-  focus - separate from `name`, the in-game name pulled from fetched
-  metadata, which is never hand-edited) and a 1-5 star rating
-  (`StarRating.js` in `mode="cumulative"`, saved to `star_rating` via
-  `setNftStarRating` the instant a star is tapped - no separate save
-  step needed, since picking a rating IS the action). Both are
-  searchable/filterable from the top bar in `App.js` - see
-  `queryNfts`'s `searchText`/`starRating` parameters above.
+  `custom_name` column via `setNftCustomName`) - separate from `name`,
+  the in-game name pulled from fetched metadata, which is never
+  hand-edited - and a 1-5 star rating (`StarRating.js` in
+  `mode="cumulative"`, saved to `star_rating` via `setNftStarRating` the
+  instant a star is tapped - no separate save step needed, since picking
+  a rating IS the action). The nickname works differently: nothing is
+  written to the database just from typing or leaving the field - a
+  **Save Name** button right below the field (greyed out/disabled
+  whenever the typed draft matches what's already saved) is the only
+  thing that actually commits it, per feedback that nothing should save
+  itself without an explicit tap. Both name and rating are
+  searchable/filterable - the name from the top search bar in `App.js`,
+  the rating from the Rating row in `FilterPanel.js` (see above) - via
+  `queryNfts`'s `searchText`/`starRating` parameters.
 
 - **`components/NftTile.js`** (V2) — the compact square tile shown for
   each NFT in "Tiles" view (see `CollectionView.js`'s view-mode toggle
@@ -498,17 +526,27 @@ notes below.
 
 - **`components/HelpAssistant.js`** ("Devi", V2) — a small, entirely
   offline, explicitly-not-a-real-AI helper, added on request for "a
-  downgraded version of you" in the app. A chat-shaped screen (the
-  seventh hamburger menu entry) that matches whatever you type against
-  a fixed list of question/keyword/answer entries (`FAQ_ENTRIES`) about
+  downgraded version of you" in the app - and kept that way on purpose
+  even after later being asked to "make it AI", since a real AI chat
+  needs its own API key and a backend server to hold it safely, plus
+  real per-message cost, which is a genuinely different, bigger project
+  (see NOTES.md). A chat-shaped screen (the seventh hamburger menu
+  entry) whose every `FAQ_ENTRIES` question/answer pair is always shown
+  as a plain stacked list (not hidden behind tappable chips), covering
   using this app - adding a wallet, what Fetch/Update does, filters,
   List/Tiles, naming/rating an NFT, sending feedback, the Deleted
-  behavior, resetting data, and "who are you". Matching is plain
-  keyword-in-text scoring (`matchEntry`) - no language model, no network
-  call, no API key, nothing that costs money. Quick-question chips above
-  the text input let you tap a question instead of typing it. Says so
-  itself, in its own greeting and whenever nothing matches
-  (`FALLBACK_ANSWER`) - it should never seem more capable than it is.
+  behavior, resetting data, the (now removed) automatic retry, the
+  theme toggle, multiple wallets, and "who are you" - plus a text input
+  at the bottom for typing your own question, which gets its own
+  matched answer appended as a small chat exchange above the list.
+  Matching (`matchEntry`/`scoreEntry`) is still just keyword scoring, no
+  language model, no network call, no API key, nothing that costs
+  money - but a bit smarter than plain substring matching: `editDistance`
+  gives it some typo tolerance ("walet" still finds the wallet answer)
+  and simple prefix matching, on top of the original exact-keyword
+  scoring. Says so itself, in its own greeting and whenever nothing
+  matches (`FALLBACK_ANSWER`) - it should never seem more capable than
+  it is.
 
 ## Where the traits actually came from
 

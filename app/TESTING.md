@@ -39,20 +39,25 @@ button).
    Equipment - each should show its list without errors, and the menu
    should highlight whichever one you're currently on.
 3. Type something into the top search bar - the list should narrow as
-   you type. Tap one of the five stars next to it - the list should
-   narrow to only that exact rating; tap the same star again to clear it.
-4. Tap "Show filters", pick one filter, tap **Apply Filters** - the list
-   should narrow. Tap **Remove filters ✕** - it should go back to
-   showing everything (search text and the star filter, if any, should
-   still apply on top of that).
+   you type.
+4. Tap "Show filters" - the **Rating** row should be right at the top,
+   above the other filter dropdowns. Tap one of its five stars - the
+   list should narrow to only that exact rating right away (no need to
+   tap Apply Filters for this one); tap the same star again to clear it.
+   Then pick one of the other filters and tap **Apply Filters** - the
+   list should narrow further. Tap **Remove filters ✕** - it should go
+   back to showing everything except the search text and star rating,
+   which should still apply on top of that.
 5. Tap the **List/Tiles** toggle - the layout should switch between the
    normal picture-plus-traits rows and a compact grid of just pictures.
+   Switch to a different tab (Devikins/Weapons/Equipment) - it should
+   still be showing the same List/Tiles choice, not reset back to List.
 6. Tap an NFT in the list (or a tile) - its detail view should open. Use
    the phone's **system Back button/gesture** to close it (not just the
    app's own back button) - you should land back on the list, not leave
    the app.
-7. Toggle the light/dark mode button - colors should flip and stay
-   readable.
+7. Toggle the light/dark mode button (next to the search field, at the
+   top) - colors should flip and stay readable.
 8. On a collection screen's list view (nothing else open), press the
    system Back button/gesture once - you should see a brief "Press back
    again to exit" toast, and the app should stay open. Press Back again
@@ -90,8 +95,13 @@ button behavior.
 - Tap **Fetch/Update**. Watch the progress indicator move.
 - While it's running, switch to another app for 10-20 seconds, then come
   back - the fetch should resume/continue rather than losing progress
-  (nothing is lost even if interrupted, since each NFT saves the moment
-  it's fetched - see NOTES.md's "Automatic retry timer" section).
+  (nothing is lost even if interrupted, since each NFT saves to the
+  database the moment it's individually fetched, not all at once at the
+  end).
+- If a fetch leaves anything stuck failed/imageless, confirm it stays
+  that way until you tap **Fetch/Update** again - there's no automatic
+  background retry any more (removed per feedback; see NOTES.md), so
+  nothing should happen on its own without you tapping that button.
 - Let a fetch finish fully. Check all three tabs now show NFTs for both
   wallets you added.
 - Turn on Airplane Mode, tap Fetch/Update again, and confirm you get a
@@ -104,6 +114,10 @@ For **each** of Devikins, Weapons, and Equipment:
 
 - Scroll the full list - images and names should load in, no visual
   glitches, no flickering/jumping while scrolling.
+- Set List/Tiles to Tiles on this tab, then switch to the other two tabs
+  - both should already be showing Tiles too (List/Tiles is one shared
+  choice across all three, not per-tab). Restart the app and confirm
+  Tiles is still selected everywhere.
 - Tap into a few different NFTs - their detail views should show correct
   stats/traits for that specific item (not another one's data).
 - Tap an NFT's image to open the fullscreen viewer (Devikins), then
@@ -125,9 +139,9 @@ For **each** of Devikins, Weapons, and Equipment:
   states to make sure nothing is unresponsive.
 - Switch tabs while a filter is applied and the panel is expanded - the
   panel should close and the filter should reset on the new tab (not
-  carry over/stay open). The top search bar's text and star filter are
-  a deliberate exception (V2) - those two are meant to carry over across
-  tabs, so confirm they DON'T reset when you switch.
+  carry over/stay open). The top search bar's text and the Rating row's
+  star filter are a deliberate exception (V2) - those two are meant to
+  carry over across tabs, so confirm they DON'T reset when you switch.
 
 ### 6. Deleted / comment (the manual "I sold this" feature)
 
@@ -166,20 +180,27 @@ For **each** of Devikins, Weapons, and Equipment:
 
 ### 9. Name & Rating (V2)
 
-- Open an NFT's detail view, tap into the Name field, type a nickname,
-  then tap away (or Done/Return) to unfocus it - it should save without
-  needing a separate button.
+- Open an NFT's detail view, tap into the Name field, type a nickname.
+  The **Save Name** button below it should go from greyed-out to its
+  normal color as soon as you've actually changed something. Tap away
+  (or Done/Return) WITHOUT tapping Save Name, then reopen the NFT - the
+  nickname should NOT have saved (nothing commits until Save Name is
+  tapped).
+- Type the nickname again and this time tap **Save Name** - it should
+  go back to greyed-out (nothing left to save), and reopening the NFT
+  should show the nickname persisted.
 - Tap a star in the Rating control - it and every star before it should
-  light up together (unlike the top bar's star filter, this one fills
-  cumulatively). Tap the same star again - the rating should clear back
-  to unrated.
+  light up together (unlike the Rating row's exact-match star filter
+  under Filters, this one fills cumulatively), and this one still saves
+  immediately on tap, no button needed. Tap the same star again - the
+  rating should clear back to unrated.
 - Go back to the list, then reopen the same NFT - both the name and the
   rating should still be there.
 - In the top search bar, search for the nickname you just gave it - it
   should find that NFT (search matches the nickname as well as the
-  in-game name and the ID). Tap that same star count in the top bar's
-  star filter - it should show up there too (an exact match, not "N or
-  higher").
+  in-game name and the ID). Open Filters and tap that same star count in
+  the Rating row - it should show up there too (an exact match, not "N
+  or higher").
 - Run **Fetch/Update** again and confirm both the name and the rating
   survive the re-fetch (same underlying fix as section 6 above - these
   two columns are just as local/user-entered as `deleted`/`comment`).
@@ -213,6 +234,12 @@ For **each** of Devikins, Weapons, and Equipment:
 - Type one of the FAQ questions in your own words (e.g. "how do stars
   work") into the box at the bottom and confirm it still matches
   sensibly, appending as a new exchange above the FAQ list.
+- Type a question with a typo in a keyword (e.g. "how do i add a
+  walet") and confirm it still matches the right answer - Devi's
+  matching tolerates small typos, not just exact keyword spelling.
+- Ask about something that was recently changed (e.g. "does it retry
+  automatically" or "where's dark mode") and confirm the newer FAQ
+  entries show up and are accurate to current behavior.
 - Type something completely unrelated (e.g. "what's the weather") and
   confirm you get the friendly fallback message, not a crash or a made-
   up answer.

@@ -254,18 +254,22 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
   // metadata, never hand-edited) - stored in the `custom_name` column
   // (see database.js's initDatabase/setNftCustomName) and searchable
   // from the top search bar in App.js. Same "local draft, commit on a
-  // deliberate action" pattern as commentDraft above, except the
-  // deliberate action here is simply leaving the field (onEndEditing)
-  // rather than a separate button - a plain rename doesn't carry the
-  // same weight as marking something deleted, so it doesn't need its
-  // own button to feel intentional.
+  // deliberate action" pattern as commentDraft above - the deliberate
+  // action is tapping the "Save Name" button below the field, not just
+  // leaving it (nothing gets written to the database until that button
+  // is actually tapped).
   const [customNameDraft, setCustomNameDraft] = useState(nft.custom_name ?? '');
   useEffect(() => {
     setCustomNameDraft(nft.custom_name ?? '');
   }, [nft.nonce]);
 
+  // Nothing to save if the draft matches what's already stored - used
+  // both to no-op an accidental tap and to grey out/disable the button
+  // itself so it's obvious there's nothing pending.
+  const isCustomNameUnchanged = (nft.custom_name ?? '') === customNameDraft;
+
   async function handleCustomNameCommit() {
-    if ((nft.custom_name ?? '') === customNameDraft) return; // nothing changed
+    if (isCustomNameUnchanged) return; // nothing changed
     await setNftCustomName(kind, nft.nonce, customNameDraft);
     onNftUpdated?.();
   }
@@ -293,8 +297,18 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
         placeholderTextColor={colors.secondaryText}
         value={customNameDraft}
         onChangeText={setCustomNameDraft}
-        onEndEditing={handleCustomNameCommit}
       />
+      <TouchableOpacity
+        style={[
+          styles.saveNameButton,
+          { backgroundColor: colors.primary },
+          isCustomNameUnchanged && { backgroundColor: colors.primaryDisabled },
+        ]}
+        onPress={handleCustomNameCommit}
+        disabled={isCustomNameUnchanged}
+      >
+        <Text style={[styles.saveNameButtonText, { color: colors.primaryText }]}>Save Name</Text>
+      </TouchableOpacity>
       <Text style={[styles.deleteSectionLabel, { color: colors.secondaryText, marginTop: 12 }]}>Rating</Text>
       <StarRating
         value={nft.star_rating ?? 0}
@@ -1015,6 +1029,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     fontSize: 14,
+  },
+  saveNameButton: {
+    borderRadius: 8,
+    paddingVertical: 8,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  saveNameButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   // The "mark as deleted" + notes block at the bottom of every detail
   // view - see deleteSection above.

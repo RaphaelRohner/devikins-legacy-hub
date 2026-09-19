@@ -27,10 +27,15 @@ export default function ProgressBar({ progress, onCancel, isCancelling }) {
   if (progress.phase === 'listing') {
     message = `Looking up ${progress.label} held by this wallet...`;
   } else if (progress.phase === 'summary') {
-    // A plain, pre-worded status line - used by the background retry
-    // timer (see App.js) to say up front what kind of work a round is
-    // about to do (an NFT refetch vs an image refetch), before the
-    // per-collection 'fetching' messages below start coming in.
+    // A plain, pre-worded status line - meant for a caller to say up
+    // front what kind of work is about to happen (e.g. an NFT refetch
+    // vs an image refetch) before the per-collection 'fetching' messages
+    // below start coming in. Nothing currently produces this phase (the
+    // background auto-retry timer that used to be its only source was
+    // removed from App.js, per feedback that fetching should only ever
+    // happen when Fetch/Update is tapped) - left in place since it's a
+    // harmless, generic capability of this component, not tied to that
+    // removed feature specifically.
     message = progress.label;
   } else if (progress.phase === 'fetching') {
     message = `${progress.label}: ${progress.completed} / ${progress.total} fetched`;

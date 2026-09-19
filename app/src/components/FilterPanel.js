@@ -25,11 +25,20 @@
  * for this wallet (loaded in CollectionView.js now) - e.g. if this
  * wallet's Weapons happen to all be "Common" rarity, the Rarity dropdown
  * will only offer "Common", not every possible rarity.
+ *
+ * One row is different: the star-rating filter at the top (starFilter/
+ * onStarFilterChange props) isn't derived from the database and isn't
+ * part of the pending/Apply flow the rows below it use - it comes
+ * straight from App.js (see its own file comment - it used to sit in
+ * the top search bar, next to the search field, before the theme toggle
+ * took that spot) and, like the search field, takes effect immediately
+ * as you tap a star rather than waiting for "Apply Filters".
  */
 
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../context/ThemeContext';
+import StarRating from './StarRating';
 
 function humanizeColumnName(columnName) {
   return columnName
@@ -46,12 +55,16 @@ function humanizeColumnName(columnName) {
 // against it too.
 export const NO_FILTER = '__ALL__';
 
-export default function FilterPanel({ availableOptions, pendingFilters, onTextFilterChange, onRangeFilterChange }) {
+export default function FilterPanel({ availableOptions, pendingFilters, onTextFilterChange, onRangeFilterChange, starFilter = 0, onStarFilterChange }) {
   const { colors } = useTheme();
   const filterableColumnNames = Object.keys(availableOptions);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.surfaceAlt }]}>
+      <View style={[styles.filterRow, styles.starFilterRow, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.filterLabel, { color: colors.text }]}>Rating (exact match)</Text>
+        <StarRating value={starFilter} onChange={onStarFilterChange} mode="exact" size={22} />
+      </View>
       {filterableColumnNames.map((columnName) => {
         const option = availableOptions[columnName];
         const label = humanizeColumnName(columnName);
@@ -119,6 +132,11 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     marginBottom: 10,
+  },
+  starFilterRow: {
+    paddingBottom: 10,
+    marginBottom: 14,
+    borderBottomWidth: 1,
   },
   filterLabel: {
     fontSize: 13,

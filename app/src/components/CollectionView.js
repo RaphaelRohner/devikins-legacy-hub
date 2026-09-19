@@ -59,7 +59,7 @@ const SUMMARY_ROW_COMPONENTS = {
   equipment: EquipmentSummaryRow,
 };
 
-export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0 }) {
+export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange }) {
   const { colors } = useTheme();
   const [filters, setFilters] = useState({});
   const [rows, setRows] = useState([]);
@@ -86,34 +86,47 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // meaningful for a kind listed in SUMMARY_ROW_COMPONENTS above.
   const [selectedNonce, setSelectedNonce] = useState(null);
 
-  // List vs. Tiles - per-collection (Devikins/Weapons/Equipment can each
-  // be in a different mode at the same time), and remembered across app
-  // restarts via the generic settings table in database.js (the same
-  // one theme/wallet-migration state already uses) rather than plain
-  // React state alone, so picking Tiles for Devikins once doesn't reset
-  // back to List every time the app is reopened. Starts as 'list' (the
-  // original, unchanged layout) until the saved setting (if any) loads.
+  // List vs. Tiles - ONE shared choice across Devikins/Weapons/Equipment
+  // (picking Tiles on one tab shows Tiles on the others too, per
+  // feedback that per-tab was more confusing than useful), and
+  // remembered across app restarts via the generic settings table in
+  // database.js (the same one theme/wallet-migration state already
+  // uses) rather than plain React state alone, so picking Tiles once
+  // doesn't reset back to List every time the app is reopened. Starts
+  // as 'list' (the original, unchanged layout) until the saved setting
+  // (if any) loads.
+  //
+  // Loaded once on mount, not per `kind` - CollectionView is actually
+  // the same mounted component instance the whole time you're switching
+  // tabs (App.js just changes its `kind` prop, no `key` forces a
+  // remount - see App.js), so this state already carries over between
+  // tabs by itself; re-loading on every `kind` change would only
+  // overwrite that with whatever was saved before this became a shared
+  // setting, undoing the very thing this comment describes.
+  // (This was previously stored per-collection under `viewMode_${kind}`
+  // - those old rows are simply left unused now rather than migrated,
+  // since a view-mode default is low-stakes enough not to be worth the
+  // extra migration code.)
   const [viewMode, setViewMode] = useState('list');
 
   useEffect(() => {
     let cancelled = false;
     async function loadViewMode() {
-      const saved = await getSetting(`viewMode_${kind}`);
+      const saved = await getSetting('viewMode');
       if (!cancelled && (saved === 'list' || saved === 'tiles')) {
         setViewMode(saved);
-      } else if (!cancelled) {
-        setViewMode('list');
       }
     }
     loadViewMode();
     return () => {
       cancelled = true;
     };
-  }, [kind]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleSetViewMode(nextMode) {
     setViewMode(nextMode);
-    setSetting(`viewMode_${kind}`, nextMode);
+    setSetting('viewMode', nextMode);
   }
 
   // --- Filter state (moved here from FilterPanel.js so the toggle and
@@ -601,6 +614,8 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
               pendingFilters={pendingFilters}
               onTextFilterChange={handleTextFilterChange}
               onRangeFilterChange={handleRangeFilterChange}
+              starFilter={starFilter}
+              onStarFilterChange={onStarFilterChange}
             />
           ) : null
         }

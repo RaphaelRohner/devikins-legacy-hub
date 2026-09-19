@@ -7,15 +7,21 @@
  *   - Wrapping everything in a ThemeProvider, so light/dark mode is
  *     available to every screen (see src/context/ThemeContext.js).
  *   - Setting up the local database once, when the app starts.
- *   - Rendering the persistent top bar (search field + exact star-rating
- *     filter, see StarRating.js) shown above the Devikins/Weapons/
- *     Equipment screens, and the ☰ hamburger button underneath it that
- *     opens HamburgerMenu.js - a full-screen menu that replaced the old
- *     tab bar and the old Fetch/Update + Wallets buttons that used to
- *     sit at the top of the screen. See HamburgerMenu.js's own file
+ *   - Rendering the persistent top bar (search field + light/dark theme
+ *     toggle) shown above the Devikins/Weapons/Equipment screens, and
+ *     the ☰ hamburger button underneath it that opens HamburgerMenu.js -
+ *     a full-screen menu that replaced the old tab bar and the old
+ *     Fetch/Update + Wallets buttons that used to sit at the top of the
+ *     screen. The exact-match star-rating filter (StarRating.js) that
+ *     used to live in this top bar now lives inside each collection's
+ *     own Filters panel instead (FilterPanel.js), alongside the other
+ *     trait filters. See HamburgerMenu.js's own file
  *     comment for the six menu entries and what each one does.
  *   - Kicking off fetchAllForWallets.js when Fetch/Update is tapped (now
  *     from inside the menu), and tracking its progress/cancellation.
+ *     This is the ONLY way a fetch ever runs - there's no automatic
+ *     background fetching/retrying of any kind; nothing happens over
+ *     the network unless you tap Fetch/Update yourself.
  *   - Deciding which "screen" is currently showing: one of the three
  *     collection kinds (devikin/weapon/equipment), the Wallets
  *     management screen, or the Feedback form - see `currentScreen`
@@ -48,12 +54,11 @@ import {
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
-import { initDatabase, getWallets, countPendingRetries } from './src/db/database';
-import { fetchAllForWallets, retryPendingItemsForWallets } from './src/api/fetchAllForWallet';
+import { initDatabase, getWallets } from './src/db/database';
+import { fetchAllForWallets } from './src/api/fetchAllForWallet';
 import { COLLECTIONS } from './src/constants/schema';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import HamburgerMenu from './src/components/HamburgerMenu';
-import StarRating from './src/components/StarRating';
 import CollectionView from './src/components/CollectionView';
 import ProgressBar from './src/components/ProgressBar';
 import WalletManager from './src/components/WalletManager';
@@ -103,23 +108,6 @@ function AppContent() {
   // show the rest of the app until this is true, so nothing tries to
   // query a database that doesn't have its tables yet.
   const [isDatabaseReady, setIsDatabaseReady] = useState(false);
-
-  // How often to check for anything left unfinished (failed items,
-  // missing images) and quietly retry it in the background, how many
-  // times in a row to try at that fast pace, and how long to wait between
-  // attempts after that fast pace is used up. At one retry round per
-  // minute, 10 rounds is about 10 minutes of fast automatic retrying -
-  // after that, rather than giving up completely, it backs off to
-  // checking only once an hour, indefinitely, for as long as the app
-  // stays open. The idea: a brief blip deserves quick retries, but if
-  // something's still broken after 10 minutes straight, a longer-lived
-  // problem (like the metadata API being down, or - per your suspicion -
-  // something time-related on the game's own side) is more likely, and
-  // there's no point hammering it every minute forever. Tapping
-  // Fetch/Update manually always resets straight back to the fast pace.
-  const AUTO_RETRY_INTERVAL_MS = 60000;
-  const MAX_AUTO_RETRY_ROUNDS = 10;
-  const SLOW_RETRY_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
   // How long to keep the "Devikins Legacy" loading screen on screen at
   // minimum, in milliseconds. The database itself sets up almost
@@ -192,7 +180,11 @@ function AppContent() {
   // Devikins/Weapons/Equipment (searching "123" and then checking
   // another tab for the same search is the expected behavior, not a
   // bug - see CollectionView.js's own filter-reset effect, which
-  // deliberately does NOT touch these two).
+  // deliberately does NOT touch these two). The star filter's own
+  // control used to sit up here too, next to the search field; it's now
+  // rendered inside FilterPanel.js instead (see CollectionView.js, which
+  // passes starFilter/setStarFilter down that far) - only where it's
+  // DRAWN moved, this state and the query it feeds are unchanged.
   const [searchText, setSearchText] = useState('');
   const [starFilter, setStarFilter] = useState(0);
 
@@ -211,30 +203,11 @@ function AppContent() {
   // the database may have changed, please reload".
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Whether the background auto-retry timer is currently running a round,
-  // and what it's up to (shown via the same ProgressBar component the
-  // manual Fetch uses, so it looks consistent).
-  const [isRetrying, setIsRetrying] = useState(false);
-  const [retryProgress, setRetryProgress] = useState(null);
-
-  // True while EITHER a manual fetch or an automatic retry round is in
-  // flight - used to stop the two from ever overlapping (which could
-  // otherwise have both try to touch the same nonce at once).
+  // True while a manual fetch is in flight - kept as a ref (rather than
+  // just relying on `isFetching`) so handleFetchPress can check "is one
+  // already running?" synchronously at the very top of itself, before
+  // any state update has had a chance to re-render.
   const busyRef = useRef(false);
-
-  // How many automatic retry rounds have run in a row since the last
-  // manual Fetch, so we know when to switch from the fast (once a
-  // minute) pace to the slow (once an hour) one.
-  const retryRoundRef = useRef(0);
-
-  // The earliest time (a Date.now() timestamp in milliseconds) the next
-  // automatic retry attempt is allowed to run. Starts at 0, meaning "no
-  // wait, try as soon as there's something pending" - this is what lets
-  // one single timer (ticking every AUTO_RETRY_INTERVAL_MS) serve both
-  // the fast and slow paces, just by skipping ticks until this time is
-  // reached, rather than needing a second, separate timer for the hourly
-  // pace.
-  const nextRetryAtRef = useRef(0);
 
   // A plain mutable ref (not React state) that the in-progress fetch
   // checks between steps to know whether the user asked it to stop. It's
@@ -346,12 +319,6 @@ function AppContent() {
 
     cancelRequestedRef.current = false;
     busyRef.current = true;
-    // A fresh manual fetch always gets a full new budget of automatic
-    // retry rounds afterward, even if the previous ones had run out (and
-    // switches back to the fast once-a-minute pace, even if it had
-    // backed off to the slow hourly one).
-    retryRoundRef.current = 0;
-    nextRetryAtRef.current = 0;
     setIsFetching(true);
     setProgress({ phase: 'listing', label: 'your wallet' });
 
@@ -403,89 +370,6 @@ function AppContent() {
     setIsMenuOpen(false);
     handleFetchPress();
   }
-
-  // The automatic retry timer: every AUTO_RETRY_INTERVAL_MS, if nothing
-  // else is currently fetching, check whether any saved wallet has
-  // anything left unfinished (failed items, or items missing a cached
-  // image) and quietly retry just those - see
-  // retryPendingItemsForWallets in fetchAllForWallet.js. This is what
-  // fixes "some items stayed failed/imageless after the last Fetch"
-  // without the user having to keep tapping Fetch by hand.
-  useEffect(() => {
-    if (walletAddresses.length === 0) return undefined;
-
-    retryRoundRef.current = 0;
-    nextRetryAtRef.current = 0;
-
-    const intervalId = setInterval(async () => {
-      // Skip this tick entirely if something else is already running, or
-      // if we've backed off to the slow pace and it isn't time yet - this
-      // is the only difference from the original fast-only version: the
-      // timer itself still ticks every minute, but most of those ticks
-      // are no-ops once nextRetryAtRef has been pushed an hour out.
-      if (busyRef.current || Date.now() < nextRetryAtRef.current) {
-        return;
-      }
-
-      const pending = await countPendingRetries(walletAddresses);
-      if (pending.total === 0) {
-        // Fully caught up - reset both the round count and the pace, so
-        // a future problem gets a full fast burst of retry attempts
-        // again rather than starting from wherever the pace last left
-        // off.
-        retryRoundRef.current = 0;
-        nextRetryAtRef.current = 0;
-        return;
-      }
-
-      retryRoundRef.current += 1;
-      busyRef.current = true;
-      cancelRequestedRef.current = false;
-      setIsRetrying(true);
-
-      // Say up front what KIND of work this round is about to do - a
-      // full NFT refetch (metadata never came through) is a different,
-      // slower thing than just retrying an image, so it's worth being
-      // specific rather than a generic "N item(s)" count.
-      const summaryParts = [];
-      if (pending.failedCount > 0) {
-        summaryParts.push(`${pending.failedCount} NFT refetch${pending.failedCount === 1 ? '' : 'es'}`);
-      }
-      if (pending.missingImageCount > 0) {
-        summaryParts.push(`${pending.missingImageCount} image refetch${pending.missingImageCount === 1 ? '' : 'es'}`);
-      }
-      setRetryProgress({ phase: 'summary', label: `Retrying: ${summaryParts.join(' and ')}` });
-
-      try {
-        await retryPendingItemsForWallets(walletAddresses, {
-          onProgress: setRetryProgress,
-          shouldCancel: () => cancelRequestedRef.current,
-        });
-      } finally {
-        busyRef.current = false;
-        setIsRetrying(false);
-        setIsCancelling(false);
-        setRetryProgress(null);
-        setRefreshKey((key) => key + 1);
-
-        // Once the fast burst is used up, don't check again for another
-        // hour instead of giving up for good - see the constants' file
-        // comment above for why. This re-applies every hourly round too
-        // (not just the first time), so it keeps retrying once an hour
-        // indefinitely rather than only backing off once.
-        if (retryRoundRef.current >= MAX_AUTO_RETRY_ROUNDS) {
-          nextRetryAtRef.current = Date.now() + SLOW_RETRY_INTERVAL_MS;
-        }
-      }
-    }, AUTO_RETRY_INTERVAL_MS);
-
-    return () => clearInterval(intervalId);
-    // Re-runs whenever the actual set of wallet addresses changes (not on
-    // every unrelated re-render) - comparing the joined string is a
-    // simple, reliable way to depend on "the addresses themselves changed"
-    // rather than "the wallets array is a new reference".
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletAddresses.join(',')]);
 
   // react-native-safe-area-context's SafeAreaView (imported above)
   // correctly reserves space for the status bar / notch / Dynamic Island
@@ -568,15 +452,20 @@ function AppContent() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* The top search bar - search by NFT name/custom name or ID, plus
-          the exact-match 1-5 star filter (see StarRating.js's own
-          comment for why this one uses mode="exact" rather than the
-          usual cumulative star-rating look). Only shown once there's at
-          least one wallet - with nothing fetched yet there's nothing to
-          search or filter, same reasoning the old tab bar/CollectionView
-          used to decide whether to show themselves at all. */}
-      {walletAddresses.length > 0 && (
-        <View style={styles.searchRow}>
+      {/* The top row - search by NFT name/custom name or ID (only once
+          there's at least one wallet - with nothing fetched yet there's
+          nothing to search, same reasoning the old tab bar/
+          CollectionView used to decide whether to show themselves at
+          all), plus the light/dark theme toggle (moved up here, into
+          the same slot the star-rating filter used to occupy, now that
+          the star filter itself has moved down into each collection's
+          own Filters panel - see FilterPanel.js). The toggle itself is
+          NOT gated on having a wallet, unlike the search field - it
+          needs to stay reachable even on a brand-new install with
+          nothing added yet, same as it always was back when it lived on
+          menuRow below (which IS always rendered). */}
+      <View style={styles.searchRow}>
+        {walletAddresses.length > 0 && (
           <TextInput
             style={[styles.searchInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
             placeholder="Search by name or ID"
@@ -586,24 +475,7 @@ function AppContent() {
             autoCapitalize="none"
             autoCorrect={false}
           />
-          <StarRating value={starFilter} onChange={setStarFilter} mode="exact" size={18} />
-        </View>
-      )}
-
-      {/* The ☰ hamburger button (left) opens HamburgerMenu.js - see its
-          file comment for the six entries (Wallets, Fetch/Update,
-          Devikins, Weapons, Equipment, Feedback) that used to be spread
-          across the old Fetch/Wallets buttons and tab row. The dark-mode
-          toggle (right) is unchanged from before, just moved down onto
-          this row now that the row above it is taken up by search. */}
-      <View style={styles.menuRow}>
-        <TouchableOpacity
-          style={[styles.hamburgerButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
-          onPress={() => setIsMenuOpen(true)}
-        >
-          <Text style={[styles.hamburgerIcon, { color: colors.text }]}>☰</Text>
-        </TouchableOpacity>
-
+        )}
         <TouchableOpacity
           style={[styles.themeToggle, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
           onPress={toggleTheme}
@@ -615,19 +487,34 @@ function AppContent() {
         </TouchableOpacity>
       </View>
 
+      {/* The ☰ hamburger button opens HamburgerMenu.js - see its file
+          comment for the six entries (Wallets, Fetch/Update, Devikins,
+          Weapons, Equipment, Feedback) that used to be spread across the
+          old Fetch/Wallets buttons and tab row. This row used to also
+          hold the theme toggle on its right side; that's moved up onto
+          the search row above instead, so this row is just the one
+          button now. */}
+      <View style={styles.menuRow}>
+        <TouchableOpacity
+          style={[styles.hamburgerButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+          onPress={() => setIsMenuOpen(true)}
+        >
+          <Text style={[styles.hamburgerIcon, { color: colors.text }]}>☰</Text>
+        </TouchableOpacity>
+      </View>
+
       <HamburgerMenu
         visible={isMenuOpen}
         onClose={() => setIsMenuOpen(false)}
         walletCount={wallets.length}
         currentScreen={currentScreen}
-        isBusy={isFetching || isRetrying || walletAddresses.length === 0}
+        isBusy={isFetching || walletAddresses.length === 0}
         onSelectWallets={() => handleMenuSelectScreen('wallets')}
         onSelectFetch={handleMenuSelectFetch}
         onSelectScreen={handleMenuSelectScreen}
       />
 
       {isFetching && <ProgressBar progress={progress} onCancel={handleCancelPress} isCancelling={isCancelling} />}
-      {isRetrying && <ProgressBar progress={retryProgress} onCancel={handleCancelPress} isCancelling={isCancelling} />}
 
       {walletAddresses.length > 0 ? (
         <CollectionView
@@ -636,6 +523,7 @@ function AppContent() {
           refreshKey={refreshKey}
           searchText={searchText}
           starFilter={starFilter}
+          onStarFilterChange={setStarFilter}
         />
       ) : (
         !isFetching && (
@@ -726,8 +614,11 @@ const styles = StyleSheet.create({
   emptyStateMenuButton: {
     marginTop: 20,
   },
-  // The search bar row - a text input (search by name or ID) on the
-  // left, the exact-match star filter (StarRating.js) on the right.
+  // The top row - a text input (search by name or ID, once there's a
+  // wallet to search) and the light/dark theme toggle (always shown,
+  // even with no wallet yet - see the JSX comment above for why). Used
+  // to be the exact-match star filter here instead of the toggle - see
+  // FilterPanel.js, where that filter lives now.
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -746,12 +637,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  // The row directly under the search bar: the ☰ hamburger button on the
-  // left ("under search and top/left", per how this was designed), the
-  // theme toggle on the right.
+  // The row directly under the search bar: just the ☰ hamburger button
+  // ("under search and top/left", per how this was designed) - the
+  // theme toggle that used to share this row moved up onto the search
+  // row above instead.
   menuRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingBottom: 12,
@@ -769,8 +660,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // Same look the old theme toggle button always had - unchanged, just
-  // relocated onto menuRow now that Fetch/Update and Wallets have moved
-  // into the hamburger menu instead of sharing this row with it.
+  // relocated onto searchRow above (having previously been relocated
+  // onto menuRow, back when Fetch/Update and Wallets moved into the
+  // hamburger menu instead of sharing this row with it).
   themeToggle: {
     flexDirection: 'row',
     justifyContent: 'center',

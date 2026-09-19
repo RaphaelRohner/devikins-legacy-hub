@@ -8,10 +8,16 @@
  * a small, fixed list of canned answers about using THIS app (adding a
  * wallet, what Fetch/Update does, filters, ratings, feedback, etc.).
  * There's no language model here, no network call, no API key, nothing
- * that costs money or needs a backend - just plain keyword matching
- * against FAQ_ENTRIES below. A real AI chat (calling an actual LLM API)
- * would need a backend server to hold the API key safely and would cost
- * real money per message - a much bigger project than this.
+ * that costs money or needs a backend - just keyword matching against
+ * FAQ_ENTRIES below (see matchEntry/scoreEntry further down - it's a
+ * little smarter than plain substring matching: it tolerates small
+ * typos and simple word variations, e.g. "walet"/"wallets" both still
+ * find the wallet answer, without needing an exact keyword substring).
+ * A real AI chat (calling an actual LLM API) would need a backend
+ * server to hold the API key safely and would cost real money per
+ * message - a genuinely different, bigger project than this, and not
+ * what this screen is (asked about directly, and kept as a free,
+ * offline FAQ on purpose - see NOTES.md).
  *
  * Devi is upfront about all of this the moment you open the screen and
  * whenever it can't match your question - it should never come across
@@ -54,7 +60,7 @@ const FAQ_ENTRIES = [
   {
     id: 'add-wallet',
     question: 'How do I add a wallet?',
-    keywords: ['wallet', 'address', 'klv1'],
+    keywords: ['wallet', 'address', 'klv1', 'wallets', 'connect'],
     answer:
       "Open the ☰ menu and tap Wallets. Paste your Klever wallet address (starts with klv1...) and tap Add. You can add as many wallets as you like, and give each one a nickname from its Edit button.",
   },
@@ -63,19 +69,19 @@ const FAQ_ENTRIES = [
     question: 'What does Fetch/Update do?',
     keywords: ['fetch', 'update', 'scan', 'refresh', 'sync'],
     answer:
-      "It asks the Klever blockchain which Devikins, Weapons, and Equipment your wallet(s) hold, then downloads each one's details and picture. The first fetch takes the longest since nothing's cached yet - after that, it's much faster, and it also retries anything that failed automatically in the background.",
+      "It asks the Klever blockchain which Devikins, Weapons, and Equipment your wallet(s) hold, then downloads each one's details and picture. The first fetch takes the longest since nothing's cached yet - after that, it's much faster. There's no automatic background fetching - it only ever runs when you tap Fetch/Update yourself, so if anything's stuck, just tap it again.",
   },
   {
     id: 'deleted',
     question: "What does marking something 'Deleted' do?",
-    keywords: ['delete', 'deleted', 'hide', 'sold', 'restore'],
+    keywords: ['delete', 'deleted', 'hide', 'sold', 'restore', 'remove', 'traded'],
     answer:
       "It's a personal organizing flag only - nothing is removed from the blockchain, or even from this app's own database. It greys the item out (or hides it entirely if you switch on the Deleted filter) so your list stays tidy, and you can tap Restore on it any time. One thing to know: if you still hold the NFT, the next Fetch/Update will automatically un-delete it, since successfully re-fetching it is proof you still own it.",
   },
   {
     id: 'list-tiles',
     question: "What's the difference between List and Tiles view?",
-    keywords: ['list', 'tiles', 'grid', 'view'],
+    keywords: ['list', 'tiles', 'grid', 'view', 'layout'],
     answer:
       "List shows a picture plus a few key stats for each item; Tiles shows a compact grid of just the pictures, so you can scan a big collection faster. Each of Devikins/Weapons/Equipment remembers its own choice.",
   },
@@ -89,14 +95,14 @@ const FAQ_ENTRIES = [
   {
     id: 'name-rating',
     question: 'How do I give an NFT a nickname or rating?',
-    keywords: ['nickname', 'rate', 'rating', 'name this'],
+    keywords: ['nickname', 'rate', 'rating', 'name this', 'rename', 'stars'],
     answer:
       "Open its detail view - right above the Notes section you'll find a Name field and a row of 5 stars. Type a name and tap away from the field to save it; tap a star to rate it, or tap that same star again to clear the rating.",
   },
   {
     id: 'feedback',
     question: 'How do I send feedback or report a bug?',
-    keywords: ['feedback', 'bug', 'report', 'suggest', 'contact'],
+    keywords: ['feedback', 'bug', 'report', 'suggest', 'contact', 'email', 'request'],
     answer:
       "Open the ☰ menu and tap Feedback. Pick a category, write your message, and tap Open Email Draft - it opens your own email app with everything already filled in. You just need to hit Send yourself.",
   },
@@ -105,7 +111,7 @@ const FAQ_ENTRIES = [
     question: "Why does an item say 'Unavailable' or 'Fetch failed'?",
     keywords: ['unavailable', 'missing', 'failed', 'no image', 'no data'],
     answer:
-      "The game's own metadata service occasionally times out or has no data for an item yet. 'Fetch failed' items get retried automatically in the background (and again on your next Fetch/Update); 'Unavailable' means the service gave a clear 'this doesn't exist' answer, so it's treated as final and isn't retried.",
+      "The game's own metadata service occasionally times out or has no data for an item yet. 'Fetch failed' items get another try the next time you tap Fetch/Update (there's no automatic background retry, so it won't fix itself on its own); 'Unavailable' means the service gave a clear 'this doesn't exist' answer, so it's treated as final and isn't retried even then.",
   },
   {
     id: 'reset-data',
@@ -113,6 +119,27 @@ const FAQ_ENTRIES = [
     keywords: ['reset', 'wipe', 'start over', 'fresh install'],
     answer:
       "Open Wallets from the ☰ menu, scroll down to the Danger zone, and tap Reset All Data. This wipes every saved wallet, every stored NFT, and every downloaded image - back to exactly a fresh install. It can't be undone, though your real NFTs on the blockchain are never touched.",
+  },
+  {
+    id: 'automatic-retry',
+    question: 'Does the app retry failed items automatically?',
+    keywords: ['automatic', 'automatically', 'background retry', 'auto retry', 'retry'],
+    answer:
+      "No - not any more. Everything only ever happens when you tap Fetch/Update yourself; there's no automatic background fetching or retrying. If something's stuck 'Fetch failed' or missing its image, just tap Fetch/Update again and it'll get another try.",
+  },
+  {
+    id: 'theme-toggle',
+    question: "Where's the light/dark mode button?",
+    keywords: ['theme', 'dark mode', 'light mode', 'dark', 'light', 'appearance'],
+    answer:
+      "Next to the search bar at the very top of the screen - it shows a sun or moon icon. Tap it any time to flip between light and dark.",
+  },
+  {
+    id: 'multiple-wallets',
+    question: 'Can I add more than one wallet?',
+    keywords: ['multiple wallets', 'second wallet', 'another wallet', 'two wallets', 'many wallets'],
+    answer:
+      "Yes - open Wallets from the ☰ menu and add as many addresses as you like. Fetch/Update pulls Devikins, Weapons, and Equipment from all of them together, and you can give each wallet its own nickname from its Edit button.",
   },
   {
     id: 'who-are-you',
@@ -129,23 +156,95 @@ const GREETING =
 const FALLBACK_ANSWER =
   "I don't have an answer for that one - I'm just a lightweight offline helper with a fixed list of canned answers, not a real AI. Try one of the suggested questions below, or use Feedback from the ☰ menu to ask Raphael directly.";
 
-// Very simple keyword matching: score every FAQ entry by how many of its
-// keywords appear anywhere in the typed text (case-insensitive,
-// substring match - good enough for a small, fixed list like this), and
-// return whichever entry scores highest. No match at all (score 0
-// everywhere) returns null, which is when FALLBACK_ANSWER is used.
+// Lowercases and strips punctuation down to plain words separated by
+// single spaces - "What's Fetch/Update do??" becomes "what s fetch
+// update do", so matching below doesn't trip over apostrophes, slashes,
+// or extra punctuation the way a plain substring check would.
+function normalizeText(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Plain Levenshtein edit distance (how many single-character insertions/
+// deletions/substitutions turn one word into the other) - a small,
+// dependency-free way to tolerate typos like "walet" for "wallet"
+// without needing any real spell-checking library. Fine for this app's
+// tiny, fixed vocabulary; would be far too slow/crude for anything
+// bigger.
+function editDistance(a, b) {
+  const table = [Array.from({ length: b.length + 1 }, (_, j) => j)];
+  for (let i = 1; i <= a.length; i++) {
+    table.push([i, ...Array(b.length).fill(0)]);
+  }
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      table[i][j] = Math.min(
+        table[i - 1][j] + 1, // deletion
+        table[i][j - 1] + 1, // insertion
+        table[i - 1][j - 1] + cost // substitution
+      );
+    }
+  }
+  return table[a.length][b.length];
+}
+
+// How many typo'd characters to tolerate for a keyword of this length -
+// short words need a close match (one wrong letter in a 3-4 letter word
+// often changes its meaning entirely), longer ones can afford a bit more
+// slack.
+function maxTypoDistance(keywordLength) {
+  if (keywordLength <= 4) return 0;
+  if (keywordLength <= 7) return 1;
+  return 2;
+}
+
+// Does one typed word count as matching a single-word keyword - exact,
+// a plain prefix either direction ("wallet" typed for keyword "wallets"
+// or vice versa), or close enough to count as a typo?
+function wordMatchesKeyword(word, keyword) {
+  if (word === keyword) return true;
+  if (word.length >= 3 && keyword.startsWith(word)) return true;
+  if (keyword.length >= 3 && word.startsWith(keyword)) return true;
+  return editDistance(word, keyword) <= maxTypoDistance(keyword.length);
+}
+
+// Scores one FAQ entry against the typed text. A multi-word keyword
+// (e.g. "star filter", "fresh install") still needs to appear as a
+// substring, same as the original plain matching; a single-word keyword
+// (most of them) now also counts if any typed word is a close typo or
+// prefix of it, not just an exact substring - that's what lets "walet"
+// or "wallting" still find the wallet answer.
+function scoreEntry(entry, normalizedInput, inputWords) {
+  let score = 0;
+  for (const keyword of entry.keywords) {
+    const normalizedKeyword = normalizeText(keyword);
+    if (normalizedKeyword.includes(' ')) {
+      if (normalizedInput.includes(normalizedKeyword)) score += 1;
+    } else if (inputWords.some((word) => wordMatchesKeyword(word, normalizedKeyword))) {
+      score += 1;
+    }
+  }
+  return score;
+}
+
+// Finds whichever FAQ entry scores highest against the typed text (see
+// scoreEntry above) - still just keyword matching, not a real language
+// model, but forgiving of small typos and a bit of phrasing variation
+// rather than needing an exact keyword substring. No match at all
+// (score 0 everywhere) returns null, which is when FALLBACK_ANSWER is
+// used.
 function matchEntry(inputText) {
-  const normalized = inputText.toLowerCase();
+  const normalizedInput = normalizeText(inputText);
+  const inputWords = normalizedInput.split(' ').filter(Boolean);
   let bestEntry = null;
   let bestScore = 0;
 
   for (const entry of FAQ_ENTRIES) {
-    let score = 0;
-    for (const keyword of entry.keywords) {
-      if (normalized.includes(keyword)) {
-        score += 1;
-      }
-    }
+    const score = scoreEntry(entry, normalizedInput, inputWords);
     if (score > bestScore) {
       bestScore = score;
       bestEntry = entry;

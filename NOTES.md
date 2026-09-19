@@ -1519,6 +1519,123 @@ shortened to just the "‹" arrow on its own, in a small round icon button
 `onPress` behavior as before in every case - only the button's look
 changed.
 
+## Automatic background retry removed - fetching is manual-only now
+
+The background auto-retry timer described above (see "Automatic retry
+timer (background)" and "Retry banner now says which kind of retry is
+happening") has been removed from `App.js` entirely, per feedback that
+nothing should happen over the network unless Fetch/Update is actually
+tapped - a surprise background request wasn't worth the convenience of
+not having to tap Fetch/Update by hand again.
+
+Removed: the once-a-minute timer itself, its fast/slow pacing logic and
+constants, the `isRetrying`/`retryProgress` state, and the banner it used
+to show. `retryPendingItems`/`retryPendingItemsForWallets` (in
+`app/src/api/fetchAllForWallet.js`) and `countPendingRetries` (in
+`app/src/db/database.js`) are left in place, just unused for now, in
+case a manual "retry failed items" button is ever wanted later - they
+were already written to work from either an automatic timer or a manual
+tap, so no code needed to change there, only `App.js`'s own timer that
+called them.
+
+## Back buttons shortened to just "‹" (an arrow, not "‹ Back to Home")
+
+`WalletManager.js`, `CollectionView.js` (NFT detail view), `Feedback.js`,
+and `HelpAssistant.js` each have their own top-left back button that
+returns to whichever collection screen you came from. All four used to
+say "‹ Back to Home" in full (`CollectionView.js`'s was even briefly
+stretched edge-to-edge with that label, per even earlier feedback - see
+that file's own style comment); per later feedback, all four were
+shortened to just the "‹" arrow on its own, in a small round icon button
+(40x40, fully rounded) instead of a text pill/edge-to-edge button. Same
+`onPress` behavior as before in every case - only the button's look
+changed.
+
+## Star filter moved into Filters; theme toggle took its old spot
+
+The exact-match 1-5 star filter used to sit in the persistent top bar,
+next to the search field. Per feedback, it's moved down into each
+collection's own **Filters** panel (`FilterPanel.js`) instead, as a
+"Rating" row right at the top, above the data-derived trait filters -
+visually grouped with the other filters, since that's conceptually what
+it is, even though (like the search field) it still takes effect
+immediately rather than waiting for "Apply Filters". The light/dark
+theme toggle moved up into the spot the star filter used to occupy, in
+the top bar next to search.
+
+The underlying `starFilter` state (and the fact that it, like
+`searchText`, deliberately survives switching between Devikins/Weapons/
+Equipment) is unchanged - it still lives in `App.js` - only where the
+control for it is DRAWN moved. See `FilterPanel.js`'s and
+`CollectionView.js`'s own file comments.
+
+## List/Tiles is now one shared choice, not per-collection
+
+The List/Tiles toggle used to remember a separate choice for each of
+Devikins/Weapons/Equipment (picking Tiles for Devikins wouldn't affect
+Weapons). Per feedback that this was more confusing than useful, it's
+now a single shared choice: picking Tiles on any tab shows Tiles on all
+three. Turned out to be a smaller fix than expected - `CollectionView.js`
+is the same mounted component instance the whole time you're switching
+tabs (`App.js` just changes its `kind` prop), so the in-memory state was
+already shared; the only bug was that it re-loaded a per-collection
+value from the database every time `kind` changed, overwriting that
+shared value right back into three separate ones. Fixed by storing it
+under one shared settings key instead of `viewMode_${kind}`, and only
+loading it once on mount rather than on every `kind` change.
+
+## NFT nickname now needs an explicit "Save Name" tap
+
+The nickname field in Name & Rating used to save itself the moment you
+left the field (`onEndEditing`), with no separate button - reasoned at
+the time as "a plain rename doesn't carry the same weight as marking
+something deleted, so it doesn't need its own button." Per feedback,
+that was changed: a **Save Name** button now sits right below the field,
+greyed out/disabled whenever the typed text matches what's already
+saved, and is the only thing that actually writes to the database now -
+simply typing or tapping away no longer saves anything on its own. The
+star rating above it is unchanged (still saves the instant a star is
+tapped - picking a rating IS the action, there's no draft to separately
+commit).
+
+## Asked to make Devi "actually AI" - stayed offline on purpose
+
+Later asked to make Devi a real AI instead of "more an FAQ". Same
+tradeoff as when Devi was first built (see its own section above): a
+real AI chat needs its own API key from a provider (Anthropic, OpenAI,
+etc.), a small backend service to hold that key safely (an app can't
+ship with its own key baked in), and would cost real money per message
+on whoever's account the key belongs to - a genuinely different, bigger
+project than anything else in this app, not something to build silently
+as a small tweak.
+
+Given the choice between building that (real cost/infra, needs a
+provider + key decision first) or making the existing offline FAQ
+smarter instead, chose the free/offline option:
+
+- Matching (`matchEntry`/`scoreEntry` in `HelpAssistant.js`) went from
+  plain "does this exact keyword substring appear" to something a bit
+  more forgiving: typed text is normalized (lowercased, punctuation
+  stripped) and split into words, and a single-word keyword now also
+  matches a close typo or a plain prefix of it (via a small
+  hand-written `editDistance`/Levenshtein function), not just an exact
+  substring - so "walet", "wallting", or "automaticaly" still find the
+  right answer. Multi-word keywords (like "star filter") still need to
+  appear as a substring, same as before - fuzzy-matching a whole phrase
+  wasn't worth the added complexity for this small a FAQ.
+- Added three new entries that were missing given other recent changes:
+  whether retrying still happens automatically (it doesn't any more -
+  see above), where the light/dark toggle moved to, and whether more
+  than one wallet is supported.
+- Fixed two existing answers (Fetch/Update, and the Unavailable/Fetch
+  failed one) that had gone stale by still describing the automatic
+  background retry that was removed above - found while reviewing this
+  file for the AI question, not something anyone reported directly.
+
+If a real AI chat is ever wanted for real, that's its own conversation -
+it needs a decision on which provider/API key to use and a small hosted
+backend, before any app code changes.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
