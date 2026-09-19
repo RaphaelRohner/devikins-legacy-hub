@@ -253,15 +253,16 @@ notes below.
   non-collection screen (Feedback) exists too. **V2 navigation redesign:**
   the old always-visible Fetch/Update + Wallets buttons and the
   Devikins/Weapons/Equipment tab row are gone — all six of those actions
-  now live inside `HamburgerMenu.js`, opened by a ☰ button on its own row
-  at the very top of the screen (per feedback, moved above the row
-  below it - it used to be the other way around). Underneath that sits
-  a persistent search bar (search by name/ID) plus the light/dark theme
-  toggle — see `CollectionView.js` below for how the search text feeds
-  into `queryNfts`. The exact-match 1-5 star filter (`StarRating.js`,
-  `mode="exact"`) used to sit in this same top bar; it's since moved
-  down into `FilterPanel.js`, alongside the other filters, with the
-  theme toggle taking its old spot up here instead.
+  now live inside `HamburgerMenu.js`, opened by a ☰ button on the top
+  row's left, with the light/dark theme toggle on that same row's right
+  (per feedback, this row moved above the search row below it, and the
+  toggle moved onto it from the search row - both used to be laid out
+  the other way around). Underneath that sits a persistent search bar
+  (search by name/ID) — see `CollectionView.js` below for how the
+  search text feeds into `queryNfts`. The exact-match 1-5 star filter
+  (`StarRating.js`, `mode="exact"`) used to sit in this same top area;
+  it's since moved down into `FilterPanel.js`, alongside the other
+  filters.
   Both Wallets and Feedback still take over the whole screen exactly as
   Wallets always did, with their own "‹ Back to Home" button that
   returns to whichever collection screen (`lastCollectionScreen`) was

@@ -8,12 +8,13 @@
  *     available to every screen (see src/context/ThemeContext.js).
  *   - Setting up the local database once, when the app starts.
  *   - Rendering the persistent top bar shown above the Devikins/
- *     Weapons/Equipment screens: the ☰ hamburger button (opens
- *     HamburgerMenu.js, a full-screen menu that replaced the old tab
- *     bar and the old Fetch/Update + Wallets buttons that used to sit
- *     at the top of the screen) on its own row at the very top, then
- *     the search field + light/dark theme toggle row underneath it.
- *     The exact-match star-rating filter (StarRating.js) that
+ *     Weapons/Equipment screens: a top row with the ☰ hamburger button
+ *     on the left (opens HamburgerMenu.js, a full-screen menu that
+ *     replaced the old tab bar and the old Fetch/Update + Wallets
+ *     buttons that used to sit at the top of the screen) and the
+ *     light/dark theme toggle on the right, then the search field on
+ *     its own row underneath. The exact-match star-rating filter
+ *     (StarRating.js) that
  *     used to live in this top bar now lives inside each collection's
  *     own Filters panel instead (FilterPanel.js), alongside the other
  *     trait filters. See HamburgerMenu.js's own file
@@ -453,13 +454,16 @@ function AppContent() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* The ☰ hamburger button opens HamburgerMenu.js - see its file
-          comment for the six entries (Wallets, Fetch/Update, Devikins,
-          Weapons, Equipment, Feedback) that used to be spread across the
-          old Fetch/Wallets buttons and tab row. Sits above the search
-          row per feedback (it used to be the other way around); this
-          row also carries the extra top padding that clears the status
-          bar/notch, since it's the first thing on screen now. */}
+      {/* The ☰ hamburger button (opens HamburgerMenu.js - see its file
+          comment for the six entries that used to be spread across the
+          old Fetch/Wallets buttons and tab row) on the top-left, and the
+          light/dark theme toggle on the top-right of this same row, per
+          feedback - it used to share a row with the search field
+          instead. This row carries the extra top padding that clears
+          the status bar/notch, being the first thing on screen. The
+          toggle is NOT gated on having a wallet, unlike the search
+          field below - it needs to stay reachable even on a brand-new
+          install with nothing added yet. */}
       <View style={styles.menuRow}>
         <TouchableOpacity
           style={[styles.hamburgerButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
@@ -467,30 +471,7 @@ function AppContent() {
         >
           <Text style={[styles.hamburgerIcon, { color: colors.text }]}>☰</Text>
         </TouchableOpacity>
-      </View>
 
-      {/* Search by NFT name/custom name or ID (only once there's at
-          least one wallet - with nothing fetched yet there's nothing to
-          search, same reasoning the old tab bar/CollectionView used to
-          decide whether to show themselves at all), plus the light/dark
-          theme toggle (moved here from menuRow's right side a while
-          back, into the spot the star-rating filter used to occupy
-          before IT moved down into each collection's own Filters panel
-          - see FilterPanel.js). The toggle itself is NOT gated on
-          having a wallet, unlike the search field - it needs to stay
-          reachable even on a brand-new install with nothing added yet. */}
-      <View style={styles.searchRow}>
-        {walletAddresses.length > 0 && (
-          <TextInput
-            style={[styles.searchInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
-            placeholder="Search by name or ID"
-            placeholderTextColor={colors.secondaryText}
-            value={searchText}
-            onChangeText={setSearchText}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-        )}
         <TouchableOpacity
           style={[styles.themeToggle, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
           onPress={toggleTheme}
@@ -501,6 +482,29 @@ function AppContent() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Search by NFT name/custom name or ID - only shown once there's
+          at least one wallet, with nothing fetched yet there's nothing
+          to search, same reasoning the old tab bar/CollectionView used
+          to decide whether to show themselves at all (this whole row is
+          skipped rather than left empty in that case, now that the
+          theme toggle that used to always keep this row non-empty has
+          moved up onto menuRow above). The star-rating filter that used
+          to sit here too has moved down into each collection's own
+          Filters panel instead - see FilterPanel.js. */}
+      {walletAddresses.length > 0 && (
+        <View style={styles.searchRow}>
+          <TextInput
+            style={[styles.searchInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
+            placeholder="Search by name or ID"
+            placeholderTextColor={colors.secondaryText}
+            value={searchText}
+            onChangeText={setSearchText}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+      )}
 
       <HamburgerMenu
         visible={isMenuOpen}
@@ -613,18 +617,14 @@ const styles = StyleSheet.create({
   emptyStateMenuButton: {
     marginTop: 20,
   },
-  // A text input (search by name or ID, once there's a wallet to
-  // search) and the light/dark theme toggle (always shown, even with no
-  // wallet yet - see the JSX comment above for why). Used to be the
-  // exact-match star filter here instead of the toggle - see
-  // FilterPanel.js, where that filter lives now. Sits below menuRow
-  // (which now carries the status-bar clearance padding, being the
-  // first row on screen), so this one just needs its own small
-  // breathing room, not a big top gap.
+  // Just the search field now - the theme toggle that used to share
+  // this row moved up onto menuRow's top-right instead (see its own
+  // comment above). Sits below menuRow (which carries the status-bar
+  // clearance padding, being the first row on screen), so this one just
+  // needs its own small breathing room, not a big top gap.
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
     paddingHorizontal: 12,
     paddingTop: 4,
     paddingBottom: 10,
@@ -636,14 +636,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  // The very first row on screen: just the ☰ hamburger button (the
-  // theme toggle that used to share this row moved onto the search row
-  // below instead, a while back). Now that this is the top-most row,
-  // it carries the extra breathing room that used to live on searchRow,
-  // so the button isn't crowded by the phone's own status bar / notch /
-  // Dynamic Island controls.
+  // The very first row on screen: the ☰ hamburger button on the left,
+  // the light/dark theme toggle on the right (per feedback - it used to
+  // share a row with the search field below instead). Carries the extra
+  // breathing room that used to live on searchRow, so nothing here is
+  // crowded by the phone's own status bar / notch / Dynamic Island
+  // controls, since this is the top-most row now.
   menuRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingTop: 28,
