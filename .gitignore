@@ -48,3 +48,4 @@ _to_delete/
 
 # local Claude Code / assistant tooling config, not part of the app
 /app/.claude/
+V2-IDEAS.md

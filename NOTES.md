@@ -1247,8 +1247,11 @@ confirmed all four fixes plus the wider icon crop working correctly.
 Raphael's call: this is a solid V1.0 - everything in TESTING.md's full
 pass has been run against a real installed build, not just Expo Go.
 Ideas for anything further (a hamburger menu, and whatever else comes
-up) belong in a V2 rather than blocking this one - see
-`claude/v2-feature-ideas.md` in the project's claude.ai docs.
+up) belong in a V2 rather than blocking this one - see `V2-IDEAS.md`
+in this folder. Kept as a local-only file (listed in `.gitignore`,
+never committed) rather than part of the repo, since Raphael would
+rather it not show up on GitHub - the original, fuller copy still
+lives in the project's claude.ai docs.
 
 ## Version control and GitHub
 
