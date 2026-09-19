@@ -1438,8 +1438,10 @@ section (per how this was requested):
 ### Feedback form
 
 A sixth hamburger menu entry, `Feedback.js`: pick a category (Feature
-request / Bug report / Feedback), optionally give a name, write a
-message, and tap **Open Email Draft**. This builds a `mailto:` link
+request / Bug report / Feedback) from a dropdown - the same `Picker`
+pattern `FilterPanel.js` uses elsewhere, swapped in from an earlier row
+of three buttons - optionally give a name, write a message, and tap
+**Open Email Draft**. This builds a `mailto:` link
 (app name, version, category, name, and the message all pre-filled into
 the subject/body) and hands it to your phone's own email app via React
 Native's `Linking.openURL()` - you still have to tap Send yourself once
@@ -1493,14 +1495,29 @@ an offline FAQ-style helper, not a real AI:
   again whenever it can't match a question - it should never come
   across as smarter or more capable than a small fixed lookup table
   actually is.
-- Quick-question chips let you tap a question instead of typing it, for
-  the handful of things most worth asking about.
+- Every FAQ question and its answer are listed directly underneath one
+  another, always visible in the same screen (not hidden behind chips
+  you have to tap one at a time) - you can still type your own question
+  in the box at the bottom instead, if none of the listed ones fit.
 
 If you ever DO want the real thing (an actual AI chat inside the app),
 that's a genuinely different, bigger project - it needs a small backend
 service to hold an API key and proxy requests, plus a plan for who pays
 for the API usage. Worth its own conversation when/if you want to go
 there; it wasn't in scope for "downgraded".
+
+## Back buttons shortened to just "‹" (an arrow, not "‹ Back to Home")
+
+`WalletManager.js`, `CollectionView.js` (NFT detail view), `Feedback.js`,
+and `HelpAssistant.js` each have their own top-left back button that
+returns to whichever collection screen you came from. All four used to
+say "‹ Back to Home" in full (`CollectionView.js`'s was even briefly
+stretched edge-to-edge with that label, per even earlier feedback - see
+that file's own style comment); per later feedback, all four were
+shortened to just the "‹" arrow on its own, in a small round icon button
+(40x40, fully rounded) instead of a text pill/edge-to-edge button. Same
+`onPress` behavior as before in every case - only the button's look
+changed.
 
 ## App structure decisions (made while building)
 

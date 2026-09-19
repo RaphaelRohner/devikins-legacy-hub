@@ -27,7 +27,10 @@
  *
  * Same full-screen-takeover pattern as WalletManager.js/Feedback.js -
  * this is App.js's seventh "screen" (`currentScreen === 'help'`), opened
- * from the hamburger menu, with its own "‹ Back to Home" button.
+ * from the hamburger menu, with its own small round "‹" back button in
+ * the top-left corner (see Feedback.js's file comment - all four of
+ * these screens' back buttons were shortened from "‹ Back to Home" to
+ * just the arrow, per feedback).
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -195,7 +198,7 @@ export default function HelpAssistant({ onClose }) {
         style={[styles.backButton, { backgroundColor: colors.primary }]}
         onPress={onClose}
       >
-        <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹ Back to Home</Text>
+        <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹</Text>
       </TouchableOpacity>
 
       <Text style={[styles.title, { color: colors.text }]}>Devi</Text>
@@ -287,16 +290,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backButton: {
-    borderRadius: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     marginHorizontal: 12,
     marginVertical: 12,
     alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 24,
   },
   title: {
     fontSize: 22,

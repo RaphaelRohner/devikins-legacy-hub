@@ -21,8 +21,10 @@
  *
  * Like every other "screen" in this app (see App.js's own file comment),
  * this is a plain component App.js swaps in based on `currentScreen`,
- * with its own "‹ Back to Home" button - same pattern WalletManager.js
- * uses.
+ * with its own small round "‹" back button in the top-left corner (the
+ * same icon-only pattern used by WalletManager.js, CollectionView.js's
+ * detail view, and HelpAssistant.js - all four used to say "‹ Back to
+ * Home" in full, shortened to just the arrow per feedback).
  */
 
 import { useState } from 'react';
@@ -38,6 +40,7 @@ import {
   Linking,
   Alert,
 } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../context/ThemeContext';
 
 // A "+" alias of Raphael's own Gmail address - mail sent here lands in
@@ -49,10 +52,8 @@ const FEEDBACK_EMAIL = '[old feedback address removed]';
 const APP_NAME = 'Devikins Legacy Companion';
 
 // The three feedback categories - a name key/store id (used internally
-// and in the email body) and a friendlier label. Plain buttons rather
-// than a dropdown Picker (like FilterPanel.js uses elsewhere) since
-// there are only three, fixed, always-visible options - a row of
-// buttons is both quicker to pick from and doesn't need scrolling.
+// and in the email body) and a friendlier label. Shown as a dropdown
+// Picker, same pattern as FilterPanel.js elsewhere in the app.
 const CATEGORIES = [
   { key: 'feature', label: 'Feature request' },
   { key: 'bug', label: 'Bug report' },
@@ -99,7 +100,7 @@ export default function Feedback({ appVersion, onClose }) {
         style={[styles.backButton, { backgroundColor: colors.primary }]}
         onPress={onClose}
       >
-        <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹ Back to Home</Text>
+        <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹</Text>
       </TouchableOpacity>
 
       <Text style={[styles.title, { color: colors.text }]}>Feedback</Text>
@@ -113,25 +114,17 @@ export default function Feedback({ appVersion, onClose }) {
       >
         <ScrollView contentContainerStyle={styles.formContent}>
           <Text style={[styles.fieldLabel, { color: colors.text }]}>What kind of feedback is this?</Text>
-          <View style={styles.categoryRow}>
-            {CATEGORIES.map((entry) => {
-              const isSelected = category === entry.key;
-              return (
-                <TouchableOpacity
-                  key={entry.key}
-                  style={[
-                    styles.categoryButton,
-                    { backgroundColor: colors.surface, borderColor: colors.border },
-                    isSelected && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
-                  ]}
-                  onPress={() => setCategory(entry.key)}
-                >
-                  <Text style={[styles.categoryButtonText, { color: isSelected ? colors.primary : colors.text }]}>
-                    {entry.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+          <View style={[styles.pickerWrapper, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Picker
+              selectedValue={category}
+              onValueChange={setCategory}
+              style={{ color: colors.text }}
+              dropdownIconColor={colors.text}
+            >
+              {CATEGORIES.map((entry) => (
+                <Picker.Item key={entry.key} label={entry.label} value={entry.key} />
+              ))}
+            </Picker>
           </View>
 
           <Text style={[styles.fieldLabel, { color: colors.text }]}>Your name (optional)</Text>
@@ -178,16 +171,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backButton: {
-    borderRadius: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     marginHorizontal: 12,
     marginVertical: 12,
     alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 24,
   },
   title: {
     fontSize: 22,
@@ -209,21 +205,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 8,
   },
-  categoryRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 20,
-  },
-  categoryButton: {
+  pickerWrapper: {
     borderWidth: 1,
     borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  categoryButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
+    marginBottom: 20,
+    overflow: 'hidden',
   },
   input: {
     borderWidth: 1,

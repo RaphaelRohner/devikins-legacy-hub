@@ -13,7 +13,8 @@
  * CollectionView.js is the other example), this isn't a real navigation
  * stack - it's just App.js swapping what it renders based on its
  * `currentScreen` state (`currentScreen === 'wallets'`), with its own
- * "‹ Back to Home" button to swap back to whichever collection screen
+ * small round "‹" back button (top-left corner) to swap back to
+ * whichever collection screen
  * was showing before. See App.js's own file comment for why the whole
  * app is built this way instead of using a navigation library.
  *
@@ -151,7 +152,7 @@ export default function WalletManager({ wallets, onWalletsChanged, onClose }) {
         style={[styles.backButton, { backgroundColor: colors.primary }]}
         onPress={onClose}
       >
-        <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹ Back to Home</Text>
+        <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹</Text>
       </TouchableOpacity>
 
       <Text style={[styles.title, { color: colors.text }]}>Wallets</Text>
@@ -298,16 +299,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backButton: {
-    borderRadius: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     marginHorizontal: 12,
     marginVertical: 12,
     alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 24,
   },
   title: {
     fontSize: 22,

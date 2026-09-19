@@ -378,7 +378,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
           style={[styles.backButton, { backgroundColor: colors.primary }]}
           onPress={() => setSelectedNonce(null)}
         >
-          <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹ Back to Home</Text>
+          <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹</Text>
         </TouchableOpacity>
         <ScrollView contentContainerStyle={styles.detailScrollContent}>
           <NftCard kind={kind} nft={selectedRow} onNftUpdated={reloadRows} />
@@ -788,21 +788,24 @@ const styles = StyleSheet.create({
   // This is shared code, so the change applies to all three tabs at
   // once (Devikins, Weapons, Equipment all go through this same detail
   // view).
-  // Stretches edge-to-edge (minus the same side margins used elsewhere
-  // on screen) per feedback, rather than staying a small centered pill -
-  // alignItems: 'center' keeps its own label centered within that now-
-  // much-wider button.
+  // Was briefly stretched edge-to-edge with a full "‹ Back to Home"
+  // label per earlier feedback; shortened again to just a small round
+  // "‹" icon button (top-left corner) per later feedback, matching the
+  // same icon-only back button now used by WalletManager.js,
+  // Feedback.js, and HelpAssistant.js.
   backButton: {
-    borderRadius: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     marginHorizontal: 12,
     marginVertical: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   backButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 24,
   },
   detailScrollContent: {
     paddingBottom: 24,

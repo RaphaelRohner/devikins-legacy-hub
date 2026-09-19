@@ -187,8 +187,9 @@ For **each** of Devikins, Weapons, and Equipment:
 ### 10. Feedback (V2)
 
 - Open the ☰ menu → Feedback.
-- Pick each of the three categories (Feature request / Bug report /
-  Feedback) and confirm the selected one is visibly highlighted.
+- Tap the category dropdown and confirm all three options (Feature
+  request / Bug report / Feedback) are listed; pick one and confirm it
+  shows as selected.
 - Type a short message, tap **Open Email Draft** - your phone's email
   app should open with a new draft addressed to
   `[old feedback address removed]`, with the subject/body already
@@ -216,7 +217,8 @@ For **each** of Devikins, Weapons, and Equipment:
   confirm you get the friendly fallback message, not a crash or a made-
   up answer.
 - Confirm the screen scrolls to show the newest typed exchange, and
-  that "‹ Back to Home" returns you to whichever tab you were on.
+  that the "‹" back button (top-left corner) returns you to whichever
+  tab you were on.
 
 ## When to test
 
