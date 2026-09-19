@@ -1456,6 +1456,22 @@ that GitHub's commit-attribution noreply addresses are outbound-only -
 they can't receive or forward inbound email from anyone, so "email
 GitHub and have it land in my inbox" was never actually possible.
 
+## Bug fixed: Android's Back button quit the app from the home screen
+
+Pressing the system Back button/gesture while at the very top level (a
+collection screen's list view, no NFT detail view open, hamburger menu
+closed) used to exit the app immediately - a single accidental tap
+(especially easy now that Wallets/Feedback/Devi all live one extra tap
+"deeper" inside the hamburger menu than before) would close the whole
+app with no warning.
+
+Fixed with the standard Android pattern: the first Back press at that
+point now shows a brief "Press back again to exit" toast instead of
+exiting, and only a second Back press within 2 seconds actually quits.
+Lives in `App.js`'s existing `BackHandler` listener - see its own
+updated file comment for exactly where in the four-step priority order
+(menu → Wallets/Feedback/Devi → NFT detail view → this) it sits.
+
 ## "Devi" - an offline, in-app helper (a joke that turned into a small real feature)
 
 Asked, half-joking, for "a downgraded version of you" inside the app.

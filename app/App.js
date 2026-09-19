@@ -42,6 +42,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   BackHandler,
+  Platform,
+  ToastAndroid,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -125,6 +127,11 @@ function AppContent() {
   // would flash by too quickly to read - this holds it for a fixed
   // 3 seconds instead, per feedback to shorten it.
   const MIN_SPLASH_DURATION_MS = 3000;
+
+  // How long a second Back press (see the BackHandler effect below) has
+  // to land in, after the first one, to actually exit the app instead
+  // of just re-arming the "press again" toast.
+  const EXIT_CONFIRM_WINDOW_MS = 2000;
 
   // The full list of saved wallets (each { id, address, created_at }),
   // loaded from the database (see WalletManager.js for how they're
@@ -236,6 +243,14 @@ function AppContent() {
   // and that happens through isFetching/progress instead.
   const cancelRequestedRef = useRef(false);
 
+  // Timestamp (Date.now()) of the last Back press that reached the
+  // "genuinely nothing left to close" fallback below - i.e. you're on a
+  // collection screen's list view, with no detail view open and the
+  // hamburger menu closed. Powers the "press Back again to exit" double-
+  // tap confirmation just below, instead of a single accidental Back
+  // press quitting the app outright.
+  const lastExitBackPressAtRef = useRef(0);
+
   // Reloads the wallet list from the database - called once on startup,
   // and again every time WalletManager.js adds/edits/removes one, so this
   // component always has the current list.
@@ -272,15 +287,23 @@ function AppContent() {
   // currently "on top" instead of exiting the app straight away, in this
   // priority order:
   //   1. If the hamburger menu is open, close just the menu.
-  //   2. Else, if Wallets or Feedback is showing, go back to whichever
-  //      collection screen (devikin/weapon/equipment) was showing before
-  //      it was opened.
-  //   3. Otherwise, this component has nothing to close - step aside
-  //      (return false) and let CollectionView.js's OWN matching
-  //      listener handle closing an open NFT detail view, or let Android
-  //      do its normal thing (exit) if there's nothing open there either.
-  // The two listeners never conflict, since CollectionView isn't even
-  // mounted while Wallets/Feedback is showing (see the render logic
+  //   2. Else, if Wallets, Feedback, or Devi (Help) is showing, go back
+  //      to whichever collection screen (devikin/weapon/equipment) was
+  //      showing before it was opened.
+  //   3. Otherwise, step aside (return false) and let CollectionView.js's
+  //      OWN matching listener take its own shot first - it closes an
+  //      open NFT detail view if one's open, and its listener always
+  //      runs before this one (React Native calls the most-recently-
+  //      registered `hardwareBackPress` listener first, and CollectionView
+  //      is mounted further down the tree - see its own file comment).
+  //   4. If NEITHER of the above had anything to close, this really is
+  //      "nothing left, Android wants to exit the app" - rather than
+  //      quitting on a single accidental Back press, this requires a
+  //      second press within EXIT_CONFIRM_WINDOW_MS, showing a brief
+  //      "Press back again to exit" toast in between (the standard
+  //      Android pattern for exactly this situation).
+  // The listeners never conflict, since CollectionView isn't even
+  // mounted while Wallets/Feedback/Devi is showing (see the render logic
   // below).
   useEffect(() => {
     function handleBackPress() {
@@ -292,7 +315,26 @@ function AppContent() {
         goToScreen(lastCollectionScreen);
         return true; // handled - don't also exit the app
       }
-      return false; // nothing here to close - let Android/CollectionView handle it
+      // CollectionView.js's OWN BackHandler listener (registered further
+      // down the component tree) always gets first chance at a Back
+      // press - see its file comment. By the time execution reaches
+      // here, that already means there's no open NFT detail view to
+      // close either, so this really is "nothing left to close, Android
+      // wants to exit the app" - the exact moment a single accidental
+      // Back press used to just quit outright. Instead, require a
+      // second Back press within EXIT_CONFIRM_WINDOW_MS, with a toast
+      // in between - the standard Android "press back again to exit"
+      // pattern, so one stray tap on the home screen doesn't close the
+      // app on you.
+      const now = Date.now();
+      if (now - lastExitBackPressAtRef.current < EXIT_CONFIRM_WINDOW_MS) {
+        return false; // second press in time - let Android actually exit
+      }
+      lastExitBackPressAtRef.current = now;
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
+      }
+      return true; // swallow this first press
     }
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackPress);

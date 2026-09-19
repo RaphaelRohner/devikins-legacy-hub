@@ -53,7 +53,11 @@ button).
    the app.
 7. Toggle the light/dark mode button - colors should flip and stay
    readable.
-8. If nothing looks broken and nothing crashed, you're done.
+8. On a collection screen's list view (nothing else open), press the
+   system Back button/gesture once - you should see a brief "Press back
+   again to exit" toast, and the app should stay open. Press Back again
+   right away - now it should actually exit.
+9. If nothing looks broken and nothing crashed, you're done.
 
 ## Full pass (15-20 minutes)
 
