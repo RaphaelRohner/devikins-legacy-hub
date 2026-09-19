@@ -45,7 +45,7 @@ import NftTile from './NftTile';
 import DevikinSummaryRow from './DevikinSummaryRow';
 import WeaponSummaryRow from './WeaponSummaryRow';
 import EquipmentSummaryRow from './EquipmentSummaryRow';
-import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange, getSetting, setSetting } from '../db/database';
+import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange } from '../db/database';
 import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER } from '../constants/schema';
 import { useTheme } from '../context/ThemeContext';
 
@@ -59,7 +59,7 @@ const SUMMARY_ROW_COMPONENTS = {
   equipment: EquipmentSummaryRow,
 };
 
-export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange }) {
+export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list' }) {
   const { colors } = useTheme();
   const [filters, setFilters] = useState({});
   const [rows, setRows] = useState([]);
@@ -86,49 +86,13 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // meaningful for a kind listed in SUMMARY_ROW_COMPONENTS above.
   const [selectedNonce, setSelectedNonce] = useState(null);
 
-  // List vs. Tiles - ONE shared choice across Devikins/Weapons/Equipment
-  // (picking Tiles on one tab shows Tiles on the others too, per
-  // feedback that per-tab was more confusing than useful), and
-  // remembered across app restarts via the generic settings table in
-  // database.js (the same one theme/wallet-migration state already
-  // uses) rather than plain React state alone, so picking Tiles once
-  // doesn't reset back to List every time the app is reopened. Starts
-  // as 'list' (the original, unchanged layout) until the saved setting
-  // (if any) loads.
-  //
-  // Loaded once on mount, not per `kind` - CollectionView is actually
-  // the same mounted component instance the whole time you're switching
-  // tabs (App.js just changes its `kind` prop, no `key` forces a
-  // remount - see App.js), so this state already carries over between
-  // tabs by itself; re-loading on every `kind` change would only
-  // overwrite that with whatever was saved before this became a shared
-  // setting, undoing the very thing this comment describes.
-  // (This was previously stored per-collection under `viewMode_${kind}`
-  // - those old rows are simply left unused now rather than migrated,
-  // since a view-mode default is low-stakes enough not to be worth the
-  // extra migration code.)
-  const [viewMode, setViewMode] = useState('list');
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadViewMode() {
-      const saved = await getSetting('viewMode');
-      if (!cancelled && (saved === 'list' || saved === 'tiles')) {
-        setViewMode(saved);
-      }
-    }
-    loadViewMode();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function handleSetViewMode(nextMode) {
-    setViewMode(nextMode);
-    setSetting('viewMode', nextMode);
-  }
-
+  // List vs. Tiles - now owned by App.js and passed down as the
+  // `viewMode` prop (per feedback, its own toggle moved up onto the top
+  // search row, on the right side of the search field), rather than
+  // this component owning that state itself. Still ONE shared choice
+  // across Devikins/Weapons/Equipment either way - see App.js's own
+  // comment for the persistence/sharing details (previously explained
+  // here, back when this component owned the state directly).
   // --- Filter state (moved here from FilterPanel.js so the toggle and
   // Apply/Remove button can be pinned outside the scrollable list while
   // still sharing this same state with the rows rendered inside it -
@@ -487,38 +451,6 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // screen the whole time, however far you scroll.
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* List vs. Tiles - see the viewMode state/effect above. Its own
-          small row, separate from the filter bar below, since it always
-          applies (even to a collection with no filterable traits at
-          all), and inserting a third control into the already-tight
-          toggleRow below would crowd out "Show filters"/"Remove
-          filters" on narrower phones. */}
-      <View style={styles.viewModeBar}>
-        <TouchableOpacity
-          style={[
-            styles.viewModeButton,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-            viewMode === 'list' && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
-          ]}
-          onPress={() => handleSetViewMode('list')}
-        >
-          <Text style={[styles.viewModeButtonText, { color: viewMode === 'list' ? colors.primary : colors.secondaryText }]}>
-            List
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.viewModeButton,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-            viewMode === 'tiles' && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
-          ]}
-          onPress={() => handleSetViewMode('tiles')}
-        >
-          <Text style={[styles.viewModeButtonText, { color: viewMode === 'tiles' ? colors.primary : colors.secondaryText }]}>
-            Tiles
-          </Text>
-        </TouchableOpacity>
-      </View>
       {filterableColumnNames.length > 0 && (
         <View style={[styles.filterBar, { backgroundColor: colors.surfaceAlt }]}>
           {/* Normally everything fits on one row: "Show filters" on
@@ -641,25 +573,6 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  // The List/Tiles toggle row - see the JSX comment above for why it's
-  // its own separate bar rather than folded into filterBar's toggleRow.
-  viewModeBar: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingTop: 8,
-  },
-  viewModeButton: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  viewModeButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
   },
   // Spaces tiles evenly across each row of 3 (see FlatList's
   // columnWrapperStyle, only used in Tiles mode) - NftTile.js's own

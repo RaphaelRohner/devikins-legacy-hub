@@ -385,23 +385,22 @@ notes below.
   with first - it's a single on/off choice.
 
   **V2 additions:** this file now also accepts `searchText`/`starFilter`/
-  `onStarFilterChange` props from `App.js` and passes them straight
-  through to `queryNfts` (searchText/starFilter) and down into
+  `onStarFilterChange`/`viewMode` props from `App.js` and passes them
+  straight through to `queryNfts` (searchText/starFilter) and down into
   `FilterPanel.js` (starFilter/onStarFilterChange, which draws the
   actual Rating row - see that file's own notes below) alongside its own
   trait `filters` - unlike those trait filters, `searchText`/`starFilter`
   deliberately do NOT get reset by the kind-change effect above, since
   carrying a search across tabs (search "123", then check another
-  collection) is the expected behavior, not a bug. It also now owns a
-  **List/Tiles** toggle (`viewMode`, persisted via `getSetting`/
-  `setSetting` in `database.js` so it doesn't reset on app restart) —
-  ONE shared choice across Devikins/Weapons/Equipment (picking Tiles on
-  one tab shows Tiles on the others too - this works because `App.js`
-  never remounts `CollectionView` when you switch tabs, it just changes
-  its `kind` prop, so this state was always naturally shared in memory;
-  it's loaded from storage only once, on mount, rather than per `kind`,
-  so switching tabs can't overwrite it with a stale value). Tiles mode
-  renders `NftTile.js` in a 3-column grid via the `FlatList`'s
+  collection) is the expected behavior, not a bug. **List/Tiles**
+  (`viewMode`) used to be state this file owned itself, with its own
+  toggle row; per feedback moving that toggle up onto `App.js`'s search
+  row (to the right of the search field), the state moved up too -
+  `App.js` now owns it (persisted via `getSetting`/`setSetting` in
+  `database.js` so it doesn't reset on app restart) and this file just
+  receives the current value as a plain prop, read-only from here. Still
+  ONE shared choice across Devikins/Weapons/Equipment either way. Tiles
+  mode renders `NftTile.js` in a 3-column grid via the `FlatList`'s
   `numColumns` prop instead of the usual full-width summary rows. Since
   React Native doesn't support changing `numColumns` on an already-
   mounted `FlatList`, the list is `key`-ed by `viewMode` so toggling
@@ -443,18 +442,23 @@ notes below.
   Tapping it is what opens the full detail view (see CollectionView.js
   above). Greyed out (`opacity: 0.45`) with a small "Deleted" tag when
   `nft.deleted` is set - still tappable, so you can open it and hit
-  Restore.
+  Restore. If `nft.custom_name` is set, it also shows as a small pill
+  pinned to the row's top-right corner (`customNameBadge`) - per
+  feedback that a nickname should be visible from the overview list,
+  not just once you've opened the item's detail view.
 
 - **`components/WeaponSummaryRow.js`** — the same idea for the Weapons
   tab: picture on the left, its ID then Rarity/Type/Quality stacked on
   the right. Tapping it opens that weapon's full `NftCard` detail view.
-  Same greyed-out/"Deleted" tag treatment as DevikinSummaryRow.js above.
+  Same greyed-out/"Deleted" tag treatment, and the same top-right
+  custom-name badge, as DevikinSummaryRow.js above.
 
 - **`components/EquipmentSummaryRow.js`** — the same idea again for the
   Equipment tab: picture on the left, its ID then Rarity/Type/Quality
   stacked on the right (a first-pass field choice, expected to be
   revisited). Tapping it opens that item's full `NftCard` detail view.
-  Same greyed-out/"Deleted" tag treatment as the other two summary rows.
+  Same greyed-out/"Deleted" tag treatment, and the same top-right
+  custom-name badge, as the other two summary rows.
 
 - **`components/NftCard.js`** — one NFT's full detail view: its image (or
   a placeholder if the image is missing or the NFT's status isn't `ok`),
@@ -506,12 +510,14 @@ notes below.
   `queryNfts`'s `searchText`/`starRating` parameters.
 
 - **`components/NftTile.js`** (V2) — the compact square tile shown for
-  each NFT in "Tiles" view (see `CollectionView.js`'s view-mode toggle
-  above): just the picture and its ID, greyed out with a "Deleted" tag
-  the same way the summary rows are - deliberately minimal, since the
-  whole point of a grid view is fitting more on screen at a glance.
-  Tapping one opens the same full `NftCard` detail view "List" view
-  does.
+  each NFT in "Tiles" view (see `App.js`'s List/Tiles toggle, passed
+  down through `CollectionView.js`'s `viewMode` prop): just the picture
+  and its ID, greyed out with a "Deleted" tag the same way the summary
+  rows are - deliberately minimal, since the whole point of a grid view
+  is fitting more on screen at a glance. One exception, same as the
+  summary rows: a custom nickname, if set, shows as a small pill pinned
+  to the tile's own top-right corner. Tapping one opens the same full
+  `NftCard` detail view "List" view does.
 
 - **`components/Feedback.js`** (V2) — the "Feedback" screen, the sixth
   hamburger menu entry. Builds a `mailto:` link (app name/version,

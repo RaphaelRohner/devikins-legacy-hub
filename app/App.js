@@ -56,7 +56,7 @@ import {
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
-import { initDatabase, getWallets } from './src/db/database';
+import { initDatabase, getWallets, getSetting, setSetting } from './src/db/database';
 import { fetchAllForWallets } from './src/api/fetchAllForWallet';
 import { COLLECTIONS } from './src/constants/schema';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -189,6 +189,39 @@ function AppContent() {
   // DRAWN moved, this state and the query it feeds are unchanged.
   const [searchText, setSearchText] = useState('');
   const [starFilter, setStarFilter] = useState(0);
+
+  // List vs. Tiles - ONE shared choice across Devikins/Weapons/Equipment
+  // (picking Tiles on one tab shows Tiles on the others too, per
+  // feedback that per-tab was more confusing than useful), remembered
+  // across app restarts via the generic settings table in database.js
+  // (the same one theme/wallet-migration state already uses). Lives
+  // here rather than in CollectionView.js, per feedback moving its own
+  // toggle up onto this top search row (on the right, next to the
+  // search field) - CollectionView.js just receives the current value
+  // as a plain `viewMode` prop now, it doesn't own this state itself
+  // any more. Starts as 'list' until the saved setting (if any) loads,
+  // and is loaded once here on mount - not per collection/tab - since
+  // it's one shared value, not a per-kind one.
+  const [viewMode, setViewMode] = useState('list');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadViewMode() {
+      const saved = await getSetting('viewMode');
+      if (!cancelled && (saved === 'list' || saved === 'tiles')) {
+        setViewMode(saved);
+      }
+    }
+    loadViewMode();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function handleSetViewMode(nextMode) {
+    setViewMode(nextMode);
+    setSetting('viewMode', nextMode);
+  }
 
   // Progress info from fetchAllForWallets.js's onProgress callback, and
   // whether a fetch is currently running at all.
@@ -483,15 +516,18 @@ function AppContent() {
         </TouchableOpacity>
       </View>
 
-      {/* Search by NFT name/custom name or ID - only shown once there's
-          at least one wallet, with nothing fetched yet there's nothing
-          to search, same reasoning the old tab bar/CollectionView used
-          to decide whether to show themselves at all (this whole row is
-          skipped rather than left empty in that case, now that the
-          theme toggle that used to always keep this row non-empty has
-          moved up onto menuRow above). The star-rating filter that used
-          to sit here too has moved down into each collection's own
-          Filters panel instead - see FilterPanel.js. */}
+      {/* Search by NFT name/custom name or ID, plus the List/Tiles
+          toggle on the right (moved up here from its own row inside
+          CollectionView.js, per feedback) - both only shown once
+          there's at least one wallet, with nothing fetched yet there's
+          nothing to search or view either way, same reasoning the old
+          tab bar/CollectionView used to decide whether to show
+          themselves at all (this whole row is skipped rather than left
+          empty in that case, now that the theme toggle that used to
+          always keep this row non-empty has moved up onto menuRow
+          above). The star-rating filter that used to sit here too has
+          moved down into each collection's own Filters panel instead -
+          see FilterPanel.js. */}
       {walletAddresses.length > 0 && (
         <View style={styles.searchRow}>
           <TextInput
@@ -503,6 +539,32 @@ function AppContent() {
             autoCapitalize="none"
             autoCorrect={false}
           />
+          <View style={styles.viewModeGroup}>
+            <TouchableOpacity
+              style={[
+                styles.viewModeButton,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+                viewMode === 'list' && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
+              ]}
+              onPress={() => handleSetViewMode('list')}
+            >
+              <Text style={[styles.viewModeButtonText, { color: viewMode === 'list' ? colors.primary : colors.secondaryText }]}>
+                List
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.viewModeButton,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+                viewMode === 'tiles' && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
+              ]}
+              onPress={() => handleSetViewMode('tiles')}
+            >
+              <Text style={[styles.viewModeButtonText, { color: viewMode === 'tiles' ? colors.primary : colors.secondaryText }]}>
+                Tiles
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -527,6 +589,7 @@ function AppContent() {
           searchText={searchText}
           starFilter={starFilter}
           onStarFilterChange={setStarFilter}
+          viewMode={viewMode}
         />
       ) : (
         !isFetching && (
@@ -617,14 +680,16 @@ const styles = StyleSheet.create({
   emptyStateMenuButton: {
     marginTop: 20,
   },
-  // Just the search field now - the theme toggle that used to share
-  // this row moved up onto menuRow's top-right instead (see its own
-  // comment above). Sits below menuRow (which carries the status-bar
-  // clearance padding, being the first row on screen), so this one just
-  // needs its own small breathing room, not a big top gap.
+  // The search field plus the List/Tiles toggle on the right (moved up
+  // here from CollectionView.js, per feedback) - the theme toggle that
+  // used to share this row moved up onto menuRow's top-right instead
+  // (see its own comment above). Sits below menuRow (which carries the
+  // status-bar clearance padding, being the first row on screen), so
+  // this one just needs its own small breathing room, not a big top gap.
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     paddingHorizontal: 12,
     paddingTop: 4,
     paddingBottom: 10,
@@ -635,6 +700,22 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
+  },
+  // The List/Tiles pair, grouped so they move as one unit at the right
+  // end of searchRow rather than each needing their own gap handling.
+  viewModeGroup: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  viewModeButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  viewModeButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   // The very first row on screen: the ☰ hamburger button on the left,
   // the light/dark theme toggle on the right (per feedback - it used to

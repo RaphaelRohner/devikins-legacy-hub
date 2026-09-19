@@ -1636,6 +1636,35 @@ If a real AI chat is ever wanted for real, that's its own conversation -
 it needs a decision on which provider/API key to use and a small hosted
 backend, before any app code changes.
 
+## Top bar rearranged again: hamburger+theme on top, search+List/Tiles below
+
+Continuing feedback on the top bar's layout (see the star-filter/theme-
+toggle section above): the ☰ hamburger button now sits on its own row at
+the very top of the screen, with the light/dark theme toggle on that
+same row's right side (top-right corner) - both used to share a row
+with the search field instead. Underneath that, the search field now
+shares its row with the **List/Tiles** toggle on the right, which moved
+up here from its own separate row inside `CollectionView.js`.
+
+Moving List/Tiles required lifting its state up from `CollectionView.js`
+into `App.js` (same pattern the star filter went through earlier):
+`viewMode` and its `getSetting`/`setSetting` persistence now live in
+`App.js`, which passes the current value down to `CollectionView.js` as
+a plain `viewMode` prop - that file no longer owns this state itself,
+just reads it. It's still one shared choice across Devikins/Weapons/
+Equipment, same as before this move.
+
+## Custom nicknames now show in the overview, not just the detail view
+
+A nickname given via Name & Rating (see the V2 section above) used to
+only be visible once you opened an NFT's detail view - the overview
+list/tiles gave no hint anything had been named. Per feedback, named
+items are now recognizable at a glance: `DevikinSummaryRow.js`,
+`WeaponSummaryRow.js`, `EquipmentSummaryRow.js`, and `NftTile.js` all
+now show `custom_name` (when set) as a small pill pinned to the item's
+top-right corner - the row's corner in List view, the tile's corner in
+Tiles view. Nothing shows at all for an NFT with no nickname given.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth

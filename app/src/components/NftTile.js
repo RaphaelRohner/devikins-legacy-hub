@@ -12,7 +12,11 @@
  * Deliberately as minimal as the summary rows, per the same "don't
  * repeat what you'd need to tap in to see anyway" reasoning - just the
  * image and the ID, so more items fit on screen at once, which is the
- * whole point of a tiles/grid view over a list.
+ * whole point of a tiles/grid view over a list. One exception: a custom
+ * nickname (see NftCard.js's Name field), if one's been given, shows as
+ * a small pill in the tile's top-right corner - same reasoning as the
+ * summary rows (DevikinSummaryRow.js etc.) - a named item should be
+ * recognizable from the overview without opening it.
  */
 
 import { useEffect, useState } from 'react';
@@ -55,6 +59,13 @@ export default function NftTile({ nft, onPress }) {
       activeOpacity={0.7}
     >
       {image}
+      {nft.custom_name ? (
+        <View style={[styles.customNameBadge, { backgroundColor: colors.chipBackground, borderColor: colors.border }]}>
+          <Text style={[styles.customNameBadgeText, { color: colors.primary }]} numberOfLines={1}>
+            {nft.custom_name}
+          </Text>
+        </View>
+      ) : null}
       {isDeleted && (
         <Text style={[styles.deletedTag, { color: colors.cancelText }]}>Deleted</Text>
       )}
@@ -77,6 +88,23 @@ const styles = StyleSheet.create({
   },
   deletedTile: {
     opacity: 0.45,
+  },
+  // Same idea as the summary rows' customNameBadge (see
+  // DevikinSummaryRow.js) - pinned to the tile's top-right corner
+  // instead of the whole row's, since a tile is much smaller.
+  customNameBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    maxWidth: '80%',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    borderWidth: 1,
+  },
+  customNameBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
   },
   thumbnail: {
     width: '100%',

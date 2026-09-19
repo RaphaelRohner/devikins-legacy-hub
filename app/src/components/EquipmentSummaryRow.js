@@ -10,6 +10,8 @@
  * Rarity / Type / Quality again, for consistency with Weapons - this is
  * a first pass, easy to swap once you've had a chance to think about
  * which fields you actually want to see at a glance here.
+ * A custom nickname, if one's been given, shows as a small pill in the
+ * row's top-right corner too - see DevikinSummaryRow.js's own comment.
  */
 
 import { useEffect, useState } from 'react';
@@ -76,6 +78,13 @@ export default function EquipmentSummaryRow({ nft, onPress }) {
       activeOpacity={0.7}
     >
       {image}
+      {nft.custom_name ? (
+        <View style={[styles.customNameBadge, { backgroundColor: colors.chipBackground, borderColor: colors.border }]}>
+          <Text style={[styles.customNameBadgeText, { color: colors.primary }]} numberOfLines={1}>
+            {nft.custom_name}
+          </Text>
+        </View>
+      ) : null}
       <View style={styles.infoColumn}>
         {isDeleted && (
           <Text style={[styles.deletedTag, { color: colors.cancelText }]}>Deleted</Text>
@@ -117,6 +126,24 @@ const styles = StyleSheet.create({
   // theme colors.
   deletedRow: {
     opacity: 0.45,
+  },
+  // The custom nickname (see NftCard.js's Name field), shown here too
+  // so a named item is identifiable from the overview list without
+  // opening it - a small pill pinned to the row's top-right corner,
+  // only rendered at all when a nickname has actually been given.
+  customNameBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    maxWidth: 120,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  customNameBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   deletedTag: {
     fontSize: 12,

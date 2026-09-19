@@ -48,16 +48,17 @@ button).
    list should narrow further. Tap **Remove filters ✕** - it should go
    back to showing everything except the search text and star rating,
    which should still apply on top of that.
-5. Tap the **List/Tiles** toggle - the layout should switch between the
-   normal picture-plus-traits rows and a compact grid of just pictures.
-   Switch to a different tab (Devikins/Weapons/Equipment) - it should
-   still be showing the same List/Tiles choice, not reset back to List.
+5. Tap the **List/Tiles** toggle (top-right of the search row) - the
+   layout should switch between the normal picture-plus-traits rows and
+   a compact grid of just pictures. Switch to a different tab (Devikins/
+   Weapons/Equipment) - it should still be showing the same List/Tiles
+   choice, not reset back to List.
 6. Tap an NFT in the list (or a tile) - its detail view should open. Use
    the phone's **system Back button/gesture** to close it (not just the
    app's own back button) - you should land back on the list, not leave
    the app.
-7. Toggle the light/dark mode button (next to the search field, at the
-   top) - colors should flip and stay readable.
+7. Toggle the light/dark mode button (top-right of the very first row,
+   next to the ☰ menu button) - colors should flip and stay readable.
 8. On a collection screen's list view (nothing else open), press the
    system Back button/gesture once - you should see a brief "Press back
    again to exit" toast, and the app should stay open. Press Back again
@@ -204,6 +205,9 @@ For **each** of Devikins, Weapons, and Equipment:
 - Run **Fetch/Update** again and confirm both the name and the rating
   survive the re-fetch (same underlying fix as section 6 above - these
   two columns are just as local/user-entered as `deleted`/`comment`).
+- Go back to the overview (list or tiles) and confirm the nickname shows
+  as a small pill in that item's top-right corner - without opening it.
+  An NFT with no nickname given should show no pill at all.
 
 ### 10. Feedback (V2)
 
