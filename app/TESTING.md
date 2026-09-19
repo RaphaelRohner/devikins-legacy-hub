@@ -206,14 +206,16 @@ For **each** of Devikins, Weapons, and Equipment:
 - Open the ☰ menu → Ask Devi (Help).
 - Confirm the greeting message is there and clearly says it's not a
   real AI.
-- Tap a couple of the quick-question chips and confirm each gives its
-  matching canned answer.
-- Type something close to one of the chip questions in your own words
-  (e.g. "how do stars work") and confirm it still matches sensibly.
+- Scroll down and confirm every FAQ question is listed with its answer
+  directly underneath it, one after another (not hidden behind
+  anything you have to tap first).
+- Type one of the FAQ questions in your own words (e.g. "how do stars
+  work") into the box at the bottom and confirm it still matches
+  sensibly, appending as a new exchange above the FAQ list.
 - Type something completely unrelated (e.g. "what's the weather") and
   confirm you get the friendly fallback message, not a crash or a made-
   up answer.
-- Confirm the chat scrolls to show the newest message as you go, and
+- Confirm the screen scrolls to show the newest typed exchange, and
   that "‹ Back to Home" returns you to whichever tab you were on.
 
 ## When to test

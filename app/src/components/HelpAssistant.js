@@ -17,6 +17,14 @@
  * whenever it can't match your question - it should never come across
  * as more capable than it actually is.
  *
+ * Every FAQ_ENTRIES question/answer pair is shown as a plain, always-
+ * visible list - each answer stacked directly under its own question,
+ * one after another - rather than hidden behind tappable chips you'd
+ * have to try one at a time to see what's there. The free-text input at
+ * the bottom still exists for anything not already covered, and typed
+ * questions get their own answer appended below the list as a small
+ * chat exchange.
+ *
  * Same full-screen-takeover pattern as WalletManager.js/Feedback.js -
  * this is App.js's seventh "screen" (`currentScreen === 'help'`), opened
  * from the hamburger menu, with its own "‹ Back to Home" button.
@@ -181,10 +189,6 @@ export default function HelpAssistant({ onClose }) {
     setInputText('');
   }
 
-  function handleQuickQuestion(entry) {
-    respondTo(entry.question);
-  }
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <TouchableOpacity
@@ -228,21 +232,25 @@ export default function HelpAssistant({ onClose }) {
               </View>
             );
           })}
-        </ScrollView>
 
-        <View style={styles.quickQuestionsWrap}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickQuestionsRow}>
+          {/* The full FAQ, always visible - every question with its
+              answer listed directly underneath it, one after another,
+              rather than behind tappable chips you'd have to try one at
+              a time to see what's there. Typing your own question below
+              still works and appends its own answer as a chat bubble
+              above this list. */}
+          <View style={[styles.faqSection, { borderTopColor: colors.border }]}>
+            <Text style={[styles.faqSectionTitle, { color: colors.secondaryText }]}>
+              Frequently asked
+            </Text>
             {FAQ_ENTRIES.map((entry) => (
-              <TouchableOpacity
-                key={entry.id}
-                style={[styles.quickQuestionChip, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                onPress={() => handleQuickQuestion(entry)}
-              >
-                <Text style={[styles.quickQuestionText, { color: colors.primary }]}>{entry.question}</Text>
-              </TouchableOpacity>
+              <View key={entry.id} style={styles.faqEntry}>
+                <Text style={[styles.faqQuestion, { color: colors.primary }]}>{entry.question}</Text>
+                <Text style={[styles.faqAnswer, { color: colors.text }]}>{entry.answer}</Text>
+              </View>
             ))}
-          </ScrollView>
-        </View>
+          </View>
+        </ScrollView>
 
         <View style={styles.inputRow}>
           <TextInput
@@ -329,24 +337,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  quickQuestionsWrap: {
+  // The always-visible FAQ list - see the JSX comment above. Sits
+  // inside the same scrollable area as the chat bubbles, set off by its
+  // own top border and a small muted section title.
+  faqSection: {
+    marginTop: 12,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: 'transparent',
-    paddingTop: 8,
   },
-  quickQuestionsRow: {
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  quickQuestionChip: {
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  quickQuestionText: {
+  faqSectionTitle: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  faqEntry: {
+    marginBottom: 16,
+  },
+  faqQuestion: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  faqAnswer: {
+    fontSize: 13,
+    lineHeight: 19,
   },
   inputRow: {
     flexDirection: 'row',
