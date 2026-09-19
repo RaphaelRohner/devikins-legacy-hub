@@ -197,6 +197,21 @@ For **each** of Devikins, Weapons, and Equipment:
   get a clear alert with the feedback address and your message, instead
   of a silent failure or crash.
 
+### 11. Devi, the offline helper (V2)
+
+- Open the ☰ menu → Ask Devi (Help).
+- Confirm the greeting message is there and clearly says it's not a
+  real AI.
+- Tap a couple of the quick-question chips and confirm each gives its
+  matching canned answer.
+- Type something close to one of the chip questions in your own words
+  (e.g. "how do stars work") and confirm it still matches sensibly.
+- Type something completely unrelated (e.g. "what's the weather") and
+  confirm you get the friendly fallback message, not a crash or a made-
+  up answer.
+- Confirm the chat scrolls to show the newest message as you go, and
+  that "‹ Back to Home" returns you to whichever tab you were on.
+
 ## When to test
 
 - **Quick pass**: after a small visual/wording tweak, or a change scoped

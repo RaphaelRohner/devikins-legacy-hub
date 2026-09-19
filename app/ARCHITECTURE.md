@@ -292,12 +292,12 @@ notes below.
 - **`components/HamburgerMenu.js`** (V2) — the full-screen menu opened by
   `App.js`'s ☰ button, replacing the old tab row plus the Fetch/Update
   and Wallets buttons. A plain full-screen `Modal` (the same component
-  `NftCard.js` uses for its fullscreen image viewer) listing six entries:
-  Wallets (with a live wallet count), Fetch/Update (an action, not a
-  screen — it closes the menu and starts a scan without changing what's
-  showing), then Devikins/Weapons/Equipment/Feedback (each just sets
-  `App.js`'s `currentScreen`). The entry matching the currently-showing
-  collection screen is outlined to show where you are.
+  `NftCard.js` uses for its fullscreen image viewer) listing seven
+  entries: Wallets (with a live wallet count), Fetch/Update (an action,
+  not a screen — it closes the menu and starts a scan without changing
+  what's showing), then Devikins/Weapons/Equipment/Feedback/Ask Devi
+  (each just sets `App.js`'s `currentScreen`). The entry matching the
+  currently-showing collection screen is outlined to show where you are.
 
 - **`components/StarRating.js`** (V2) — a shared row of five tappable ★
   stars used in two places with different meanings, picked via a `mode`
@@ -495,6 +495,20 @@ notes below.
   addresses are outbound-only and can't actually forward anything
   inbound. If no email app is available, falls back to an alert showing
   the feedback address and the full message text to copy by hand.
+
+- **`components/HelpAssistant.js`** ("Devi", V2) — a small, entirely
+  offline, explicitly-not-a-real-AI helper, added on request for "a
+  downgraded version of you" in the app. A chat-shaped screen (the
+  seventh hamburger menu entry) that matches whatever you type against
+  a fixed list of question/keyword/answer entries (`FAQ_ENTRIES`) about
+  using this app - adding a wallet, what Fetch/Update does, filters,
+  List/Tiles, naming/rating an NFT, sending feedback, the Deleted
+  behavior, resetting data, and "who are you". Matching is plain
+  keyword-in-text scoring (`matchEntry`) - no language model, no network
+  call, no API key, nothing that costs money. Quick-question chips above
+  the text input let you tap a question instead of typing it. Says so
+  itself, in its own greeting and whenever nothing matches
+  (`FALLBACK_ANSWER`) - it should never seem more capable than it is.
 
 ## Where the traits actually came from
 

@@ -1456,6 +1456,36 @@ that GitHub's commit-attribution noreply addresses are outbound-only -
 they can't receive or forward inbound email from anyone, so "email
 GitHub and have it land in my inbox" was never actually possible.
 
+## "Devi" - an offline, in-app helper (a joke that turned into a small real feature)
+
+Asked, half-joking, for "a downgraded version of you" inside the app.
+The honest, buildable version of that request is `HelpAssistant.js` -
+an offline FAQ-style helper, not a real AI:
+
+- It's the seventh hamburger menu entry ("Ask Devi").
+- It answers by matching whatever you type against a small, fixed list
+  of question/keyword/answer entries about using THIS app (adding a
+  wallet, Fetch/Update, filters, List/Tiles, naming/rating an NFT,
+  feedback, the Deleted behavior, resetting data) - plain keyword
+  matching, nothing more.
+- There's no language model, no network call, no API key, and no cost -
+  a real AI chat (calling an actual LLM like Claude) would need a
+  backend server to hold the API key safely (an app can't safely ship
+  with its own API key baked in) and would cost real money per message,
+  which is a much bigger project than anything else in this app.
+- It says exactly what it is, right in its own greeting message and
+  again whenever it can't match a question - it should never come
+  across as smarter or more capable than a small fixed lookup table
+  actually is.
+- Quick-question chips let you tap a question instead of typing it, for
+  the handful of things most worth asking about.
+
+If you ever DO want the real thing (an actual AI chat inside the app),
+that's a genuinely different, bigger project - it needs a small backend
+service to hold an API key and proxy requests, plus a plan for who pays
+for the API usage. Worth its own conversation when/if you want to go
+there; it wasn't in scope for "downgraded".
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth

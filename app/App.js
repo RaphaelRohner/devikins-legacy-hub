@@ -56,6 +56,7 @@ import CollectionView from './src/components/CollectionView';
 import ProgressBar from './src/components/ProgressBar';
 import WalletManager from './src/components/WalletManager';
 import Feedback from './src/components/Feedback';
+import HelpAssistant from './src/components/HelpAssistant';
 import appConfig from './app.json';
 
 // The app's version number, shown small on the loading screen - pulled
@@ -287,7 +288,7 @@ function AppContent() {
         setIsMenuOpen(false);
         return true; // handled - don't also exit the app
       }
-      if (currentScreen === 'wallets' || currentScreen === 'feedback') {
+      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help') {
         goToScreen(lastCollectionScreen);
         return true; // handled - don't also exit the app
       }
@@ -504,6 +505,19 @@ function AppContent() {
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <Feedback appVersion={APP_VERSION} onClose={() => goToScreen(lastCollectionScreen)} />
+      </SafeAreaView>
+    );
+  }
+
+  // "Devi" - the offline in-app FAQ helper, the seventh (and, per how
+  // this was designed, deliberately last) hamburger menu entry - see
+  // HelpAssistant.js's own file comment for the full "why" here. Same
+  // full-screen-takeover pattern as Wallets/Feedback above.
+  if (currentScreen === 'help') {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <HelpAssistant onClose={() => goToScreen(lastCollectionScreen)} />
       </SafeAreaView>
     );
   }
