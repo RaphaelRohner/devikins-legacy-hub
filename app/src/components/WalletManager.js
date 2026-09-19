@@ -1,18 +1,21 @@
 /**
  * WalletManager.js
  *
- * The "Wallets" screen, opened by the Wallets button next to Fetch/Update
- * in App.js. Lets the user manage the list of wallet addresses the app
- * fetches from - add a new one, edit an existing one (e.g. to fix a typo),
- * or remove one - the classic four CRUD operations (Create/Read/Update/
- * Delete), each one just a plain button, per the project's request.
+ * The "Wallets" screen, opened from the hamburger menu (see
+ * HamburgerMenu.js's first entry - V2 moved this out of a dedicated
+ * top-of-screen button, but the screen itself is unchanged). Lets the
+ * user manage the list of wallet addresses the app fetches from - add a
+ * new one, edit an existing one (e.g. to fix a typo), or remove one -
+ * the classic four CRUD operations (Create/Read/Update/Delete), each one
+ * just a plain button, per the project's request.
  *
  * Like every other "screen" in this app (the NFT detail view in
  * CollectionView.js is the other example), this isn't a real navigation
- * stack - it's just App.js swapping what it renders based on a boolean
- * state flag (showWalletManager), with its own "‹ Back to Home" button to
- * swap back. See App.js's own file comment for why the whole app is built
- * this way instead of using a navigation library.
+ * stack - it's just App.js swapping what it renders based on its
+ * `currentScreen` state (`currentScreen === 'wallets'`), with its own
+ * "‹ Back to Home" button to swap back to whichever collection screen
+ * was showing before. See App.js's own file comment for why the whole
+ * app is built this way instead of using a navigation library.
  *
  * This component doesn't keep its own copy of the wallet list - it always
  * shows exactly the `wallets` array App.js passes in, and calls

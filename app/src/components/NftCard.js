@@ -79,8 +79,9 @@
 import { useEffect, useState } from 'react';
 import { View, Text, Image, TextInput, StyleSheet, Modal, TouchableOpacity } from 'react-native';
 import { TRAIT_COLUMNS } from '../constants/schema';
-import { setNftDeletedState } from '../db/database';
+import { setNftDeletedState, setNftCustomName, setNftStarRating } from '../db/database';
 import { useTheme } from '../context/ThemeContext';
+import StarRating from './StarRating';
 
 // Turns a database column name like "critical_chance" into a readable
 // label like "Critical Chance". This is ONLY for display - the actual
@@ -247,6 +248,62 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
     await setNftDeletedState(kind, nft.nonce, false, commentDraft.trim() || null);
     onNftUpdated?.();
   }
+
+  // V2: a nickname the user can give this specific NFT, separate from
+  // `name` above (the in-game name pulled straight from the fetched
+  // metadata, never hand-edited) - stored in the `custom_name` column
+  // (see database.js's initDatabase/setNftCustomName) and searchable
+  // from the top search bar in App.js. Same "local draft, commit on a
+  // deliberate action" pattern as commentDraft above, except the
+  // deliberate action here is simply leaving the field (onEndEditing)
+  // rather than a separate button - a plain rename doesn't carry the
+  // same weight as marking something deleted, so it doesn't need its
+  // own button to feel intentional.
+  const [customNameDraft, setCustomNameDraft] = useState(nft.custom_name ?? '');
+  useEffect(() => {
+    setCustomNameDraft(nft.custom_name ?? '');
+  }, [nft.nonce]);
+
+  async function handleCustomNameCommit() {
+    if ((nft.custom_name ?? '') === customNameDraft) return; // nothing changed
+    await setNftCustomName(kind, nft.nonce, customNameDraft);
+    onNftUpdated?.();
+  }
+
+  // V2: an optional 1-5 star rating, stored in the `star_rating` column
+  // (see database.js's setNftStarRating) - unlike the name above, this
+  // saves the moment a star is tapped rather than needing its own commit
+  // step, since picking a rating IS the action (there's nothing further
+  // to "finish typing").
+  async function handleStarRatingChange(nextRating) {
+    await setNftStarRating(kind, nft.nonce, nextRating);
+    onNftUpdated?.();
+  }
+
+  // Shown in every detail layout below (devikin/weapon/equipment/
+  // fallback all insert this same block), right after the item's own
+  // traits/stats and right before deleteSection - per the V2 spec's
+  // requested order: name and rating first, then notes/delete.
+  const nameAndRatingSection = (
+    <View style={styles.nameAndRatingSection}>
+      <Text style={[styles.deleteSectionLabel, { color: colors.secondaryText }]}>Name</Text>
+      <TextInput
+        style={[styles.nameInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
+        placeholder="Give this NFT a name (optional)"
+        placeholderTextColor={colors.secondaryText}
+        value={customNameDraft}
+        onChangeText={setCustomNameDraft}
+        onEndEditing={handleCustomNameCommit}
+      />
+      <Text style={[styles.deleteSectionLabel, { color: colors.secondaryText, marginTop: 12 }]}>Rating</Text>
+      <StarRating
+        value={nft.star_rating ?? 0}
+        onChange={handleStarRatingChange}
+        mode="cumulative"
+        size={26}
+      />
+    </View>
+  );
 
   // Shown at the bottom of every detail layout below (devikin/weapon/
   // equipment/fallback all insert this same block, right before
@@ -437,6 +494,7 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
           </View>
         )}
         <View style={[styles.separator, { backgroundColor: colors.border }]} />
+        {nameAndRatingSection}
         {deleteSection}
       </View>
         {fullscreenModal}
@@ -572,6 +630,7 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
           </View>
         )}
         <View style={[styles.separator, { backgroundColor: colors.border }]} />
+        {nameAndRatingSection}
         {deleteSection}
       </View>
         {fullscreenModal}
@@ -709,6 +768,7 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
           </View>
         )}
         <View style={[styles.separator, { backgroundColor: colors.border }]} />
+        {nameAndRatingSection}
         {deleteSection}
       </View>
         {fullscreenModal}
@@ -745,6 +805,7 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
         </View>
       )}
       <View style={[styles.separator, { backgroundColor: colors.border }]} />
+      {nameAndRatingSection}
       {deleteSection}
     </View>
       {fullscreenModal}
@@ -942,10 +1003,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
+  // The Name & Rating block - see nameAndRatingSection above. Sits right
+  // above deleteSection (both visually and in the JSX), so this shares
+  // deleteSection's top margin rather than needing its own.
+  nameAndRatingSection: {
+    marginTop: 4,
+  },
+  nameInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+  },
   // The "mark as deleted" + notes block at the bottom of every detail
   // view - see deleteSection above.
   deleteSection: {
-    marginTop: 4,
+    marginTop: 16,
   },
   deletedBadge: {
     alignSelf: 'flex-start',

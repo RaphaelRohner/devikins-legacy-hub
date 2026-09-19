@@ -24,6 +24,9 @@ or shared layout/navigation code).
 - Have at least one wallet address handy that you know holds Devikins,
   Weapons, and Equipment, so the list/detail views actually have data to
   show.
+- Wallets, Fetch/Update, and Feedback all now live behind the ☰ menu
+  button (V2) rather than sitting on the home screen - open the menu
+  whenever a step below says to use one of them.
 
 ## Quick pass (a few minutes)
 
@@ -32,17 +35,25 @@ button).
 
 1. Open the app. It should reach the home screen within a few seconds
    (loading screen shows briefly, then disappears).
-2. Tap between the three tabs (Devikins / Weapons / Equipment) - each
-   should show its list without errors.
-3. Tap "Show filters", pick one filter, tap **Apply Filters** - the list
+2. Tap the ☰ menu button and switch between Devikins / Weapons /
+   Equipment - each should show its list without errors, and the menu
+   should highlight whichever one you're currently on.
+3. Type something into the top search bar - the list should narrow as
+   you type. Tap one of the five stars next to it - the list should
+   narrow to only that exact rating; tap the same star again to clear it.
+4. Tap "Show filters", pick one filter, tap **Apply Filters** - the list
    should narrow. Tap **Remove filters ✕** - it should go back to
-   showing everything.
-4. Tap an NFT in the list - its detail view should open. Use the phone's
-   **system Back button/gesture** to close it (not just the app's own
-   back button) - you should land back on the list, not leave the app.
-5. Toggle the light/dark mode button - colors should flip and stay
+   showing everything (search text and the star filter, if any, should
+   still apply on top of that).
+5. Tap the **List/Tiles** toggle - the layout should switch between the
+   normal picture-plus-traits rows and a compact grid of just pictures.
+6. Tap an NFT in the list (or a tile) - its detail view should open. Use
+   the phone's **system Back button/gesture** to close it (not just the
+   app's own back button) - you should land back on the list, not leave
+   the app.
+7. Toggle the light/dark mode button - colors should flip and stay
    readable.
-6. If nothing looks broken and nothing crashed, you're done.
+8. If nothing looks broken and nothing crashed, you're done.
 
 ## Full pass (15-20 minutes)
 
@@ -110,7 +121,9 @@ For **each** of Devikins, Weapons, and Equipment:
   states to make sure nothing is unresponsive.
 - Switch tabs while a filter is applied and the panel is expanded - the
   panel should close and the filter should reset on the new tab (not
-  carry over/stay open).
+  carry over/stay open). The top search bar's text and star filter are
+  a deliberate exception (V2) - those two are meant to carry over across
+  tabs, so confirm they DON'T reset when you switch.
 
 ### 6. Deleted / comment (the manual "I sold this" feature)
 
@@ -122,7 +135,11 @@ For **each** of Devikins, Weapons, and Equipment:
 - Run **Fetch/Update** again. Since this NFT is still in your wallet,
   confirm it comes back as *not* deleted afterward, with the comment
   cleared - this is intentional, not a bug (see NOTES.md's "Multiple
-  wallets, and marking NFTs as deleted" section for why).
+  wallets, and marking NFTs as deleted" section for why). This is
+  unchanged by V2 - only `custom_name`/`star_rating` (section 9 below)
+  were given the opposite treatment (persisting across a re-fetch), on
+  purpose, since neither of those has anything to do with whether you
+  still hold the NFT.
 
 ### 7. Multiple wallets
 
@@ -142,6 +159,43 @@ For **each** of Devikins, Weapons, and Equipment:
   shouldn't have crashed or lost its place.
 - Check the loading screen on a cold start lasts roughly 3 seconds, not
   noticeably longer or so short it flashes unreadably.
+
+### 9. Name & Rating (V2)
+
+- Open an NFT's detail view, tap into the Name field, type a nickname,
+  then tap away (or Done/Return) to unfocus it - it should save without
+  needing a separate button.
+- Tap a star in the Rating control - it and every star before it should
+  light up together (unlike the top bar's star filter, this one fills
+  cumulatively). Tap the same star again - the rating should clear back
+  to unrated.
+- Go back to the list, then reopen the same NFT - both the name and the
+  rating should still be there.
+- In the top search bar, search for the nickname you just gave it - it
+  should find that NFT (search matches the nickname as well as the
+  in-game name and the ID). Tap that same star count in the top bar's
+  star filter - it should show up there too (an exact match, not "N or
+  higher").
+- Run **Fetch/Update** again and confirm both the name and the rating
+  survive the re-fetch (same underlying fix as section 6 above - these
+  two columns are just as local/user-entered as `deleted`/`comment`).
+
+### 10. Feedback (V2)
+
+- Open the ☰ menu → Feedback.
+- Pick each of the three categories (Feature request / Bug report /
+  Feedback) and confirm the selected one is visibly highlighted.
+- Type a short message, tap **Open Email Draft** - your phone's email
+  app should open with a new draft addressed to
+  `[old feedback address removed]`, with the subject/body already
+  filled in (app name, version, category, name if you gave one, and
+  your message). You do NOT need to actually send it for this test -
+  confirming the draft opens correctly, pre-filled, is enough.
+- Leave the message field empty and confirm **Open Email Draft** is
+  disabled (there's nothing to send yet).
+- If your phone/emulator has no email app configured at all, confirm you
+  get a clear alert with the feedback address and your message, instead
+  of a silent failure or crash.
 
 ## When to test
 

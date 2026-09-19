@@ -7,24 +7,38 @@
  *   - Wrapping everything in a ThemeProvider, so light/dark mode is
  *     available to every screen (see src/context/ThemeContext.js).
  *   - Setting up the local database once, when the app starts.
- *   - Loading the list of saved wallet addresses (see WalletManager.js)
- *     and the Fetch/Update and Wallets buttons underneath, plus the
- *     dark-mode toggle next to them.
- *   - Kicking off fetchAllForWallets.js when Fetch/Update is tapped, and
- *     tracking its progress/cancellation.
- *   - Deciding which of the three collection tabs is currently showing,
- *     or whether the Wallets management screen is open instead.
+ *   - Rendering the persistent top bar (search field + exact star-rating
+ *     filter, see StarRating.js) shown above the Devikins/Weapons/
+ *     Equipment screens, and the ☰ hamburger button underneath it that
+ *     opens HamburgerMenu.js - a full-screen menu that replaced the old
+ *     tab bar and the old Fetch/Update + Wallets buttons that used to
+ *     sit at the top of the screen. See HamburgerMenu.js's own file
+ *     comment for the six menu entries and what each one does.
+ *   - Kicking off fetchAllForWallets.js when Fetch/Update is tapped (now
+ *     from inside the menu), and tracking its progress/cancellation.
+ *   - Deciding which "screen" is currently showing: one of the three
+ *     collection kinds (devikin/weapon/equipment), the Wallets
+ *     management screen, or the Feedback form - see `currentScreen`
+ *     below.
  *
  * Deliberately NOT using a navigation library (like React Navigation) -
  * everything here is just plain React state (useState) deciding what to
  * render. For an app this size, that's simpler to follow than adding a
- * whole navigation system on top.
+ * whole navigation system on top. `currentScreen` plays the same role a
+ * router's "current route" would.
+ *
+ * V2 note: TabBar.js (the old Devikins/Weapons/Equipment tab row) is no
+ * longer used - switching between those three is now done from inside
+ * HamburgerMenu.js instead, per the V2 navigation redesign. The file is
+ * left in place rather than deleted, in case you'd ever want the old
+ * tab-row look back.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   BackHandler,
@@ -36,17 +50,21 @@ import { initDatabase, getWallets, countPendingRetries } from './src/db/database
 import { fetchAllForWallets, retryPendingItemsForWallets } from './src/api/fetchAllForWallet';
 import { COLLECTIONS } from './src/constants/schema';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
-import TabBar from './src/components/TabBar';
+import HamburgerMenu from './src/components/HamburgerMenu';
+import StarRating from './src/components/StarRating';
 import CollectionView from './src/components/CollectionView';
 import ProgressBar from './src/components/ProgressBar';
 import WalletManager from './src/components/WalletManager';
+import Feedback from './src/components/Feedback';
 import appConfig from './app.json';
 
 // The app's version number, shown small on the loading screen - pulled
 // straight from app.json rather than duplicated here, so it can never
 // drift out of sync with the number EAS Build actually uses when
 // producing a real APK (eas.json's "appVersionSource": "local" means
-// app.json's version field IS the source of truth for that too).
+// app.json's version field IS the source of truth for that too). Also
+// used by Feedback.js, so the app name/version are always sent along
+// with a feedback email without that file needing its own copy.
 const APP_VERSION = appConfig.expo.version;
 
 // The default export wraps everything in SafeAreaProvider (needed by the
@@ -125,14 +143,50 @@ function AppContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const walletAddresses = useMemo(() => wallets.map((wallet) => wallet.address), [wallets]);
 
-  // Whether the Wallets management screen (WalletManager.js) is currently
-  // showing instead of the normal tabs/list view - same "swap what's
-  // rendered based on a flag" pattern CollectionView.js uses for its own
-  // list/detail switch, see this file's header comment.
-  const [showWalletManager, setShowWalletManager] = useState(false);
+  // Which "screen" is currently showing - one of the three collection
+  // kinds (devikin/weapon/equipment), 'wallets', or 'feedback'. This
+  // replaced the old pair of separate flags (activeKind + a
+  // showWalletManager boolean) now that a fourth, non-collection screen
+  // (Feedback) exists too - one variable naming exactly one current
+  // screen is simpler to reason about than several booleans that could
+  // theoretically all be true/false in an invalid combination.
+  const [currentScreen, setCurrentScreen] = useState(Object.keys(COLLECTIONS)[0]);
 
-  // Which of the three tabs (devikin / weapon / equipment) is showing.
-  const [activeKind, setActiveKind] = useState(Object.keys(COLLECTIONS)[0]);
+  // Remembers whichever collection screen (devikin/weapon/equipment) was
+  // showing right before Wallets or Feedback was opened, so their own
+  // "‹ Back to Home" buttons (and Android's Back button/gesture - see
+  // the BackHandler effect below) return to that same tab instead of
+  // always landing back on Devikins.
+  const [lastCollectionScreen, setLastCollectionScreen] = useState(Object.keys(COLLECTIONS)[0]);
+
+  // Switches which screen is showing, and - only for an actual
+  // collection kind - remembers it as the "last collection screen" for
+  // Wallets/Feedback's Back button to return to. Wallets and Feedback
+  // themselves are never remembered as a "last collection screen" (that
+  // wouldn't make sense - there'd be nothing to switch "back" to).
+  const goToScreen = useCallback((screen) => {
+    setCurrentScreen(screen);
+    if (COLLECTIONS[screen]) {
+      setLastCollectionScreen(screen);
+    }
+  }, []);
+
+  // Whether the full-screen hamburger menu (HamburgerMenu.js) is
+  // currently open.
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  // The top search bar's current text (search by NFT name/custom name
+  // or ID/nonce - see queryNfts in database.js) and the exact-match
+  // star-rating filter (0 = no rating filter, 1-5 = show only that exact
+  // rating) - both live here rather than inside CollectionView because,
+  // unlike the per-collection trait filters CollectionView already
+  // manages, these two are meant to carry over as you switch between
+  // Devikins/Weapons/Equipment (searching "123" and then checking
+  // another tab for the same search is the expected behavior, not a
+  // bug - see CollectionView.js's own filter-reset effect, which
+  // deliberately does NOT touch these two).
+  const [searchText, setSearchText] = useState('');
+  const [starFilter, setStarFilter] = useState(0);
 
   // Progress info from fetchAllForWallets.js's onProgress callback, and
   // whether a fetch is currently running at all.
@@ -213,27 +267,36 @@ function AppContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Makes Android's system Back button/gesture close the Wallets screen
-  // (back to the home screen) instead of exiting the app - without this,
-  // pressing Back while on the Wallets screen would quit the app
-  // entirely, since this app doesn't use a navigation library that would
-  // normally handle that automatically (see the file comment at the top
-  // for why). CollectionView.js has its own matching listener for
-  // closing an open NFT detail view the same way - the two never
-  // conflict, since CollectionView isn't even mounted while this screen
-  // is showing (see the render logic below).
+  // Makes Android's system Back button/gesture close whatever's
+  // currently "on top" instead of exiting the app straight away, in this
+  // priority order:
+  //   1. If the hamburger menu is open, close just the menu.
+  //   2. Else, if Wallets or Feedback is showing, go back to whichever
+  //      collection screen (devikin/weapon/equipment) was showing before
+  //      it was opened.
+  //   3. Otherwise, this component has nothing to close - step aside
+  //      (return false) and let CollectionView.js's OWN matching
+  //      listener handle closing an open NFT detail view, or let Android
+  //      do its normal thing (exit) if there's nothing open there either.
+  // The two listeners never conflict, since CollectionView isn't even
+  // mounted while Wallets/Feedback is showing (see the render logic
+  // below).
   useEffect(() => {
     function handleBackPress() {
-      if (showWalletManager) {
-        setShowWalletManager(false);
+      if (isMenuOpen) {
+        setIsMenuOpen(false);
         return true; // handled - don't also exit the app
       }
-      return false; // nothing here to close - let Android do its normal thing
+      if (currentScreen === 'wallets' || currentScreen === 'feedback') {
+        goToScreen(lastCollectionScreen);
+        return true; // handled - don't also exit the app
+      }
+      return false; // nothing here to close - let Android/CollectionView handle it
     }
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
     return () => subscription.remove();
-  }, [showWalletManager]);
+  }, [isMenuOpen, currentScreen, lastCollectionScreen, goToScreen]);
 
   const handleFetchPress = useCallback(async () => {
     if (walletAddresses.length === 0 || busyRef.current) return;
@@ -282,6 +345,20 @@ function AppContent() {
   function handleCancelPress() {
     cancelRequestedRef.current = true;
     setIsCancelling(true);
+  }
+
+  // The three things HamburgerMenu.js's entries can do - see its own
+  // file comment for the full list of six entries. All three close the
+  // menu first; picking a screen also updates `lastCollectionScreen` via
+  // goToScreen when it's an actual collection kind.
+  function handleMenuSelectScreen(screen) {
+    setIsMenuOpen(false);
+    goToScreen(screen);
+  }
+
+  function handleMenuSelectFetch() {
+    setIsMenuOpen(false);
+    handleFetchPress();
   }
 
   // The automatic retry timer: every AUTO_RETRY_INTERVAL_MS, if nothing
@@ -372,8 +449,8 @@ function AppContent() {
   // on BOTH iOS and Android on its own - unlike the old SafeAreaView from
   // 'react-native' (which Expo now warns is deprecated), so there's no
   // manual Android-only padding calculation needed here any more. The
-  // extra breathing room in inputColumn below is still there on top of
-  // that, since that was about visual spacing, not safe-area correctness.
+  // extra breathing room in topBar below is still there on top of that,
+  // since that was about visual spacing, not safe-area correctness.
   // A simple splash/loading screen, shown only for the brief moment while
   // the local database is doing its one-time setup when the app first
   // opens (see the useEffect above that calls initDatabase()). "Devikins"
@@ -401,17 +478,32 @@ function AppContent() {
   }
 
   // The Wallets management screen takes over the whole content area,
-  // same as an NFT's detail view does in CollectionView.js - see
-  // WalletManager.js's own file comment for why.
-  if (showWalletManager) {
+  // same as it always has ("the wallets screen (unchanged)") - no search
+  // bar or hamburger row on top of it, just its own "‹ Back to Home"
+  // button, which now returns to whichever collection screen was showing
+  // before Wallets was opened (see goToScreen/lastCollectionScreen
+  // above) instead of just flipping a boolean back off.
+  if (currentScreen === 'wallets') {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <WalletManager
           wallets={wallets}
           onWalletsChanged={loadWallets}
-          onClose={() => setShowWalletManager(false)}
+          onClose={() => goToScreen(lastCollectionScreen)}
         />
+      </SafeAreaView>
+    );
+  }
+
+  // The Feedback form is the sixth hamburger menu entry - see
+  // Feedback.js's own file comment for how it builds and sends its
+  // mailto: draft. Same full-screen-takeover pattern as Wallets above.
+  if (currentScreen === 'feedback') {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <Feedback appVersion={APP_VERSION} onClose={() => goToScreen(lastCollectionScreen)} />
       </SafeAreaView>
     );
   }
@@ -420,83 +512,93 @@ function AppContent() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      <View style={styles.inputColumn}>
-        {/* Fetch/Update (left), Wallets (middle), and the dark-mode
-            toggle (right) - see the file comment at the top for why
-            there's no wallet-address text field here any more (it's all
-            managed from the Wallets screen now). */}
-        <View style={styles.controlsRow}>
-          {/* All three buttons below share the same fixed width
-              (ACTION_BUTTON_WIDTH, set just above the styles below) so
-              they read as one consistent row regardless of how long
-              their label is. They're plain siblings here (not grouped)
-              so this row's own space-between spaces all three evenly -
-              with equal widths, that lands Wallets exactly in the
-              middle, Fetch/Update flush left, and the toggle flush
-              right, matching the tab row's edges below. */}
-          <TouchableOpacity
-            style={[
-              styles.fetchButton,
-              { backgroundColor: colors.primary },
-              (isFetching || isRetrying || walletAddresses.length === 0) && { backgroundColor: colors.primaryDisabled },
-            ]}
-            onPress={handleFetchPress}
-            disabled={isFetching || isRetrying || walletAddresses.length === 0}
-          >
-            <Text style={[styles.fetchButtonText, { color: colors.primaryText }]}>
-              {isFetching ? '...' : 'Fetch/Update'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.walletsButton, { backgroundColor: colors.primary }]}
-            onPress={() => setShowWalletManager(true)}
-          >
-            <Text style={[styles.walletsButtonText, { color: colors.primaryText }]} numberOfLines={1}>
-              Wallets{wallets.length > 0 ? ` (${wallets.length})` : ''}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.themeToggle, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
-            onPress={toggleTheme}
-          >
-            <Text style={styles.themeToggleIcon}>{isDark ? '☀️' : '🌙'}</Text>
-            <Text style={[styles.themeToggleLabel, { color: colors.text }]}>
-              {isDark ? 'Light' : 'Dark'}
-            </Text>
-          </TouchableOpacity>
+      {/* The top search bar - search by NFT name/custom name or ID, plus
+          the exact-match 1-5 star filter (see StarRating.js's own
+          comment for why this one uses mode="exact" rather than the
+          usual cumulative star-rating look). Only shown once there's at
+          least one wallet - with nothing fetched yet there's nothing to
+          search or filter, same reasoning the old tab bar/CollectionView
+          used to decide whether to show themselves at all. */}
+      {walletAddresses.length > 0 && (
+        <View style={styles.searchRow}>
+          <TextInput
+            style={[styles.searchInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
+            placeholder="Search by name or ID"
+            placeholderTextColor={colors.secondaryText}
+            value={searchText}
+            onChangeText={setSearchText}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <StarRating value={starFilter} onChange={setStarFilter} mode="exact" size={18} />
         </View>
+      )}
+
+      {/* The ☰ hamburger button (left) opens HamburgerMenu.js - see its
+          file comment for the six entries (Wallets, Fetch/Update,
+          Devikins, Weapons, Equipment, Feedback) that used to be spread
+          across the old Fetch/Wallets buttons and tab row. The dark-mode
+          toggle (right) is unchanged from before, just moved down onto
+          this row now that the row above it is taken up by search. */}
+      <View style={styles.menuRow}>
+        <TouchableOpacity
+          style={[styles.hamburgerButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+          onPress={() => setIsMenuOpen(true)}
+        >
+          <Text style={[styles.hamburgerIcon, { color: colors.text }]}>☰</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.themeToggle, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+          onPress={toggleTheme}
+        >
+          <Text style={styles.themeToggleIcon}>{isDark ? '☀️' : '🌙'}</Text>
+          <Text style={[styles.themeToggleLabel, { color: colors.text }]}>
+            {isDark ? 'Light' : 'Dark'}
+          </Text>
+        </TouchableOpacity>
       </View>
+
+      <HamburgerMenu
+        visible={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        walletCount={wallets.length}
+        currentScreen={currentScreen}
+        isBusy={isFetching || isRetrying || walletAddresses.length === 0}
+        onSelectWallets={() => handleMenuSelectScreen('wallets')}
+        onSelectFetch={handleMenuSelectFetch}
+        onSelectScreen={handleMenuSelectScreen}
+      />
 
       {isFetching && <ProgressBar progress={progress} onCancel={handleCancelPress} isCancelling={isCancelling} />}
       {isRetrying && <ProgressBar progress={retryProgress} onCancel={handleCancelPress} isCancelling={isCancelling} />}
 
       {walletAddresses.length > 0 ? (
-        <>
-          <TabBar activeKind={activeKind} onSelect={setActiveKind} />
-          <CollectionView kind={activeKind} ownerAddresses={walletAddresses} refreshKey={refreshKey} />
-        </>
+        <CollectionView
+          kind={currentScreen}
+          ownerAddresses={walletAddresses}
+          refreshKey={refreshKey}
+          searchText={searchText}
+          starFilter={starFilter}
+        />
       ) : (
         !isFetching && (
           <View style={styles.centeredContainer}>
             <Text style={[styles.hintText, { color: colors.secondaryText }]}>
-              Tap Wallets above to add a wallet address, then tap Fetch/Update to see its Devikins, Weapons, and Equipment.
+              First add a wallet, then scan the chain: tap the ☰ menu below, choose Wallets to add your address, then choose Fetch/Update to see your Devikins, Weapons, and Equipment.
             </Text>
+            <TouchableOpacity
+              style={[styles.hamburgerButton, styles.emptyStateMenuButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+              onPress={() => setIsMenuOpen(true)}
+            >
+              <Text style={[styles.hamburgerIcon, { color: colors.text }]}>☰</Text>
+            </TouchableOpacity>
           </View>
         )
       )}
     </SafeAreaView>
   );
 }
-
-// Shared fixed width for Fetch/Update, Wallets, and the theme toggle,
-// so all three read as one consistent row of same-size buttons rather
-// than each just being as wide as its own label happens to be. Picked
-// to comfortably fit "Fetch/Update" (the longest label) with a bit of
-// breathing room - if a future label needs more space, bump this one
-// number rather than each button's own style.
-const ACTION_BUTTON_WIDTH = 118;
 
 const styles = StyleSheet.create({
   container: {
@@ -558,53 +660,69 @@ const styles = StyleSheet.create({
   hintText: {
     textAlign: 'center',
   },
-  inputColumn: {
-    paddingHorizontal: 12,
-    // Extra breathing room above the buttons, so they aren't crowded by
-    // the phone's own status bar / notch / Dynamic Island controls.
-    paddingTop: 28,
-    paddingBottom: 12,
+  // Gives the empty-state ☰ button below the hint text some breathing
+  // room, and centers it - it's a plain sibling of the hint Text inside
+  // the same centered container, not part of the normal top menuRow
+  // (which isn't rendered at all in the zero-wallets state, since
+  // walletAddresses.length > 0 gates the whole search row, but the
+  // hamburger button itself is still needed here so a fresh install has
+  // an obvious way to open the menu without hunting for it).
+  emptyStateMenuButton: {
+    marginTop: 20,
   },
-  controlsRow: {
+  // The search bar row - a text input (search by name or ID) on the
+  // left, the exact-match star filter (StarRating.js) on the right.
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    // Extra breathing room above the search bar, so it isn't crowded by
+    // the phone's own status bar / notch / Dynamic Island controls -
+    // same spirit as the old inputColumn's paddingTop.
+    paddingTop: 28,
+    paddingBottom: 10,
+  },
+  searchInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  // The row directly under the search bar: the ☰ hamburger button on the
+  // left ("under search and top/left", per how this was designed), the
+  // theme toggle on the right.
+  menuRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingBottom: 12,
   },
-  fetchButton: {
-    width: ACTION_BUTTON_WIDTH,
+  hamburgerButton: {
+    width: 44,
+    height: 44,
     borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 10,
+    borderWidth: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  fetchButtonText: {
+  hamburgerIcon: {
+    fontSize: 20,
     fontWeight: '600',
   },
-  walletsButton: {
-    width: ACTION_BUTTON_WIDTH,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  walletsButtonText: {
-    fontWeight: '600',
-  },
-  // Same shape/padding/width as fetchButton and walletsButton above,
-  // per feedback that it should share their layout - but with a muted
-  // (neutral) background rather than the solid accent color those two
-  // use, since it's a settings toggle rather than a primary action.
-  // This reuses the same "muted button" look already used elsewhere in
-  // the app (e.g. the Edit/Cancel buttons in WalletManager.js).
+  // Same look the old theme toggle button always had - unchanged, just
+  // relocated onto menuRow now that Fetch/Update and Wallets have moved
+  // into the hamburger menu instead of sharing this row with it.
   themeToggle: {
-    width: ACTION_BUTTON_WIDTH,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 6,
     borderWidth: 1,
     borderRadius: 8,
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
     paddingVertical: 10,
   },
   themeToggleIcon: {

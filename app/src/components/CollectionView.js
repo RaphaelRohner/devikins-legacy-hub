@@ -41,10 +41,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Switch, BackHandler } from 'react-native';
 import FilterPanel, { NO_FILTER } from './FilterPanel';
 import NftCard from './NftCard';
+import NftTile from './NftTile';
 import DevikinSummaryRow from './DevikinSummaryRow';
 import WeaponSummaryRow from './WeaponSummaryRow';
 import EquipmentSummaryRow from './EquipmentSummaryRow';
-import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange } from '../db/database';
+import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange, getSetting, setSetting } from '../db/database';
 import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER } from '../constants/schema';
 import { useTheme } from '../context/ThemeContext';
 
@@ -58,7 +59,7 @@ const SUMMARY_ROW_COMPONENTS = {
   equipment: EquipmentSummaryRow,
 };
 
-export default function CollectionView({ kind, ownerAddresses, refreshKey }) {
+export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0 }) {
   const { colors } = useTheme();
   const [filters, setFilters] = useState({});
   const [rows, setRows] = useState([]);
@@ -84,6 +85,36 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey }) {
   // Which item (by nonce) is currently open in detail view, if any. Only
   // meaningful for a kind listed in SUMMARY_ROW_COMPONENTS above.
   const [selectedNonce, setSelectedNonce] = useState(null);
+
+  // List vs. Tiles - per-collection (Devikins/Weapons/Equipment can each
+  // be in a different mode at the same time), and remembered across app
+  // restarts via the generic settings table in database.js (the same
+  // one theme/wallet-migration state already uses) rather than plain
+  // React state alone, so picking Tiles for Devikins once doesn't reset
+  // back to List every time the app is reopened. Starts as 'list' (the
+  // original, unchanged layout) until the saved setting (if any) loads.
+  const [viewMode, setViewMode] = useState('list');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadViewMode() {
+      const saved = await getSetting(`viewMode_${kind}`);
+      if (!cancelled && (saved === 'list' || saved === 'tiles')) {
+        setViewMode(saved);
+      } else if (!cancelled) {
+        setViewMode('list');
+      }
+    }
+    loadViewMode();
+    return () => {
+      cancelled = true;
+    };
+  }, [kind]);
+
+  function handleSetViewMode(nextMode) {
+    setViewMode(nextMode);
+    setSetting(`viewMode_${kind}`, nextMode);
+  }
 
   // --- Filter state (moved here from FilterPanel.js so the toggle and
   // Apply/Remove button can be pinned outside the scrollable list while
@@ -121,11 +152,11 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey }) {
     }
 
     setIsLoading(true);
-    const result = await queryNfts(kind, ownerAddresses, filters, excludeDeleted);
+    const result = await queryNfts(kind, ownerAddresses, filters, excludeDeleted, searchText, starFilter);
     setRows(result);
     setIsLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, ownerAddresses, filters, excludeDeleted, refreshKey]);
+  }, [kind, ownerAddresses, filters, excludeDeleted, refreshKey, searchText, starFilter]);
 
   useEffect(() => {
     reloadRows();
@@ -356,7 +387,15 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey }) {
     );
   }
 
-  const hasActiveFilters = Object.keys(filters).length > 0;
+  // Broadened for V2: this collection can now come up empty because of
+  // the top search bar's search text or exact star-rating filter (both
+  // passed down from App.js), not just the per-collection trait filters
+  // this component already manages - all three narrow the same query
+  // (see queryNfts in database.js), so all three should count toward
+  // "filters are why this list is empty" for the empty-state message
+  // below.
+  const hasActiveFilters =
+    Object.keys(filters).length > 0 || searchText.trim().length > 0 || starFilter > 0;
 
   // Whether anything picked in the controls hasn't been applied yet -
   // the "Apply Filters" button only shows up (below the toggle row)
@@ -435,6 +474,38 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey }) {
   // screen the whole time, however far you scroll.
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* List vs. Tiles - see the viewMode state/effect above. Its own
+          small row, separate from the filter bar below, since it always
+          applies (even to a collection with no filterable traits at
+          all), and inserting a third control into the already-tight
+          toggleRow below would crowd out "Show filters"/"Remove
+          filters" on narrower phones. */}
+      <View style={styles.viewModeBar}>
+        <TouchableOpacity
+          style={[
+            styles.viewModeButton,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+            viewMode === 'list' && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
+          ]}
+          onPress={() => handleSetViewMode('list')}
+        >
+          <Text style={[styles.viewModeButtonText, { color: viewMode === 'list' ? colors.primary : colors.secondaryText }]}>
+            List
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.viewModeButton,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+            viewMode === 'tiles' && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
+          ]}
+          onPress={() => handleSetViewMode('tiles')}
+        >
+          <Text style={[styles.viewModeButtonText, { color: viewMode === 'tiles' ? colors.primary : colors.secondaryText }]}>
+            Tiles
+          </Text>
+        </TouchableOpacity>
+      </View>
       {filterableColumnNames.length > 0 && (
         <View style={[styles.filterBar, { backgroundColor: colors.surfaceAlt }]}>
           {/* Normally everything fits on one row: "Show filters" on
@@ -502,9 +573,20 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey }) {
         </View>
       )}
       <FlatList
+        // React Native doesn't support changing numColumns on an
+        // already-mounted FlatList - it throws ("Changing numColumns on
+        // the fly is not supported"). Keying the list by viewMode forces
+        // React to unmount and remount a fresh FlatList instance
+        // whenever List/Tiles is toggled, which sidesteps that entirely.
+        key={viewMode}
         data={rows}
         keyExtractor={(item) => String(item.nonce)}
+        numColumns={viewMode === 'tiles' ? 3 : 1}
+        columnWrapperStyle={viewMode === 'tiles' ? styles.tilesRow : undefined}
         renderItem={({ item }) => {
+          if (viewMode === 'tiles') {
+            return <NftTile nft={item} onPress={() => setSelectedNonce(item.nonce)} />;
+          }
           const SummaryRow = SUMMARY_ROW_COMPONENTS[kind];
           return SummaryRow ? (
             <SummaryRow nft={item} onPress={() => setSelectedNonce(item.nonce)} />
@@ -535,7 +617,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey }) {
             </View>
           )
         }
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={viewMode === 'tiles' ? styles.tilesListContent : styles.listContent}
       />
     </View>
   );
@@ -544,6 +626,37 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  // The List/Tiles toggle row - see the JSX comment above for why it's
+  // its own separate bar rather than folded into filterBar's toggleRow.
+  viewModeBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+  },
+  viewModeButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  viewModeButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // Spaces tiles evenly across each row of 3 (see FlatList's
+  // columnWrapperStyle, only used in Tiles mode) - NftTile.js's own
+  // flexBasis: '31%' plus this space-between is what leaves an even gap
+  // between all three tiles without needing to hardcode exact margins.
+  tilesRow: {
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+  },
+  tilesListContent: {
+    paddingTop: 4,
+    paddingBottom: 12,
   },
   // The fixed toggle + Apply/Remove button bar - a plain sibling of the
   // FlatList below, never inside it, so it can never scroll out of view

@@ -108,6 +108,18 @@ export async function initDatabase() {
     // backfill needed.
     await ensureColumn(db, kind, 'deleted', 'INTEGER NOT NULL DEFAULT 0');
     await ensureColumn(db, kind, 'comment', 'TEXT');
+
+    // V2: an optional custom nickname the user can give this specific
+    // NFT - separate from `name` above, which is the in-game name pulled
+    // straight from the fetched metadata and never edited by hand - plus
+    // an optional 1-5 star rating. Both are set from the "Name & Rating"
+    // section of the NFT detail view (see NftCard.js) and can be
+    // searched/filtered from the top search bar (see App.js and
+    // queryNfts's searchText/starRating parameters below). NULL means
+    // "not set" for both - a custom name that's never been given, or an
+    // NFT that's never been rated.
+    await ensureColumn(db, kind, 'custom_name', 'TEXT');
+    await ensureColumn(db, kind, 'star_rating', 'INTEGER');
   }
 
   // A tiny generic key/value table for small bits of app state that
@@ -407,8 +419,38 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
     }
   }
 
+  // V2 BUG FIX, scoped carefully: INSERT OR REPLACE below only sets the
+  // columns explicitly listed in allColumnNames - for `nonce`'s PRIMARY
+  // KEY conflict, SQLite deletes the old row first and inserts a brand
+  // new one, so any column NOT listed silently resets to its default
+  // (NULL, for both of these) rather than keeping its previous value.
+  // `custom_name` and `star_rating` are purely local, user-entered data
+  // that never comes from the metadata API at all - there's no reason a
+  // nickname or star rating should ever be wiped just because the item
+  // was successfully re-fetched, so this reads their current values
+  // first and carries them forward, the same way local_image_path
+  // already effectively persists via updateLocalImagePath's own writes.
+  //
+  // IMPORTANT: `deleted` and `comment` deliberately do NOT get the same
+  // treatment - see "Marking NFTs as deleted" in NOTES.md, which
+  // explains in detail why letting a successful re-fetch reset those two
+  // is the CORRECT, intentional behavior (a successful re-fetch is proof
+  // you still hold the NFT, so it was never actually sold/given away)
+  // and says explicitly not to "fix" it. Do not add deleted/comment to
+  // the preserved columns below without re-reading that note first.
+  const existingUserData = await db.getFirstAsync(
+    `SELECT custom_name, star_rating FROM ${kind} WHERE nonce = ?`,
+    [nonce]
+  );
+  const preservedCustomName = existingUserData?.custom_name ?? null;
+  const preservedStarRating = existingUserData?.star_rating ?? null;
+
   const traitColumnNames = Object.keys(traitColumns);
-  const allColumnNames = ['nonce', 'owner_address', 'name', 'image', 'local_image_path', 'description', 'status', 'fetched_at', 'raw_json', ...traitColumnNames];
+  const allColumnNames = [
+    'nonce', 'owner_address', 'name', 'image', 'local_image_path', 'description', 'status', 'fetched_at', 'raw_json',
+    'custom_name', 'star_rating',
+    ...traitColumnNames,
+  ];
   const placeholders = allColumnNames.map(() => '?').join(', ');
 
   const params = [
@@ -421,6 +463,8 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
     status,
     Date.now(),
     metadata ? JSON.stringify(metadata) : null,
+    preservedCustomName,
+    preservedStarRating,
     ...traitColumnNames.map((columnName) => traitValues[columnName]),
   ];
 
@@ -428,7 +472,9 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
   // either creates a brand-new row, or completely overwrites the existing
   // row for that nonce with fresh data. That's exactly what we want for
   // re-fetching - since NFT stats can change over time (see NOTES.md),
-  // the newest fetch should always win.
+  // the newest fetch should always win. `deleted`/`comment` are NOT
+  // listed here on purpose (see the comment above) - leaving them out is
+  // what resets them to their defaults, which is the intended behavior.
   await db.runAsync(
     `INSERT OR REPLACE INTO ${kind} (${allColumnNames.join(', ')}) VALUES (${placeholders})`,
     params
@@ -483,8 +529,19 @@ export async function getColumnRange(kind, columnName, ownerAddresses) {
  * true, anything marked deleted is left out of the results entirely
  * (rather than just shown greyed-out, which is what happens when this is
  * false - see the summary row components for that styling).
+ *
+ * V2 additions, both optional and independent of `filters` above:
+ *   - `searchText`: the top search bar in App.js. Matches against the
+ *     NFT's in-game `name`, the user's own `custom_name` (see
+ *     setNftCustomName above), OR its nonce (as text, so searching "12"
+ *     finds #12, #123, #1298, etc.) - whichever hits, case-insensitively.
+ *     Empty/whitespace-only means "no search filter".
+ *   - `starRating`: the 1-5 star picker in App.js's top bar. This is an
+ *     EXACT match ("show me only my 4-star items"), not "4 stars or
+ *     better" - per how it was designed. 0/null/undefined means "no
+ *     rating filter".
  */
-export async function queryNfts(kind, ownerAddresses, filters = {}, excludeDeleted = false) {
+export async function queryNfts(kind, ownerAddresses, filters = {}, excludeDeleted = false, searchText = '', starRating = null) {
   const db = await getDatabase();
   const traitColumns = TRAIT_COLUMNS[kind];
 
@@ -494,6 +551,20 @@ export async function queryNfts(kind, ownerAddresses, filters = {}, excludeDelet
 
   if (excludeDeleted) {
     whereClauses.push(`(deleted IS NULL OR deleted = 0)`);
+  }
+
+  const trimmedSearch = typeof searchText === 'string' ? searchText.trim() : '';
+  if (trimmedSearch.length > 0) {
+    whereClauses.push(
+      `(LOWER(name) LIKE ? OR LOWER(custom_name) LIKE ? OR CAST(nonce AS TEXT) LIKE ?)`
+    );
+    const likePattern = `%${trimmedSearch.toLowerCase()}%`;
+    params.push(likePattern, likePattern, likePattern);
+  }
+
+  if (starRating) {
+    whereClauses.push(`star_rating = ?`);
+    params.push(Number(starRating));
   }
 
   for (const [columnName, filterValue] of Object.entries(filters)) {
@@ -553,6 +624,39 @@ export async function setNftDeletedState(kind, nonce, deleted, comment) {
   await db.runAsync(
     `UPDATE ${kind} SET deleted = ?, comment = ? WHERE nonce = ?`,
     [deleted ? 1 : 0, comment, nonce]
+  );
+}
+
+/**
+ * Saves (or clears, if customName is empty/null) the user's own nickname
+ * for one specific NFT - see the "custom_name" column comment in
+ * initDatabase above, and the Name & Rating section in NftCard.js that
+ * calls this. Separate from setNftStarRating below so the two fields can
+ * be saved independently (e.g. tapping a star shouldn't require first
+ * typing a name).
+ */
+export async function setNftCustomName(kind, nonce, customName) {
+  const db = await getDatabase();
+  const trimmed = typeof customName === 'string' ? customName.trim() : '';
+  await db.runAsync(
+    `UPDATE ${kind} SET custom_name = ? WHERE nonce = ?`,
+    [trimmed.length > 0 ? trimmed : null, nonce]
+  );
+}
+
+/**
+ * Saves (or clears, if starRating is null/0) the user's own 1-5 star
+ * rating for one specific NFT - see the "star_rating" column comment in
+ * initDatabase above. Tapping an already-selected star in NftCard.js
+ * clears the rating back to "not rated" by passing null/0 here, rather
+ * than there being a separate "clear rating" control.
+ */
+export async function setNftStarRating(kind, nonce, starRating) {
+  const db = await getDatabase();
+  const normalized = starRating ? Math.max(1, Math.min(5, Number(starRating))) : null;
+  await db.runAsync(
+    `UPDATE ${kind} SET star_rating = ? WHERE nonce = ?`,
+    [normalized, nonce]
   );
 }
 

@@ -78,12 +78,29 @@ Key functions, in the order you'd use them:
   added something new worth adding a real column for. Either way, the
   *entire* raw response is also always saved in a `raw_json` column, so
   nothing is ever truly lost even before a column exists for it.
-- **`queryNfts(kind, ownerAddresses, filters, excludeDeleted)`** — builds
-  and runs the actual `SELECT` query for what to show on screen, based on
-  whatever filters are currently active. `ownerAddresses` is an array
-  (matched with a SQL `IN (...)`) since the app can track more than one
-  wallet now — see "Multiple wallets" below. `excludeDeleted` is the
-  "Deleted" switch next to the filter toggle.
+  **Bug fix (found while building V2):** this writes with `INSERT OR
+  REPLACE`, which for a `nonce` conflict deletes the old row and inserts
+  a fresh one — any column not explicitly listed in that INSERT silently
+  resets to its default. `custom_name`/`star_rating` (V2's new columns)
+  are local, user-entered data the metadata API never sends back, so
+  without reading them first and re-including them in every INSERT,
+  simply tapping Fetch/Update would have quietly wiped every custom name
+  and star rating on the very first re-fetch. `upsertNft` now reads
+  those two columns' current values before writing and carries them
+  forward every time. **`deleted`/`comment` are deliberately NOT given
+  this treatment** — see "Marking NFTs as deleted" in NOTES.md, which
+  explains why letting those two reset on a successful re-fetch is the
+  intended behavior, not a bug, and says explicitly not to change it.
+- **`queryNfts(kind, ownerAddresses, filters, excludeDeleted, searchText, starRating)`**
+  — builds and runs the actual `SELECT` query for what to show on screen,
+  based on whatever filters are currently active. `ownerAddresses` is an
+  array (matched with a SQL `IN (...)`) since the app can track more than
+  one wallet now — see "Multiple wallets" below. `excludeDeleted` is the
+  "Deleted" switch next to the filter toggle. `searchText` (V2) is the
+  top search bar in `App.js` — matches `name`, `custom_name`, or the
+  nonce itself, case-insensitively. `starRating` (V2) is the top bar's
+  exact-match 1-5 star filter — an **exact** rating match ("only my
+  4-star items"), not "4 or better".
 - **`getDistinctColumnValues` / `getColumnRange`** — used by the filter
   panel to figure out, from the data actually in the database, what
   dropdown options or min/max ranges to offer (see FilterPanel.js below).
@@ -99,6 +116,11 @@ Key functions, in the order you'd use them:
   function behind both "Mark as Deleted" and "Restore" in `NftCard.js`
   (just called with `deleted` true or false) — writes the `deleted` flag
   and `comment` columns for one NFT.
+- **`setNftCustomName(kind, nonce, customName)`** / **`setNftStarRating(kind, nonce, starRating)`**
+  (V2) — write the `custom_name` and `star_rating` columns for one NFT,
+  behind the Name & Rating section in `NftCard.js`'s detail view. Both
+  are entirely local/user-entered — the metadata API never touches
+  either column.
 - **`resetAllData()`** — empties the `devikin`, `weapon`, `equipment`,
   and `wallets` tables (not dropping them, just clearing every row).
   Powers the "Reset All Data" button in `WalletManager.js`; paired
@@ -218,20 +240,31 @@ notes below.
 
 - **`App.js`** — the root screen. Owns the saved wallet list (loaded from
   the database, refreshed after any change made in `WalletManager.js`),
-  the Fetch/Update and Wallets buttons, which tab is active, whether the
-  Wallets screen is currently showing instead of the tabs, and the
-  in-progress fetch's state (so it can show a progress bar and a Stop
-  button). There's no wallet-address text field here any more - that's
-  all handled by `WalletManager.js` now. The Wallets button now shares
-  the same solid accent colour as Fetch/Update, rather than the neutral
-  bordered look it originally had. Also registers a `BackHandler`
-  listener that closes the Wallets screen on Android's system Back
-  action whenever it's open (same as tapping its own "‹ Back to Home"
-  button), and otherwise lets Android do its normal thing. Everything
-  else is broken out into smaller files below.
+  the in-progress fetch's state (so it can show a progress bar and a Stop
+  button), and — as of V2 — a single `currentScreen` value naming
+  whichever screen is showing (`'devikin'`/`'weapon'`/`'equipment'`,
+  `'wallets'`, or `'feedback'`), replacing the old pair of separate
+  `activeKind`/`showWalletManager` flags now that a fourth,
+  non-collection screen (Feedback) exists too. **V2 navigation redesign:**
+  the old always-visible Fetch/Update + Wallets buttons and the
+  Devikins/Weapons/Equipment tab row are gone — all six of those actions
+  now live inside `HamburgerMenu.js`, opened by a ☰ button. Above that
+  sits a persistent search bar (search by name/ID) plus an exact-match
+  1-5 star filter (`StarRating.js`, `mode="exact"`) — see
+  `CollectionView.js` below for how those two feed into `queryNfts`.
+  Both Wallets and Feedback still take over the whole screen exactly as
+  Wallets always did, with their own "‹ Back to Home" button that
+  returns to whichever collection screen (`lastCollectionScreen`) was
+  showing before they were opened. A `BackHandler` listener closes the
+  hamburger menu first if it's open, then falls back to that same
+  "return to the last collection screen" behavior for Wallets/Feedback,
+  and otherwise lets Android do its normal thing. Everything else is
+  broken out into smaller files below.
 
-- **`components/WalletManager.js`** — the "Wallets" screen, opened by the
-  Wallets button. Plain CRUD over the `wallets` database table: paste an
+- **`components/WalletManager.js`** — the "Wallets" screen, opened from
+  the hamburger menu (V2 moved it out of a dedicated top-of-screen
+  button; the screen itself is unchanged). Plain CRUD over the `wallets`
+  database table: paste an
   address and tap Add; Edit/Save/Cancel an existing one inline; Delete
   one (no confirmation dialog, to match the rest of the app's plain
   style - see its own file comment for why that's low-risk). Editing a
@@ -251,13 +284,30 @@ notes below.
   navigation library (see above), it's the same "swap what's rendered
   based on a flag" pattern throughout.
 
-- **`components/TabBar.js`** — the three-button row (Devikins / Weapons /
-  Equipment) at the top of the results. Highlights whichever one is
-  currently selected. Has the same 12px side padding as App.js's
-  Fetch/Update/Wallets/theme-toggle row above it, so the two rows line
-  up - the padding only insets the tab buttons themselves though, not
-  this bar's own background/bottom border, which still span the full
-  screen width.
+- **`components/TabBar.js`** — **superseded by V2's hamburger menu** (see
+  `HamburgerMenu.js` below) and no longer imported anywhere. Left in the
+  repo rather than deleted, in case the old always-visible tab row look
+  is ever wanted back.
+
+- **`components/HamburgerMenu.js`** (V2) — the full-screen menu opened by
+  `App.js`'s ☰ button, replacing the old tab row plus the Fetch/Update
+  and Wallets buttons. A plain full-screen `Modal` (the same component
+  `NftCard.js` uses for its fullscreen image viewer) listing six entries:
+  Wallets (with a live wallet count), Fetch/Update (an action, not a
+  screen — it closes the menu and starts a scan without changing what's
+  showing), then Devikins/Weapons/Equipment/Feedback (each just sets
+  `App.js`'s `currentScreen`). The entry matching the currently-showing
+  collection screen is outlined to show where you are.
+
+- **`components/StarRating.js`** (V2) — a shared row of five tappable ★
+  stars used in two places with different meanings, picked via a `mode`
+  prop: `mode="exact"` (the top search bar in `App.js`) only lights up
+  the one star matching the current pick — it's a filter ("show me only
+  my 3-star items"), not a minimum. `mode="cumulative"` (the Rating
+  control in `NftCard.js`'s detail view) is the usual five-star-widget
+  look — tapping star 3 lights up 1, 2, and 3 together, meaning "I'm
+  rating this 3 stars." Either way, tapping the already-selected star
+  clears the pick back to 0/unrated.
 
 - **`components/ProgressBar.js`** — shown only while a fetch is running.
   Displays which collection is currently being fetched and a count like
@@ -322,6 +372,22 @@ notes below.
   immediately on toggle (it isn't part of the pending/applied two-step
   dance the trait filters use) since there's no "controls" to fiddle
   with first - it's a single on/off choice.
+
+  **V2 additions:** this file now also accepts `searchText`/`starFilter`
+  props from `App.js` (the top search bar and exact star filter) and
+  passes them straight through to `queryNfts` alongside its own trait
+  `filters` - unlike those trait filters, `searchText`/`starFilter`
+  deliberately do NOT get reset by the kind-change effect above, since
+  carrying a search across tabs (search "123", then check another
+  collection) is the expected behavior, not a bug. It also now owns a
+  **List/Tiles** toggle (`viewMode`, persisted per collection via
+  `getSetting`/`setSetting` in `database.js`, so picking Tiles for
+  Devikins doesn't reset on app restart or affect Weapons/Equipment) —
+  Tiles mode renders `NftTile.js` in a 3-column grid via the `FlatList`'s
+  `numColumns` prop instead of the usual full-width summary rows. Since
+  React Native doesn't support changing `numColumns` on an already-
+  mounted `FlatList`, the list is `key`-ed by `viewMode` so toggling
+  forces a fresh remount rather than an error.
 
 - **`components/FilterPanel.js`** — just the dropdowns and range boxes
   themselves (no toggle, no Apply/Remove button - those live in
@@ -388,14 +454,47 @@ notes below.
   the code for any future new collection that hasn't gotten a custom
   layout yet, but nothing currently uses it.
 
-  Every one of these layouts ends the same way now: a **Notes** box (a
-  free-text comment, saved to the `comment` column) and a **Mark as
-  Deleted** button (flips the `deleted` column and closes the loop by
-  calling `onNftUpdated` - a callback `CollectionView.js` passes in as
-  `reloadRows`, so the list picks up the change immediately). Once
-  deleted, that same button becomes **Restore**. This is a soft,
-  reversible, purely-local flag - see NOTES.md's "Marking NFTs as
-  deleted" section for the full reasoning.
+  Every one of these layouts ends the same way now: a **Name & Rating**
+  section (V2 - added ahead of Notes/Delete, per how this was designed),
+  then a **Notes** box (a free-text comment, saved to the `comment`
+  column) and a **Mark as Deleted** button (flips the `deleted` column
+  and closes the loop by calling `onNftUpdated` - a callback
+  `CollectionView.js` passes in as `reloadRows`, so the list picks up
+  the change immediately). Once deleted, that same button becomes
+  **Restore**. This is a soft, reversible, purely-local flag - see
+  NOTES.md's "Marking NFTs as deleted" section for the full reasoning.
+
+  **Name & Rating (V2):** an editable nickname (saved to the
+  `custom_name` column via `setNftCustomName` the moment the field loses
+  focus - separate from `name`, the in-game name pulled from fetched
+  metadata, which is never hand-edited) and a 1-5 star rating
+  (`StarRating.js` in `mode="cumulative"`, saved to `star_rating` via
+  `setNftStarRating` the instant a star is tapped - no separate save
+  step needed, since picking a rating IS the action). Both are
+  searchable/filterable from the top bar in `App.js` - see
+  `queryNfts`'s `searchText`/`starRating` parameters above.
+
+- **`components/NftTile.js`** (V2) — the compact square tile shown for
+  each NFT in "Tiles" view (see `CollectionView.js`'s view-mode toggle
+  above): just the picture and its ID, greyed out with a "Deleted" tag
+  the same way the summary rows are - deliberately minimal, since the
+  whole point of a grid view is fitting more on screen at a glance.
+  Tapping one opens the same full `NftCard` detail view "List" view
+  does.
+
+- **`components/Feedback.js`** (V2) — the "Feedback" screen, the sixth
+  hamburger menu entry. Builds a `mailto:` link (app name/version,
+  category - Feature request/Bug report/Feedback, name, and a free-text
+  message, all pre-filled) and opens it via React Native's
+  `Linking.openURL()` - the player still has to tap Send themselves in
+  whatever email app opens, since this app has no backend of its own to
+  send anything on their behalf. Goes to a "+" alias of Raphael's own
+  Gmail address (mail addressed to `[old feedback address removed]`
+  lands in his normal inbox, just easy to filter/label separately) -
+  not a GitHub address, since GitHub's own commit-attribution noreply
+  addresses are outbound-only and can't actually forward anything
+  inbound. If no email app is available, falls back to an alert showing
+  the feedback address and the full message text to copy by hand.
 
 ## Where the traits actually came from
 

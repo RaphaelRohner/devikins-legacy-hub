@@ -748,6 +748,16 @@ comment are never touched again and stay exactly as you left them.
 Deliberately left as-is - do not "fix" this to preserve `deleted`/
 `comment` across a re-fetch.
 
+**V2 addendum:** the new `custom_name` and `star_rating` columns (see
+"V2: hamburger menu, search & star filter, list/tiles view, NFT names &
+ratings, feedback form" below) are NOT treated the same way - they DO
+persist across a re-fetch. The reasoning above is specifically about
+what "Deleted" means (proof of continued ownership), which has nothing
+to do with a nickname or a star rating, so there's no equivalent reason
+to reset those two. `upsertNft` in `database.js` reads and re-applies
+`custom_name`/`star_rating` on every write, but still deliberately
+leaves `deleted`/`comment` out of that - see its own code comment.
+
 ## Four small UI tweaks (post-multi-wallet feedback)
 
 A batch of small refinements, all per feedback after trying out the
@@ -1341,6 +1351,110 @@ Fixed two ways together:
 An NFT interrupted mid-request this way isn't saved as failed - it's
 simply left alone, so it's picked up fresh on the next Fetch/Update or
 automatic retry, same as if it had never been attempted.
+
+## V2: hamburger menu, search & star filter, list/tiles view, NFT names & ratings, feedback form
+
+A big batch of changes, all requested together as "V2":
+
+### Navigation redesign: hamburger menu
+
+The always-visible Fetch/Update and Wallets buttons, and the Devikins/
+Weapons/Equipment tab row, are gone. In their place:
+
+- A persistent search bar at the very top of the screen (search by NFT
+  name, your own custom name for it, or its ID/nonce), with an exact-
+  match 1-5 star filter next to it - tapping a star shows *only* items
+  rated exactly that many stars (not "N or better"). Both carry over as
+  you switch between Devikins/Weapons/Equipment, on purpose - see
+  CollectionView.js's own comment on why trait filters reset per-tab but
+  these two don't.
+- A ☰ button underneath opens a full-screen menu (`HamburgerMenu.js`)
+  with six entries: **Wallets** (shows how many are saved), **Fetch/
+  Update** (an action - closes the menu and starts a scan without
+  changing what's showing), **Devikins**, **Weapons**, **Equipment**,
+  and the new **Feedback** (see below). The entry matching whatever's
+  currently showing is outlined.
+- The fresh-install hint text on the home screen was updated to point at
+  the menu ("First add a wallet, then scan the chain: tap the ☰ menu
+  below...") instead of the old buttons that no longer exist.
+- `App.js` now tracks a single `currentScreen` value (one of the three
+  collection kinds, `'wallets'`, or `'feedback'`) instead of the old
+  separate `activeKind` + `showWalletManager` flags, plus a
+  `lastCollectionScreen` so Wallets/Feedback's "‹ Back to Home" (and
+  Android's system Back button) return to whichever tab you were on,
+  not always Devikins.
+- `TabBar.js` is no longer used anywhere, but left in the repo rather
+  than deleted, in case the old tab-row look is ever wanted back.
+
+### List / Tiles view
+
+Each of the three collection screens now has its own **List/Tiles**
+toggle, independent of the others (Devikins can be in Tiles while
+Weapons stays in List). Tiles mode (`NftTile.js`) shows a dense 3-column
+grid of just each item's picture and ID - meant for quickly scanning a
+large collection by eye. The choice is remembered per collection across
+app restarts, using the same generic `settings` key/value table
+`getSetting`/`setSetting` already provided (previously unused for
+anything load-bearing).
+
+One React Native quirk worth knowing if you touch this code: you can't
+change a `FlatList`'s `numColumns` on an already-mounted list - it
+throws an error telling you to change the list's `key` instead to force
+a fresh remount. `CollectionView.js`'s FlatList is `key={viewMode}` for
+exactly this reason.
+
+### NFT name & star rating
+
+Every NFT's detail view now has a **Name & Rating** section, positioned
+right after its stats and right before the existing Notes/Delete
+section (per how this was requested):
+
+- A **Name** field lets you give any individual NFT your own nickname,
+  saved to a new `custom_name` column - separate from `name`, which is
+  the in-game name pulled from the fetched metadata and never hand-
+  edited. Saves automatically when you tap away from the field (no
+  separate Save button needed for a plain rename).
+- A **Rating** control (five tappable stars, `StarRating.js`) lets you
+  give any NFT a 1-5 star rating, saved to a new `star_rating` column.
+  Saves the instant you tap a star; tapping the same star again clears
+  it back to unrated.
+- Both are searchable from the top search bar and filterable via the
+  top bar's exact-match star picker - see "Navigation redesign" above.
+- `StarRating.js` is shared between that top-bar filter and this rating
+  control via a `mode` prop (`"exact"` vs. `"cumulative"`) - see its own
+  file comment for exactly how those two differ visually and why.
+- **Found and fixed a real bug while adding these two columns:**
+  `upsertNft` in `database.js` writes a full replacement row on every
+  fetch (`INSERT OR REPLACE`), and any column not explicitly listed in
+  that statement silently resets to blank - which would have meant
+  every custom name and star rating got wiped the moment you next
+  tapped Fetch/Update. Fixed by reading and re-applying both columns'
+  current values on every write. This fix deliberately does NOT extend
+  to `deleted`/`comment` (see "Multiple wallets, and marking NFTs as
+  deleted" above) - that pair resetting on a successful re-fetch is
+  separately documented as intentional, and this V2 work didn't touch
+  that decision.
+
+### Feedback form
+
+A sixth hamburger menu entry, `Feedback.js`: pick a category (Feature
+request / Bug report / Feedback), optionally give a name, write a
+message, and tap **Open Email Draft**. This builds a `mailto:` link
+(app name, version, category, name, and the message all pre-filled into
+the subject/body) and hands it to your phone's own email app via React
+Native's `Linking.openURL()` - you still have to tap Send yourself once
+it opens, since this app has no backend or email-sending service of its
+own.
+
+It goes to `[old feedback address removed]` - a "+" alias of
+Raphael's own Gmail address (mail to it lands in his normal inbox, Gmail
+just treats everything before the "+" as the real address), which makes
+it easy to filter/label feedback separately without needing any new
+infrastructure. This was chosen over the original idea of routing
+through a GitHub address after confirming (via GitHub's own docs)
+that GitHub's commit-attribution noreply addresses are outbound-only -
+they can't receive or forward inbound email from anyone, so "email
+GitHub and have it land in my inbox" was never actually possible.
 
 ## App structure decisions (made while building)
 

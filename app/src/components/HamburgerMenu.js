@@ -1,0 +1,176 @@
+/**
+ * HamburgerMenu.js
+ *
+ * The full-screen navigation menu opened by tapping the ☰ button under
+ * the search bar in App.js (see App.js's file comment for the overall
+ * V2 layout: search + star filter on top, then this menu's hamburger
+ * button underneath, left-aligned).
+ *
+ * This REPLACES the old TabBar.js (Devikins/Weapons/Equipment tab row)
+ * and the old Fetch/Update + Wallets buttons that used to sit above the
+ * tabs - all of that is now reached from here instead, as one consistent
+ * list of six entries:
+ *
+ *   1. Wallets (x)   - opens the Wallets management screen
+ *   2. Fetch/Update  - starts a new scan (doesn't change screens)
+ *   3. Devikins      - opens the Devikins overview
+ *   4. Weapons       - opens the Weapons overview
+ *   5. Equipment     - opens the Equipment overview
+ *   6. Feedback      - opens the feedback form
+ *
+ * Like every other "screen" in this app (see App.js's own file comment),
+ * this isn't a real navigation library - it's a plain full-screen Modal
+ * (the same component NftCard.js already uses for its fullscreen image
+ * viewer) that App.js shows/hides based on a boolean, with each row just
+ * calling back up to App.js to say what was tapped.
+ */
+
+import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useTheme } from '../context/ThemeContext';
+
+export default function HamburgerMenu({
+  visible,
+  onClose,
+  walletCount,
+  currentScreen,
+  isBusy,
+  onSelectWallets,
+  onSelectFetch,
+  onSelectScreen,
+}) {
+  const { colors } = useTheme();
+
+  // Each entry: a label (walletCount is spliced into the Wallets one
+  // below), which `currentScreen` value it corresponds to (for
+  // highlighting - null for Fetch/Update, since that's an action, not a
+  // screen), and what to do when tapped.
+  const entries = [
+    {
+      key: 'wallets',
+      label: `Wallets${walletCount > 0 ? ` (${walletCount})` : ''}`,
+      screen: 'wallets',
+      onPress: onSelectWallets,
+    },
+    {
+      key: 'fetch',
+      label: isBusy ? 'Fetch/Update (running...)' : 'Fetch/Update',
+      screen: null,
+      disabled: isBusy,
+      onPress: onSelectFetch,
+    },
+    {
+      key: 'devikin',
+      label: 'Devikins',
+      screen: 'devikin',
+      onPress: () => onSelectScreen('devikin'),
+    },
+    {
+      key: 'weapon',
+      label: 'Weapons',
+      screen: 'weapon',
+      onPress: () => onSelectScreen('weapon'),
+    },
+    {
+      key: 'equipment',
+      label: 'Equipment',
+      screen: 'equipment',
+      onPress: () => onSelectScreen('equipment'),
+    },
+    {
+      key: 'feedback',
+      label: 'Feedback',
+      screen: 'feedback',
+      onPress: () => onSelectScreen('feedback'),
+    },
+  ];
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: colors.text }]}>Menu</Text>
+          <TouchableOpacity
+            style={[styles.closeButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+            onPress={onClose}
+          >
+            <Text style={[styles.closeButtonText, { color: colors.text }]}>✕</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.entryList}>
+          {entries.map((entry) => {
+            const isActive = entry.screen !== null && entry.screen === currentScreen;
+            return (
+              <TouchableOpacity
+                key={entry.key}
+                style={[
+                  styles.entryRow,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  isActive && { borderColor: colors.primary, borderWidth: 2 },
+                  entry.disabled && styles.entryRowDisabled,
+                ]}
+                onPress={entry.onPress}
+                disabled={entry.disabled}
+              >
+                <Text
+                  style={[
+                    styles.entryLabel,
+                    { color: isActive ? colors.primary : colors.text },
+                  ]}
+                >
+                  {entry.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 24,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeButtonText: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  entryList: {
+    gap: 12,
+  },
+  entryRow: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+  },
+  entryRowDisabled: {
+    opacity: 0.5,
+  },
+  entryLabel: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+});
