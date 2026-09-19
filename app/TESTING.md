@@ -39,7 +39,10 @@ button).
    Equipment - each should show its list without errors, and the menu
    should highlight whichever one you're currently on.
 3. Type something into the top search bar - the list should narrow as
-   you type.
+   you type, and a small "✕" should appear at the right edge of the
+   field. Tap it - the text should clear and the list should go back to
+   showing everything (the "✕" itself should disappear once the field
+   is empty again).
 4. Tap "Show filters" - the **Rating** row should be right at the top,
    above the other filter dropdowns. Tap one of its five stars - the
    list should narrow to only that exact rating right away (no need to

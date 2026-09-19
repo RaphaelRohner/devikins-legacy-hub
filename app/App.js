@@ -530,15 +530,30 @@ function AppContent() {
           see FilterPanel.js. */}
       {walletAddresses.length > 0 && (
         <View style={styles.searchRow}>
-          <TextInput
-            style={[styles.searchInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
-            placeholder="Search by name or ID"
-            placeholderTextColor={colors.secondaryText}
-            value={searchText}
-            onChangeText={setSearchText}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+          <View style={styles.searchInputWrapper}>
+            <TextInput
+              style={[styles.searchInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
+              placeholder="Search by name or ID"
+              placeholderTextColor={colors.secondaryText}
+              value={searchText}
+              onChangeText={setSearchText}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {/* Only shown once there's actually something to clear - a
+                small "✕" overlaid on the input's right edge, the usual
+                mobile search-field pattern, so clearing a search doesn't
+                need selecting/deleting the text by hand. */}
+            {searchText.length > 0 && (
+              <TouchableOpacity
+                style={styles.searchClearButton}
+                onPress={() => setSearchText('')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={[styles.searchClearButtonText, { color: colors.secondaryText }]}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <View style={styles.viewModeGroup}>
             <TouchableOpacity
               style={[
@@ -694,12 +709,31 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 10,
   },
-  searchInput: {
+  // Wraps the search field so the "✕" clear button (searchClearButton
+  // below) can be absolutely positioned over its right edge, rather
+  // than needing its own spot in searchRow's layout.
+  searchInputWrapper: {
     flex: 1,
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  searchInput: {
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 12,
+    // Extra room on the right so typed text never runs under the clear
+    // button - see searchClearButton below.
+    paddingRight: 34,
     paddingVertical: 8,
+  },
+  searchClearButton: {
+    position: 'absolute',
+    right: 10,
+    padding: 4,
+  },
+  searchClearButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   // The List/Tiles pair, grouped so they move as one unit at the right
   // end of searchRow rather than each needing their own gap handling.

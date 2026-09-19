@@ -1665,6 +1665,15 @@ now show `custom_name` (when set) as a small pill pinned to the item's
 top-right corner - the row's corner in List view, the tile's corner in
 Tiles view. Nothing shows at all for an NFT with no nickname given.
 
+## Search field gets a clear ("✕") button
+
+The top search field now shows a small "✕" overlaid on its right edge
+whenever it has text in it, per feedback - tapping it clears the search
+instantly instead of having to select and delete the typed text by
+hand. Purely a `searchText === ''` check in `App.js`; the underlying
+search behavior (and the List/Tiles toggle sharing this same row) is
+unchanged.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
