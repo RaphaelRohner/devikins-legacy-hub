@@ -151,6 +151,24 @@ For **each** of Devikins, Weapons, and Equipment:
 - For a Devikin's **Rarity** filter specifically, confirm the dropdown
   order is All, Common, Uncommon, Rare, Mythic, Eldritch - not
   alphabetical.
+- Open Filters on the **Devikins** tab specifically (V2) - right below
+  Rating, you should see only Rarity, Ancestry, Personality, Life
+  Stage, and Procreations Left as plain rows, then three closed
+  sections: **Genes ▼**, **Affinities ▼**, **Attributes ▼**. Tap each
+  one open (▼ becomes ▲) and confirm: Genes has all five gene traits
+  (Eyes/Mouth/Ears/Hair/Horns Gene), Affinities has Overall Affinity
+  plus the five element Affinities, Attributes has the five element
+  Attributes - 21 filters total across everything visible/expanded, and
+  nothing missing or duplicated between sections. Pick a filter from
+  inside a collapsed section (expand it, pick a value, don't collapse
+  it back down) and tap **Apply Filters** - it should narrow the list
+  exactly like any other filter, whether its section is open or closed
+  at the time. Hide filters, then Show filters again - all three
+  sections should be back to closed (this resets every time the panel
+  itself is hidden/shown - it's just a display choice, not a picked
+  filter, so this is expected, not a bug). Switch to **Weapons** or
+  **Equipment** and confirm their filters are still one flat list, not
+  grouped - Devikins is the only one grouped so far.
 - With a filter applied, confirm the layout is two rows ("Show
   filters"/"Remove filters" on top, count/Deleted switch below); with no
   filter applied, confirm it collapses back to one row. Tap Show/Remove

@@ -1805,6 +1805,36 @@ across every detail layout (Devikins/Weapons/Equipment/the generic
 fallback), this one change covers all three collections at once, same
 as the earlier Save Name button did.
 
+## Devikins' filters grouped into Genes/Affinities/Attributes
+
+Per feedback: Devikins have 21 filterable traits, and the flat list in
+Filters had gotten too long to scan comfortably. Regrouped it, exactly
+per Raphael's own breakdown:
+
+- Always visible, right below Rating: Rarity, Ancestry, Personality,
+  Life Stage, Procreations Left.
+- Three closed-by-default, tappable sections: **Genes** (Eyes/Mouth/
+  Ears/Hair/Horns Gene), **Affinities** (Overall Affinity + the five
+  element Affinities), **Attributes** (the five element Attributes).
+
+The grouping lives in `DEVIKIN_FILTER_GROUPS` (`schema.js`) - a list of
+`{ key, label, columns }` groups; any devikin trait NOT claimed by a
+group defaults to always-visible, which happens to produce exactly
+Raphael's requested five-item list (Rarity/Ancestry/Personality/
+Life Stage/Procreations Left) simply because those are what's left
+over in `TRAIT_COLUMNS.devikin`'s own declaration order once the
+sixteen grouped traits are excluded - no separate "always visible"
+list needed. `FilterPanel.js` looks the kind up in its own
+`GROUPS_BY_KIND` map (currently `{ devikin: DEVIKIN_FILTER_GROUPS }`)
+and falls back to the old flat list for any kind with no entry -
+Weapons and Equipment aren't grouped yet, since Raphael's still
+deciding whether that makes sense for them too. Which sections are
+open (`expandedGroups`) is plain local `useState` inside
+`FilterPanel.js` itself rather than lifted up to `CollectionView.js`
+like the actual filter picks are - it's a display choice, not a filter
+pick, so it's fine for it to reset to fully-collapsed every time the
+whole panel is hidden and re-shown.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth

@@ -93,6 +93,13 @@ const FAQ_ENTRIES = [
       "The search bar at the top matches an NFT's name, your own custom nickname for it, or its ID, and narrows the list as you type. The star Rating filter lives in Filters (tap Show filters) - tap a star and every star up to it lights up, then tap Apply Filters to narrow the list to items rated EXACTLY that many stars (not 'that many or more'); tap the same star again, then Apply, to clear it. Both search and an already-applied star rating carry over as you switch between Devikins/Weapons/Equipment.",
   },
   {
+    id: 'devikin-filter-groups',
+    question: 'Why can\'t I see all the Devikins filters at once?',
+    keywords: ['genes', 'affinities', 'attributes', 'devikin filters', 'more filters', 'filter groups', 'grouped filters'],
+    answer:
+      "Devikins have 21 filterable traits, so on that tab Filters groups them to stay scannable: Rating, Rarity, Ancestry, Personality, Life Stage, and Procreations Left are always visible, and the rest sit inside three tappable sections - Genes, Affinities, and Attributes - each closed until you tap its name to open it. Picking a filter inside a closed section still works fine even if you leave it closed afterward; you just need to open a section once to reach the filters inside it. Weapons and Equipment aren't grouped this way yet - their filters are still one plain list.",
+  },
+  {
     id: 'name-rating',
     question: 'How do I give an NFT a nickname or rating?',
     keywords: ['nickname', 'rate', 'rating', 'name this', 'rename', 'stars', 'unrate', 'un-rate', 'remove rating', 'clear rating'],

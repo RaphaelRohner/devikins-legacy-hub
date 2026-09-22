@@ -145,6 +145,54 @@ export const TRAIT_COLUMNS = {
   },
 };
 
+// How the Filters panel groups Devikins' trait filters - per feedback
+// that a flat list of all 21 filterable traits was too long to scan.
+// Any devikin column NOT listed in one of these groups' `columns` stays
+// always visible at the top of the panel (alongside the Rating row,
+// which FilterPanel.js always shows above everything regardless of
+// kind) - that currently works out to rarity/ancestry/personality/
+// life_stage/procreations_left, in that order, simply because those
+// five are what's left over once the gene/affinity/attribute traits
+// below are claimed by a group. A trait added to TRAIT_COLUMNS.devikin
+// later defaults to always-visible unless it's added to a group here
+// too - better to show a new trait somewhere than silently hide it in
+// a group nobody's opened yet.
+//
+// Not used for weapon/equipment yet - Raphael's still deciding whether
+// grouping makes sense for those too, so FilterPanel.js falls back to
+// the old flat list for any kind with no entry here (see its own
+// GROUPS_BY_KIND lookup).
+export const DEVIKIN_FILTER_GROUPS = [
+  {
+    key: 'genes',
+    label: 'Genes',
+    columns: ['eyes_gene', 'mouth_gene', 'ears_gene', 'hair_gene', 'horns_gene'],
+  },
+  {
+    key: 'affinities',
+    label: 'Affinities',
+    columns: [
+      'overall_affinity',
+      'vitality_affinity',
+      'power_affinity',
+      'fortitude_affinity',
+      'agility_affinity',
+      'sanity_affinity',
+    ],
+  },
+  {
+    key: 'attributes',
+    label: 'Attributes',
+    columns: [
+      'vitality_attribute',
+      'power_attribute',
+      'fortitude_attribute',
+      'agility_attribute',
+      'sanity_attribute',
+    ],
+  },
+];
+
 // Every table also has these columns, in addition to whatever is in
 // TRAIT_COLUMNS above. They're not "traits" - they're bookkeeping fields
 // the app itself needs (which wallet had this NFT, when we last checked,

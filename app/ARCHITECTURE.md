@@ -451,6 +451,29 @@ notes below.
   a long list of expanded filters — 20+ for Devikins — could grow taller
   than the screen with nothing below it reachable by scrolling).
 
+  **Devikins' filters are grouped (V2), per feedback that the flat list
+  of all 21 was too long to scan.** `GROUPS_BY_KIND` (this file) maps
+  `kind` to a group definition — currently just `devikin:
+  DEVIKIN_FILTER_GROUPS` (schema.js) — and a kind with no entry (weapon/
+  equipment, for now) falls back to `[]`, i.e. the original flat list,
+  unchanged. For Devikins: Rarity/Ancestry/Personality/Life Stage/
+  Procreations Left stay always visible right below Rating (they're
+  simply whatever's left in `TRAIT_COLUMNS.devikin` once the grouped
+  columns are excluded — see `alwaysVisibleColumnNames`), and the
+  remaining 16 collapse into three tappable sections — **Genes** (the
+  five *_gene columns), **Affinities** (Overall + the five element
+  Affinities), **Attributes** (the five element Attributes) — each
+  closed by default. `expandedGroups` (which sections are open) is
+  local `useState` inside `FilterPanel.js` itself, not lifted up to
+  `CollectionView.js` like the actual filter picks are - it's a pure
+  display choice, not part of what gets applied, so it's fine for it to
+  reset to fully-collapsed every time this component remounts (i.e.
+  every time the whole panel is hidden and shown again via
+  `CollectionView.js`'s own "Show/Hide filters" toggle). A group with
+  none of its columns present in this wallet's `availableOptions` (e.g.
+  every Devikin happens to be missing one gene) doesn't render at all,
+  same rule the flat list always used per-column.
+
   The available options are still data-driven rather than hardcoded:
   `CollectionView.js` asks the database (via `getDistinctColumnValues`/
   `getColumnRange`) what values and ranges actually exist *for this

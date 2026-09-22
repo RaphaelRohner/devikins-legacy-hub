@@ -642,6 +642,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
         ListHeaderComponent={
           expanded ? (
             <FilterPanel
+              kind={kind}
               availableOptions={availableOptions}
               pendingFilters={pendingFilters}
               onTextFilterChange={handleTextFilterChange}
