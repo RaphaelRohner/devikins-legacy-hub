@@ -27,6 +27,24 @@ tone) for anything a user could plausibly ask "how do I..." or "what does
 stale - this has already happened once, when the auto-retry removal left
 two old Devi answers describing a background retry that no longer exists.
 
+## Bump app.json's version when a real batch of changes lands
+
+`app.json`'s `version` field (also mirrored in `package.json`) is the
+one source of truth for the version shown on the splash screen and
+sent in Feedback.js's email subject (see App.js's `APP_VERSION`) - it
+does NOT bump itself, and per feedback it sat at the original "1.0.0"
+through this entire V2 round of changes (hamburger menu, search/star
+filter, list/tiles, names & ratings, feedback form, and everything
+since) before anyone noticed. Bumped to "2.0.0" to match, since NOTES.md
+already calls this whole body of work "V2" throughout.
+
+Going forward: bump this whenever a meaningful batch of user-facing
+changes lands, not necessarily on every single commit (this is a
+personal, solo-tested app, not a public release train) - but don't let
+it go stale for an entire round of feature work again either. A good
+rule of thumb: if it's worth its own NOTES.md section, it's worth
+considering for a version bump too.
+
 ## The three collections
 
 | Name | Klever asset ID | Metadata API "kind" |
