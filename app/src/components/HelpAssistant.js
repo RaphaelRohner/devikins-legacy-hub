@@ -39,7 +39,7 @@
  * just the arrow, per feedback).
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -272,12 +272,18 @@ export default function HelpAssistant({ onClose }) {
   const [messages, setMessages] = useState(() => [makeMessage('assistant', GREETING)]);
   const [inputText, setInputText] = useState('');
   const scrollViewRef = useRef(null);
-
-  // Keeps the chat scrolled to the newest message, the same way any
-  // normal chat/messaging screen behaves.
-  useEffect(() => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
-  }, [messages]);
+  // The chat bubbles and the always-visible FAQ list below them share
+  // one long ScrollView (see the JSX comment further down). Sending a
+  // question used to call scrollToEnd(), which jumps to the very
+  // bottom of that whole ScrollView - i.e. past your new answer bubble
+  // and all the way down to the end of the FAQ list - so the answer
+  // that just appeared was scrolled straight out of view and it looked
+  // like nothing had happened. Instead we measure the chat bubbles'
+  // own height (messagesBlockRef's onLayout below) and the visible
+  // viewport height (this ref, from the ScrollView's own onLayout),
+  // and scroll only far enough to bring the newest bubble to the
+  // bottom of the visible area, the way a normal chat screen does.
+  const viewportHeightRef = useRef(0);
 
   function respondTo(questionText) {
     const trimmed = questionText.trim();
@@ -320,8 +326,25 @@ export default function HelpAssistant({ onClose }) {
           ref={scrollViewRef}
           style={styles.chatLog}
           contentContainerStyle={styles.chatLogContent}
+          onLayout={(event) => {
+            viewportHeightRef.current = event.nativeEvent.layout.height;
+          }}
         >
-          {messages.map((message) => {
+          <View
+            onLayout={(event) => {
+              // Fires whenever the chat bubbles' own total height
+              // changes - i.e. whenever a message is added - with the
+              // FAQ list below excluded, since it's a sibling, not part
+              // of this measured View. Skip the very first render
+              // (just the greeting) so opening the screen doesn't
+              // scroll anywhere on its own.
+              if (messages.length <= 1) return;
+              const messagesHeight = event.nativeEvent.layout.height;
+              const targetY = Math.max(0, messagesHeight - viewportHeightRef.current + 24);
+              scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+            }}
+          >
+            {messages.map((message) => {
             const isUser = message.sender === 'user';
             return (
               <View
@@ -341,6 +364,7 @@ export default function HelpAssistant({ onClose }) {
               </View>
             );
           })}
+          </View>
 
           {/* The full FAQ, always visible - every question with its
               answer listed directly underneath it, one after another,
