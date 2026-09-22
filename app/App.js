@@ -175,18 +175,27 @@ function AppContent() {
 
   // The top search bar's current text (search by NFT name/custom name
   // or ID/nonce - see queryNfts in database.js) and the exact-match
-  // star-rating filter (0 = no rating filter, 1-5 = show only that exact
-  // rating) - both live here rather than inside CollectionView because,
-  // unlike the per-collection trait filters CollectionView already
-  // manages, these two are meant to carry over as you switch between
-  // Devikins/Weapons/Equipment (searching "123" and then checking
-  // another tab for the same search is the expected behavior, not a
-  // bug - see CollectionView.js's own filter-reset effect, which
-  // deliberately does NOT touch these two). The star filter's own
-  // control used to sit up here too, next to the search field; it's now
-  // rendered inside FilterPanel.js instead (see CollectionView.js, which
-  // passes starFilter/setStarFilter down that far) - only where it's
-  // DRAWN moved, this state and the query it feeds are unchanged.
+  // star-rating filter's applied value (0 = no rating filter, 1-5 =
+  // show only that exact rating) - both live here rather than inside
+  // CollectionView because, unlike the per-collection trait filters
+  // CollectionView already manages, an applied search/star pick is
+  // meant to carry over as you switch between Devikins/Weapons/
+  // Equipment (searching "123" and then checking another tab for the
+  // same search is the expected behavior, not a bug - see
+  // CollectionView.js's own filter-reset effect, which resets its own
+  // local `pendingStarFilter` back to whatever's still applied here on
+  // a tab switch, but never touches searchText or this starFilter
+  // itself). The star filter's own control used to sit up here too,
+  // next to the search field; it's now rendered inside FilterPanel.js
+  // instead (see CollectionView.js, which passes starFilter/
+  // setStarFilter down that far as onStarFilterChange). Unlike
+  // searchText, which updates this state directly on every keystroke,
+  // `setStarFilter` (passed down as `onStarFilterChange`) is now only
+  // called once Apply Filters (or Remove filters) is pressed in
+  // CollectionView.js - per feedback that a star narrowing the list the
+  // instant it was tapped, while every other filter waited for Apply,
+  // was confusing. See CollectionView.js's own file comment for the
+  // full reasoning.
   const [searchText, setSearchText] = useState('');
   const [starFilter, setStarFilter] = useState(0);
 

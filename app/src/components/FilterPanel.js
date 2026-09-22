@@ -27,12 +27,18 @@
  * will only offer "Common", not every possible rarity.
  *
  * One row is different: the star-rating filter at the top (starFilter/
- * onStarFilterChange props) isn't derived from the database and isn't
- * part of the pending/Apply flow the rows below it use - it comes
- * straight from App.js (see its own file comment - it used to sit in
- * the top search bar, next to the search field, before the theme toggle
- * took that spot) and, like the search field, takes effect immediately
- * as you tap a star rather than waiting for "Apply Filters".
+ * onStarFilterChange props) isn't derived from the database like the
+ * rows below it are - its options are just a fixed row of 5 stars. It
+ * IS part of the same pending/Apply flow those rows use, though: what's
+ * passed in here is CollectionView.js's own `pendingStarFilter`, not
+ * the applied value straight from App.js, so tapping a star only
+ * updates the pending pick - it takes effect (and bubbles up to
+ * App.js, where the applied value lives so it can carry over between
+ * Devikins/Weapons/Equipment) only once "Apply Filters" is pressed,
+ * same as every filter below it. This used to apply the instant you
+ * tapped a star; per feedback that was confusing next to filters that
+ * all wait for Apply, so it was folded into the same flow - see
+ * CollectionView.js's own file comment for the full reasoning.
  */
 
 import { View, Text, TextInput, StyleSheet } from 'react-native';

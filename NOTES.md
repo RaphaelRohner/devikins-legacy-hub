@@ -1714,6 +1714,32 @@ to whoever sent the feedback, which the fixed address can't do since
 it's always the same value. The draft's actual `mailto:` recipient is
 unchanged; only what appears as body text changed.
 
+## Star filter joined the Apply Filters flow, instead of applying instantly
+
+Per feedback: the Rating row's star filter used to narrow the list the
+instant you tapped a star - every other filter in the Filters panel
+waited for an explicit **Apply Filters** tap. That inconsistency meant
+tapping a star DID narrow the list right away, but the panel stayed
+open on top of the (already narrowed) results, so in practice you still
+had to tap "Hide filters" to actually see anything - with no Apply
+Filters button ever showing up to explain why nothing else seemed to
+be happening.
+
+Fixed by folding the star pick into the exact same pending/Apply flow
+the trait filters already use. `CollectionView.js` now tracks its own
+`pendingStarFilter`, separate from the *applied* `starFilter` value
+that still lives in `App.js` (so an applied rating keeps carrying over
+between Devikins/Weapons/Equipment, same as before). Tapping a star
+only updates the pending pick and makes Apply Filters appear, exactly
+like changing a Rarity dropdown does; Apply pushes it up to `App.js`
+via `onStarFilterChange`, Remove filters clears it back to 0, and
+switching tabs with an unapplied pick drops it back to whatever's
+still actually applied - never carrying an unapplied pick into another
+tab. The underlying filter logic (still an exact rating match) and the
+star highlighting (every star up to the pick lights up together, a
+separate recent fix) are both unchanged - this was purely about when
+the pick takes effect.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth

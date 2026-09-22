@@ -387,14 +387,21 @@ notes below.
   with first - it's a single on/off choice.
 
   **V2 additions:** this file now also accepts `searchText`/`starFilter`/
-  `onStarFilterChange`/`viewMode` props from `App.js` and passes them
-  straight through to `queryNfts` (searchText/starFilter) and down into
-  `FilterPanel.js` (starFilter/onStarFilterChange, which draws the
-  actual Rating row - see that file's own notes below) alongside its own
-  trait `filters` - unlike those trait filters, `searchText`/`starFilter`
-  deliberately do NOT get reset by the kind-change effect above, since
-  carrying a search across tabs (search "123", then check another
-  collection) is the expected behavior, not a bug. **List/Tiles**
+  `onStarFilterChange`/`viewMode` props from `App.js` and passes
+  `searchText` straight through to `queryNfts`, alongside its own trait
+  `filters`. `searchText` deliberately does NOT get reset by the
+  kind-change effect above, since carrying a search across tabs (search
+  "123", then check another collection) is the expected behavior, not a
+  bug. `starFilter` (the applied value) carries over the same way - but
+  unlike `searchText`, it now goes through its own local
+  `pendingStarFilter` state first (mirroring `pendingFilters` below) so
+  a star pick joins the same Apply Filters step the trait filters use,
+  rather than narrowing the list the instant a star is tapped like it
+  used to; `pendingStarFilter` DOES get reset by the kind-change effect
+  (back to whatever `starFilter` is still applied, not to 0) so an
+  unapplied pick doesn't silently carry into another tab. See this
+  file's own file comment and `FilterPanel.js`'s notes below for the
+  full reasoning. **List/Tiles**
   (`viewMode`) used to be state this file owned itself, with its own
   toggle row; per feedback moving that toggle up onto `App.js`'s search
   row (to the right of the search field), the state moved up too -
@@ -412,11 +419,16 @@ notes below.
   themselves (no toggle, no Apply/Remove button - those live in
   `CollectionView.js`, see above), plus one extra row of its own at the
   top: the exact-match 1-5 star **Rating** filter (`StarRating.js`) -
-  unlike every row below it, this one isn't derived
-  from the database and isn't part of the pending/Apply flow, it takes
-  effect the instant a star is tapped (`starFilter`/`onStarFilterChange`
-  props, passed straight through from `App.js` via `CollectionView.js`
-  - see that file's own V2-additions note above). `CollectionView.js`
+  unlike every row below it, this one isn't derived from the database
+  (its options are just a fixed row of 5 stars), but it IS part of the
+  same pending/Apply flow those rows use: the `starFilter`/
+  `onStarFilterChange` props passed in here are `CollectionView.js`'s
+  own `pendingStarFilter`/`setPendingStarFilter`, not the applied value
+  straight from `App.js`, so tapping a star only updates the pending
+  pick until Apply Filters is pressed (per feedback that having the
+  star narrow the list instantly, while every other filter waited for
+  Apply, was confusing - see that file's own V2-additions note above
+  for the full reasoning). `CollectionView.js`
   places this whole component inside its `FlatList`'s
   `ListHeaderComponent`, and only
   while the panel is expanded, so these rows scroll together with the

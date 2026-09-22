@@ -46,14 +46,16 @@ button).
 4. Tap "Show filters" - the **Rating** row should be right at the top,
    above the other filter dropdowns. Tap one of its five stars - it and
    every star before it should light up together (same look as the
-   Rating control in an NFT's detail view), and the list should narrow
-   to only that exact rating right away (no need to tap Apply Filters
-   for this one) - it's still an exact match under the hood, only the
-   display changed; tap the same star again to clear it.
-   Then pick one of the other filters and tap **Apply Filters** - the
-   list should narrow further. Tap **Remove filters ✕** - it should go
-   back to showing everything except the search text and star rating,
-   which should still apply on top of that.
+   Rating control in an NFT's detail view), but the list should NOT
+   narrow yet and an **Apply Filters** button should appear - tapping a
+   star now joins the same pending/Apply step as every other filter,
+   rather than narrowing the list right away. Tap **Apply Filters** -
+   now the list narrows to that exact rating (still an exact match
+   under the hood, only the display changed) and the panel closes. Tap
+   the same star again, then Apply, to clear it. Pick one of the other
+   filters and tap **Apply Filters** - the list should narrow further.
+   Tap **Remove filters ✕** - it should go back to showing everything
+   except the search text, which should still apply on top of that.
 5. Tap the **List/Tiles** toggle (top-right of the search row) - the
    layout should switch between the normal picture-plus-traits rows and
    a compact grid of just pictures. Switch to a different tab (Devikins/
@@ -146,9 +148,14 @@ For **each** of Devikins, Weapons, and Equipment:
   states to make sure nothing is unresponsive.
 - Switch tabs while a filter is applied and the panel is expanded - the
   panel should close and the filter should reset on the new tab (not
-  carry over/stay open). The top search bar's text and the Rating row's
-  star filter are a deliberate exception (V2) - those two are meant to
-  carry over across tabs, so confirm they DON'T reset when you switch.
+  carry over/stay open). The top search bar's text is a deliberate
+  exception (V2) - it's meant to carry over across tabs, so confirm it
+  DOESN'T reset when you switch. The Rating row's star filter is a
+  partial exception: an already-**applied** star rating carries over
+  across tabs same as search does, but a star you've tapped and NOT yet
+  applied (no Apply Filters tap yet) does NOT carry over - switching
+  tabs with an unapplied star pick should drop it, same as it drops any
+  other unapplied trait pick.
 
 ### 6. Deleted / comment (the manual "I sold this" feature)
 
@@ -205,9 +212,9 @@ For **each** of Devikins, Weapons, and Equipment:
   rating should still be there.
 - In the top search bar, search for the nickname you just gave it - it
   should find that NFT (search matches the nickname as well as the
-  in-game name and the ID). Open Filters and tap that same star count in
-  the Rating row - it should show up there too (an exact match, not "N
-  or higher").
+  in-game name and the ID). Open Filters, tap that same star count in
+  the Rating row, then tap **Apply Filters** - it should show up there
+  too (an exact match, not "N or higher").
 - Run **Fetch/Update** again and confirm both the name and the rating
   survive the re-fetch (same underlying fix as section 6 above - these
   two columns are just as local/user-entered as `deleted`/`comment`).

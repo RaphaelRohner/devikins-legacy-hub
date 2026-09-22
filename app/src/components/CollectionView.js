@@ -35,6 +35,19 @@
  *     the results underneath it, and disappears entirely once the
  *     Apply/Remove button is pressed (see handleApplyPress/
  *     handleRemovePress below, which both close the panel again).
+ *
+ * The star-rating filter (starFilter prop, applied value owned by
+ * App.js so it can carry over between Devikins/Weapons/Equipment - see
+ * App.js's own comment) used to apply the instant you tapped a star,
+ * separately from the trait filters' pending/Apply flow. Per feedback
+ * that this was confusing - it narrowed the list immediately but the
+ * Filters panel stayed open, so you had to manually hide it to actually
+ * see the (already narrowed) results, and no "Apply Filters" button
+ * ever appeared for a star-only change - it's now folded into the same
+ * flow as every other filter: tapping a star only updates
+ * `pendingStarFilter` (local to this component), and it only reaches
+ * the actual query (and bubbles up to App.js via onStarFilterChange)
+ * once Apply Filters is pressed, same as any trait filter.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -105,6 +118,11 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   const [availableOptions, setAvailableOptions] = useState({});
   const [pendingFilters, setPendingFilters] = useState({});
   const [appliedFilters, setAppliedFilters] = useState({});
+  // The star filter's own "picked but not yet applied" value - same
+  // idea as pendingFilters above, just tracked separately since the
+  // star filter isn't one of the derived trait columns. Starts in sync
+  // with whatever's already applied (the starFilter prop from App.js).
+  const [pendingStarFilter, setPendingStarFilter] = useState(starFilter);
 
   const reloadRows = useCallback(async () => {
     if (!ownerAddresses || ownerAddresses.length === 0) {
@@ -162,6 +180,13 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     setPendingFilters({});
     setAppliedFilters({});
     setFilters({});
+    // Drops any not-yet-applied star pick, same as the trait filters
+    // above - but unlike them, snaps back to whatever's still actually
+    // applied (starFilter) rather than to 0, since the star filter
+    // itself is meant to carry over across tabs (see this file's own
+    // comment at the top).
+    setPendingStarFilter(starFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, ownerAddresses]);
 
   // Makes Android's system Back button/gesture close an open NFT detail
@@ -306,10 +331,14 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // Only now does the actual database query find out about the
   // selection - see the file comment at the top. Also closes the
   // (scrollable) filter rows panel, per feedback that the filter rows
-  // should disappear once you've actually applied your pick.
+  // should disappear once you've actually applied your pick. Includes
+  // the star pick too now (onStarFilterChange bubbles it up to App.js,
+  // which is what actually feeds it to the query - see CollectionView's
+  // own starFilter prop/reloadRows).
   function handleApplyPress() {
     setAppliedFilters(pendingFilters);
     setFilters(pendingFilters);
+    onStarFilterChange(pendingStarFilter);
     setExpanded(false);
   }
 
@@ -319,10 +348,13 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // there's nothing new pending, per feedback: a quick way to undo the
   // whole selection rather than having to change each control back to
   // "All" by hand. Also closes the filter rows panel, same as Apply.
+  // Clears the star pick too, same as every trait filter.
   function handleRemovePress() {
     setPendingFilters({});
     setAppliedFilters({});
     setFilters({});
+    setPendingStarFilter(0);
+    onStarFilterChange(0);
     setExpanded(false);
   }
 
@@ -379,13 +411,18 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // once this is true, so there's nothing to tap when there's nothing
   // new to do (a plain object comparison won't work here since these
   // are freshly-built objects each time, so this compares their
-  // contents instead).
-  const hasPendingChanges = JSON.stringify(pendingFilters) !== JSON.stringify(appliedFilters);
+  // contents instead). Includes the star pick, so tapping a star alone
+  // (with no trait filter touched) makes Apply Filters appear too.
+  const hasPendingChanges =
+    JSON.stringify(pendingFilters) !== JSON.stringify(appliedFilters) ||
+    pendingStarFilter !== starFilter;
   // Whether a filter selection is actually live right now - drives the
   // small "Remove filters" link shown to the right of the "Show
   // filters" toggle, so a filter can be cleared in one tap without
-  // opening the panel first.
-  const hasAppliedFilters = Object.keys(appliedFilters).length > 0;
+  // opening the panel first. Includes the star filter, so it still
+  // shows up (and Remove filters still clears it) when a star rating is
+  // the only thing currently narrowing the list.
+  const hasAppliedFilters = Object.keys(appliedFilters).length > 0 || starFilter > 0;
 
   // The item count and Deleted switch - shared between two spots below.
   // Normally they ride along on the same row as "Show filters" (there's
@@ -546,8 +583,8 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
               pendingFilters={pendingFilters}
               onTextFilterChange={handleTextFilterChange}
               onRangeFilterChange={handleRangeFilterChange}
-              starFilter={starFilter}
-              onStarFilterChange={onStarFilterChange}
+              starFilter={pendingStarFilter}
+              onStarFilterChange={setPendingStarFilter}
             />
           ) : null
         }
