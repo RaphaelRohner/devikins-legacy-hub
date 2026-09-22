@@ -44,9 +44,12 @@ button).
    showing everything (the "✕" itself should disappear once the field
    is empty again).
 4. Tap "Show filters" - the **Rating** row should be right at the top,
-   above the other filter dropdowns. Tap one of its five stars - the
-   list should narrow to only that exact rating right away (no need to
-   tap Apply Filters for this one); tap the same star again to clear it.
+   above the other filter dropdowns. Tap one of its five stars - it and
+   every star before it should light up together (same look as the
+   Rating control in an NFT's detail view), and the list should narrow
+   to only that exact rating right away (no need to tap Apply Filters
+   for this one) - it's still an exact match under the hood, only the
+   display changed; tap the same star again to clear it.
    Then pick one of the other filters and tap **Apply Filters** - the
    list should narrow further. Tap **Remove filters ✕** - it should go
    back to showing everything except the search text and star rating,
@@ -194,10 +197,10 @@ For **each** of Devikins, Weapons, and Equipment:
   go back to greyed-out (nothing left to save), and reopening the NFT
   should show the nickname persisted.
 - Tap a star in the Rating control - it and every star before it should
-  light up together (unlike the Rating row's exact-match star filter
-  under Filters, this one fills cumulatively), and this one still saves
-  immediately on tap, no button needed. Tap the same star again - the
-  rating should clear back to unrated.
+  light up together (same look as the Rating row's star filter under
+  Filters), and this one still saves immediately on tap, no button
+  needed. Tap the same star again - the rating should clear back to
+  unrated.
 - Go back to the list, then reopen the same NFT - both the name and the
   rating should still be there.
 - In the top search bar, search for the nickname you just gave it - it

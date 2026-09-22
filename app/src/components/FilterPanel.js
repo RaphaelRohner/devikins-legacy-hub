@@ -63,7 +63,7 @@ export default function FilterPanel({ availableOptions, pendingFilters, onTextFi
     <View style={[styles.container, { backgroundColor: colors.surfaceAlt }]}>
       <View style={[styles.filterRow, styles.starFilterRow, { borderBottomColor: colors.border }]}>
         <Text style={[styles.filterLabel, { color: colors.text }]}>Rating (exact match)</Text>
-        <StarRating value={starFilter} onChange={onStarFilterChange} mode="exact" size={22} />
+        <StarRating value={starFilter} onChange={onStarFilterChange} size={22} />
       </View>
       {filterableColumnNames.map((columnName) => {
         const option = availableOptions[columnName];

@@ -98,9 +98,10 @@ Key functions, in the order you'd use them:
   one wallet now — see "Multiple wallets" below. `excludeDeleted` is the
   "Deleted" switch next to the filter toggle. `searchText` (V2) is the
   top search bar in `App.js` — matches `name`, `custom_name`, or the
-  nonce itself, case-insensitively. `starRating` (V2) is the top bar's
-  exact-match 1-5 star filter — an **exact** rating match ("only my
-  4-star items"), not "4 or better".
+  nonce itself, case-insensitively. `starRating` (V2) is the Filters
+  panel's 1-5 star Rating filter — an **exact** rating match ("only my
+  4-star items"), not "4 or better", regardless of how many stars light
+  up on screen (see `StarRating.js` below).
 - **`getDistinctColumnValues` / `getColumnRange`** — used by the filter
   panel to figure out, from the data actually in the database, what
   dropdown options or min/max ranges to offer (see FilterPanel.js below).
@@ -260,9 +261,8 @@ notes below.
   the other way around). Underneath that sits a persistent search bar
   (search by name/ID) — see `CollectionView.js` below for how the
   search text feeds into `queryNfts`. The exact-match 1-5 star filter
-  (`StarRating.js`, `mode="exact"`) used to sit in this same top area;
-  it's since moved down into `FilterPanel.js`, alongside the other
-  filters.
+  (`StarRating.js`) used to sit in this same top area; it's since moved
+  down into `FilterPanel.js`, alongside the other filters.
   Both Wallets and Feedback still take over the whole screen exactly as
   Wallets always did, with their own "‹ Back to Home" button that
   returns to whichever collection screen (`lastCollectionScreen`) was
@@ -311,14 +311,16 @@ notes below.
   currently-showing collection screen is outlined to show where you are.
 
 - **`components/StarRating.js`** (V2) — a shared row of five tappable ★
-  stars used in two places with different meanings, picked via a `mode`
-  prop: `mode="exact"` (the top search bar in `App.js`) only lights up
-  the one star matching the current pick — it's a filter ("show me only
-  my 3-star items"), not a minimum. `mode="cumulative"` (the Rating
-  control in `NftCard.js`'s detail view) is the usual five-star-widget
-  look — tapping star 3 lights up 1, 2, and 3 together, meaning "I'm
-  rating this 3 stars." Either way, tapping the already-selected star
-  clears the pick back to 0/unrated.
+  stars used in two places: `FilterPanel.js`'s Rating filter, and the
+  Rating control in `NftCard.js`'s detail view. Visually both light up
+  every star from 1 up to the current value together (tapping star 3
+  lights up 1, 2, and 3), the usual five-star-widget look — per
+  feedback that the filter lighting only the single tapped star read as
+  inconsistent with the detail view. That's purely display: the filter
+  is still an **exact** match ("show me only my 3-star items"), not a
+  minimum — that logic lives in `queryNfts`'s `star_rating = ?` query,
+  not in this component. Tapping the already-selected star clears the
+  pick back to 0/unrated, either way.
 
 - **`components/ProgressBar.js`** — shown only while a fetch is running.
   Displays which collection is currently being fetched and a count like
@@ -409,8 +411,8 @@ notes below.
 - **`components/FilterPanel.js`** — just the dropdowns and range boxes
   themselves (no toggle, no Apply/Remove button - those live in
   `CollectionView.js`, see above), plus one extra row of its own at the
-  top: the exact-match 1-5 star **Rating** filter (`StarRating.js`,
-  `mode="exact"`) - unlike every row below it, this one isn't derived
+  top: the exact-match 1-5 star **Rating** filter (`StarRating.js`) -
+  unlike every row below it, this one isn't derived
   from the database and isn't part of the pending/Apply flow, it takes
   effect the instant a star is tapped (`starFilter`/`onStarFilterChange`
   props, passed straight through from `App.js` via `CollectionView.js`
@@ -496,9 +498,9 @@ notes below.
   **Name & Rating (V2):** an editable nickname (saved to the
   `custom_name` column via `setNftCustomName`) - separate from `name`,
   the in-game name pulled from fetched metadata, which is never
-  hand-edited - and a 1-5 star rating (`StarRating.js` in
-  `mode="cumulative"`, saved to `star_rating` via `setNftStarRating` the
-  instant a star is tapped - no separate save step needed, since picking
+  hand-edited - and a 1-5 star rating (`StarRating.js`, saved to
+  `star_rating` via `setNftStarRating` the instant a star is tapped -
+  no separate save step needed, since picking
   a rating IS the action). The nickname works differently: nothing is
   written to the database just from typing or leaving the field - a
   **Save Name** button right below the field (greyed out/disabled

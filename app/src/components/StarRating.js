@@ -1,23 +1,24 @@
 /**
  * StarRating.js
  *
- * A row of five tappable stars, shared by two different spots that both
- * need "pick a number 1-5" but with different meanings:
+ * A row of five tappable stars, shared by two different spots:
  *
- *   - The top search bar in App.js uses mode="exact": it's a FILTER, so
- *     only the star matching the current pick lights up (not every star
- *     up to it) - tapping star 3 means "show me only my 3-star items",
- *     not "3 stars or better". Per how this was designed (an exact-
- *     match filter, not a minimum-rating one).
- *   - The NFT detail view in NftCard.js uses mode="cumulative": it's an
- *     actual RATING, so the usual five-star-widget behavior applies -
- *     tapping star 3 lights up stars 1, 2, and 3 together, meaning "I'm
- *     giving this a 3-star rating".
+ *   - The Filters panel (FilterPanel.js) uses it as a FILTER - picking
+ *     a star still means an exact match ("show me only my 3-star
+ *     items", not "3 stars or better"; see the `star_rating = ?` query
+ *     in database.js). That's a filtering-logic decision made outside
+ *     this component, not something `value`/`onChange` here know about.
+ *   - The NFT detail view (NftCard.js) uses it as an actual RATING -
+ *     tapping star 3 means "I'm giving this a 3-star rating".
  *
- * Either way, tapping the star that's already selected clears the pick
- * back to 0 (no filter / not rated) instead of needing a separate
+ * Visually, both places light up every star from 1 up to the current
+ * value together (tapping star 3 lights stars 1, 2, and 3) - the usual
+ * five-star-widget look, per feedback that showing only the single
+ * tapped star in the Filters panel read as inconsistent with the
+ * detail view. Tapping the star that's already selected clears the
+ * pick back to 0 (no filter / not rated) instead of needing a separate
  * "clear" control, and `size` lets the same component work both as a
- * small compact filter (App.js's top bar) and a larger, easier-to-tap
+ * small compact filter (Filters panel) and a larger, easier-to-tap
  * rating control (NftCard.js's detail view).
  */
 
@@ -26,13 +27,13 @@ import { useTheme } from '../context/ThemeContext';
 
 const STAR_VALUES = [1, 2, 3, 4, 5];
 
-export default function StarRating({ value = 0, onChange, mode = 'cumulative', size = 20, disabled = false }) {
+export default function StarRating({ value = 0, onChange, size = 20, disabled = false }) {
   const { colors } = useTheme();
 
   return (
     <View style={styles.row}>
       {STAR_VALUES.map((starValue) => {
-        const isLit = mode === 'exact' ? starValue === value : starValue <= value;
+        const isLit = starValue <= value;
         return (
           <TouchableOpacity
             key={starValue}

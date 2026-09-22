@@ -313,7 +313,6 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
       <StarRating
         value={nft.star_rating ?? 0}
         onChange={handleStarRatingChange}
-        mode="cumulative"
         size={26}
       />
     </View>

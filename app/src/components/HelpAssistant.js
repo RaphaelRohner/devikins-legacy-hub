@@ -90,7 +90,7 @@ const FAQ_ENTRIES = [
     question: 'How do search and the star filter work?',
     keywords: ['search', 'star filter', 'filter'],
     answer:
-      "The search bar at the top matches an NFT's name, your own custom nickname for it, or its ID. Tapping one of the five stars next to it shows only items rated EXACTLY that many stars (not 'that many or more') - tap the same star again to clear it. Both carry over as you switch between Devikins/Weapons/Equipment.",
+      "The search bar at the top matches an NFT's name, your own custom nickname for it, or its ID. The star Rating filter lives in Filters (tap Show filters) - tap a star and every star up to it lights up, but it still only shows items rated EXACTLY that many stars, not 'that many or more' - tap the same star again to clear it. Both search and the star filter carry over as you switch between Devikins/Weapons/Equipment.",
   },
   {
     id: 'name-rating',
