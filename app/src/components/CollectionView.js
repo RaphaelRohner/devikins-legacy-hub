@@ -52,7 +52,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Switch, BackHandler } from 'react-native';
-import FilterPanel, { NO_FILTER } from './FilterPanel';
+import FilterPanel, { NO_FILTER, humanizeColumnName } from './FilterPanel';
 import NftCard from './NftCard';
 import NftTile from './NftTile';
 import DevikinSummaryRow from './DevikinSummaryRow';
@@ -406,6 +406,54 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   const hasActiveFilters =
     Object.keys(filters).length > 0 || searchText.trim().length > 0 || starFilter > 0;
 
+  // Builds the human-readable "Rarity: Common, Rating: 4 stars, ..."
+  // list used in the empty-state message below - per feedback that once
+  // the collection tabs moved inside the hamburger menu, a bare "No
+  // NFTs match these filters" no longer made it obvious which tab you
+  // were even looking at, or what was actually applied. Search comes
+  // first (it's the top bar, above everything else), then the star
+  // Rating (the top row of the Filters panel), then the trait filters
+  // in the same order FilterPanel.js lists them (TRAIT_COLUMNS' own
+  // declaration order for this kind - see schema.js), so this always
+  // reads in the same order the controls that produced it are shown in.
+  function describeActiveFilters() {
+    const parts = [];
+
+    const trimmedSearch = searchText.trim();
+    if (trimmedSearch.length > 0) {
+      parts.push(`Search: "${trimmedSearch}"`);
+    }
+
+    if (starFilter > 0) {
+      parts.push(`Rating: ${starFilter} star${starFilter === 1 ? '' : 's'}`);
+    }
+
+    for (const columnName of Object.keys(TRAIT_COLUMNS[kind])) {
+      const filterValue = filters[columnName];
+      if (filterValue === undefined || filterValue === null || filterValue === '') continue;
+
+      const label = humanizeColumnName(columnName);
+      if (TRAIT_COLUMNS[kind][columnName].kind === 'text') {
+        parts.push(`${label}: ${filterValue}`);
+        continue;
+      }
+
+      // Numeric range filter - mirrors queryNfts' own >=/<= handling in
+      // database.js, so the wording matches what's actually applied.
+      const hasMin = filterValue.min !== undefined && filterValue.min !== null && filterValue.min !== '';
+      const hasMax = filterValue.max !== undefined && filterValue.max !== null && filterValue.max !== '';
+      if (hasMin && hasMax) {
+        parts.push(`${label}: ${filterValue.min} to ${filterValue.max}`);
+      } else if (hasMin) {
+        parts.push(`${label}: ${filterValue.min} or more`);
+      } else if (hasMax) {
+        parts.push(`${label}: ${filterValue.max} or less`);
+      }
+    }
+
+    return parts.join(', ');
+  }
+
   // Whether anything picked in the controls hasn't been applied yet -
   // the "Apply Filters" button only shows up (below the toggle row)
   // once this is true, so there's nothing to tap when there's nothing
@@ -595,7 +643,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
             <View style={styles.emptyContainer}>
               <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
                 {hasActiveFilters
-                  ? 'No NFTs match these filters.'
+                  ? `No ${COLLECTIONS[kind].label} NFTs match the filter(s): ${describeActiveFilters()}`
                   : `This wallet doesn't hold any ${COLLECTIONS[kind].label} yet.`}
               </Text>
             </View>

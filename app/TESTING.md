@@ -56,6 +56,14 @@ button).
    filters and tap **Apply Filters** - the list should narrow further.
    Tap **Remove filters ✕** - it should go back to showing everything
    except the search text, which should still apply on top of that.
+   Now pick a combination guaranteed to match nothing (e.g. a star
+   rating nothing has, or a Rarity plus a numeric range that don't
+   overlap) and tap Apply Filters - the empty state should read "No
+   <Devikins/Weapons/Equipment, whichever tab> NFTs match the filter(s):
+   " followed by a comma-separated list naming every filter actually
+   applied (Search first if you'd typed something, then Rating, then
+   each trait filter with the same label shown on its row in the
+   panel), not a generic "No NFTs match these filters."
 5. Tap the **List/Tiles** toggle (top-right of the search row) - the
    layout should switch between the normal picture-plus-traits rows and
    a compact grid of just pictures. Switch to a different tab (Devikins/

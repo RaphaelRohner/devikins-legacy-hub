@@ -335,8 +335,18 @@ notes below.
   2. You fetched, and none of your wallets hold anything in this
      collection (not an error — some wallets just don't have any
      equipment, for example).
-  3. There are NFTs in this collection, but your current filters (which
-     now includes the Deleted switch, see below) exclude all of them.
+  3. There are NFTs in this collection, but the search text, star
+     Rating, and/or trait filters (`hasActiveFilters`) exclude all of
+     them - per feedback that once the collection tabs moved inside the
+     hamburger menu, a bare "No NFTs match these filters" no longer
+     said which tab you were even on. The message now names both (e.g.
+     "No Weapons NFTs match the filter(s): Rarity: Common, Rating: 4
+     stars") - see `describeActiveFilters` in this file for how that
+     list gets built, using `FilterPanel.js`'s own `humanizeColumnName`
+     so the wording matches the filter rows themselves. The Deleted
+     switch isn't counted as a "filter" for this - narrowing the list to
+     nothing purely by excluding deleted items falls back to situation
+     2's wording instead.
 
   It also owns the list/detail switch, driven by the
   `SUMMARY_ROW_COMPONENTS` lookup at the top of the file - every

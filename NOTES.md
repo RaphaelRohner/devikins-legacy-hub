@@ -1740,6 +1740,26 @@ star highlighting (every star up to the pick lights up together, a
 separate recent fix) are both unchanged - this was purely about when
 the pick takes effect.
 
+## Empty-filter message now names the collection and the applied filters
+
+Per feedback: since the Devikins/Weapons/Equipment tabs moved inside the
+hamburger menu, a bare "No NFTs match these filters." no longer made it
+obvious which collection you were even looking at, or what was
+narrowing it. The message now reads, for example:
+
+```
+No Weapons NFTs match the filter(s): Search: "flame", Rating: 4 stars,
+Rarity: Rare, Scaling: 80 to 100
+```
+
+`CollectionView.js`'s new `describeActiveFilters()` builds that list -
+search first, then the star Rating, then trait filters in the same
+order `FilterPanel.js` shows them - reusing `FilterPanel.js`'s own
+`humanizeColumnName` (now exported) so the wording always matches the
+filter rows themselves. The Deleted switch isn't counted as a "filter"
+here - excluding everything purely via Deleted still falls back to the
+plain "this wallet doesn't hold any X yet" wording, same as before.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth

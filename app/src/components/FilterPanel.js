@@ -46,7 +46,12 @@ import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../context/ThemeContext';
 import StarRating from './StarRating';
 
-function humanizeColumnName(columnName) {
+// Turns a database column name (snake_case, e.g. "improvement_level")
+// into a readable filter label ("Improvement Level"). Exported because
+// CollectionView.js's empty-state message ("No X NFTs match the
+// filter(s): ...") needs to describe the same applied filters using
+// the same labels shown on these rows.
+export function humanizeColumnName(columnName) {
   return columnName
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
