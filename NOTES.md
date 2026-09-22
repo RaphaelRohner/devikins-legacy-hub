@@ -13,6 +13,20 @@ filterable stats. Not a coding background; built with heavy AI assistance,
 so the code is commented more generously than usual and the docs assume no
 prior React Native/Expo knowledge.
 
+## Devi's FAQ is documentation too - keep it in sync
+
+Whenever a user-facing feature gets added or changed, add/update an entry
+in Devi's `FAQ_ENTRIES` (`app/src/components/HelpAssistant.js`) as part of
+that same change - not as an afterthought, and not just NOTES.md /
+ARCHITECTURE.md / TESTING.md. Devi is the in-app help section actual
+players will read, so per feedback it needs to stay a complete, accurate
+tour of everything the app does, not lag behind it. In practice: a new
+entry (question + keywords + a plain-English answer, matching the existing
+tone) for anything a user could plausibly ask "how do I..." or "what does
+... do" about, and a correction to any existing entry a change makes
+stale - this has already happened once, when the auto-retry removal left
+two old Devi answers describing a background retry that no longer exists.
+
 ## The three collections
 
 | Name | Klever asset ID | Metadata API "kind" |
