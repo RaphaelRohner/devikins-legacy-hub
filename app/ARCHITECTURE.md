@@ -520,15 +520,18 @@ notes below.
   `NftCard` detail view "List" view does.
 
 - **`components/Feedback.js`** (V2) — the "Feedback" screen, the sixth
-  hamburger menu entry. Builds a `mailto:` link (app name/version,
-  category - Feature request/Bug report/Feedback, name, and a free-text
-  message, all pre-filled) and opens it via React Native's
-  `Linking.openURL()` - the player still has to tap Send themselves in
-  whatever email app opens, since this app has no backend of its own to
-  send anything on their behalf. Goes to a "+" alias of Raphael's own
-  Gmail address (mail addressed to `[old feedback address removed]`
-  lands in his normal inbox, just easy to filter/label separately) -
-  not a GitHub address, since GitHub's own commit-attribution noreply
+  hamburger menu entry. Builds a `mailto:` link and opens it via React
+  Native's `Linking.openURL()` - the player still has to tap Send
+  themselves in whatever email app opens, since this app has no backend
+  of its own to send anything on their behalf. The subject line carries
+  the app name, version, and category (Feature request/Bug
+  report/Feedback); the body, per feedback, always follows one fixed
+  order regardless of category: which address it's headed to, the
+  feedback type, the name (if given, else "(not provided)"), then the
+  free-text message itself. Goes to a "+" alias of Raphael's own Gmail
+  address (mail addressed to `[old feedback address removed]` lands
+  in his normal inbox, just easy to filter/label separately) - not a
+  GitHub address, since GitHub's own commit-attribution noreply
   addresses are outbound-only and can't actually forward anything
   inbound. If no email app is available, falls back to an alert showing
   the feedback address and the full message text to copy by hand.

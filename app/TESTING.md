@@ -220,10 +220,13 @@ For **each** of Devikins, Weapons, and Equipment:
   shows as selected.
 - Type a short message, tap **Open Email Draft** - your phone's email
   app should open with a new draft addressed to
-  `[old feedback address removed]`, with the subject/body already
-  filled in (app name, version, category, name if you gave one, and
-  your message). You do NOT need to actually send it for this test -
-  confirming the draft opens correctly, pre-filled, is enough.
+  `[old feedback address removed]`, subject line
+  `Devikins Legacy Companion v<version> - <category>`, and a body in
+  this exact fixed order: `Email: ...`, `Feedback type: ...`,
+  `Name: ...` (or `(not provided)` if you left it blank), then
+  `Message:` followed by what you typed. You do NOT need to actually
+  send it for this test - confirming the draft opens correctly,
+  pre-filled in that order, is enough.
 - Leave the message field empty and confirm **Open Email Draft** is
   disabled (there's nothing to send yet).
 - If your phone/emulator has no email app configured at all, confirm you

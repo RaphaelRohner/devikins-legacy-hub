@@ -1674,6 +1674,28 @@ hand. Purely a `searchText === ''` check in `App.js`; the underlying
 search behavior (and the List/Tiles toggle sharing this same row) is
 unchanged.
 
+## Feedback email body restructured to a fixed order
+
+Per feedback, the `mailto:` draft's body now always follows one fixed
+order: which address it's headed to, the feedback type, the name (if
+given), then the message itself:
+
+```
+Email: [old feedback address removed]
+Feedback type: Bug report
+
+Name: (not provided)
+
+Message:
+<your typed message>
+```
+
+The app name and version used to be the first line of the body; they
+moved into the subject line instead (`Devikins Legacy Companion v1.x -
+Bug report`) so the body's four lines stay exactly the ones asked for,
+while the version is still there for a bug report - just visible the
+moment the draft opens either way, not buried in the body text.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth

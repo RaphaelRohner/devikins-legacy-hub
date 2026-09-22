@@ -5,11 +5,12 @@
  * HamburgerMenu.js's sixth entry). Lets the user send feature requests,
  * bug reports, or general feedback without the app needing its own
  * backend or email-sending service - it just builds a normal mailto:
- * link (App name/version, category, name, and the free-text message all
- * pre-filled into the subject/body) and hands it to the phone's own
- * email app via Linking.openURL(). The player still has to actually tap
- * Send themselves in whatever email app opens - this app never sends
- * anything on its own.
+ * link and hands it to the phone's own email app via Linking.openURL().
+ * The player still has to actually tap Send themselves in whatever
+ * email app opens - this app never sends anything on its own. The body
+ * is pre-filled in a fixed order, per feedback: which address this is
+ * headed to, the feedback type, the name (if given), then the message
+ * itself - see handleSubmit below.
  *
  * Why mailto: and not a "send to GitHub" address: GitHub's own
  * commit-attribution noreply addresses (id+username@users.noreply.
@@ -71,12 +72,19 @@ export default function Feedback({ appVersion, onClose }) {
 
   async function handleSubmit() {
     const categoryLabel = CATEGORIES.find((c) => c.key === category)?.label ?? 'Feedback';
-    const subject = `${APP_NAME} - ${categoryLabel}`;
+    // App name AND version live in the subject line now, not the body -
+    // the body's own fixed structure (below) is spoken for by other
+    // fields per feedback, but the version is still worth keeping
+    // somewhere for a bug report, and the subject line is visible the
+    // moment the draft opens either way.
+    const subject = `${APP_NAME} v${appVersion} - ${categoryLabel}`;
+    // Fixed order per feedback: which address this is headed to, the
+    // feedback type, the name (if given), then the message itself.
     const body =
-      `App: ${APP_NAME} v${appVersion}\n` +
-      `Category: ${categoryLabel}\n` +
+      `Email: ${FEEDBACK_EMAIL}\n` +
+      `Feedback type: ${categoryLabel}\n` +
       `Name: ${name.trim() || '(not provided)'}\n\n` +
-      `${message.trim()}`;
+      `Message:\n${message.trim()}`;
 
     const mailtoUrl = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
