@@ -17,9 +17,16 @@
  * commit-attribution noreply addresses (id+username@users.noreply.
  * github.com) are outbound-only - they don't receive or forward inbound
  * email from anyone else, so there's no way to make "email GitHub and
- * have it land in my inbox" actually work. A "+" alias of Raphael's own
- * address (see FEEDBACK_EMAIL below) is a real inbox that also makes
- * feedback easy to filter/label, without needing any new infrastructure.
+ * have it land in my inbox" actually work.
+ *
+ * FEEDBACK_EMAIL below used to be a "+" alias of Raphael's own primary
+ * Gmail address (mail to you+anything@gmail.com lands straight in
+ * your normal inbox - no separate mailbox needed), which worked fine,
+ * but per feedback he'd rather keep his real personal contact out of
+ * the app's source as much as possible - a public-ish repo is no place
+ * for it, even tagged. Switched to a separate address he already owns
+ * from an older game project instead, so this app's source never
+ * contains his primary email at all.
  *
  * Like every other "screen" in this app (see App.js's own file comment),
  * this is a plain component App.js swaps in based on `currentScreen`,
@@ -45,11 +52,11 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../context/ThemeContext';
 
-// A "+" alias of Raphael's own Gmail address - mail sent here lands in
-// his normal inbox (Gmail treats anything before the "+" as the real
-// address), just easy to filter/label separately from everything else,
-// without needing a dedicated support inbox or any new infrastructure.
-const FEEDBACK_EMAIL = '[old feedback address removed]';
+// A separate Gmail address Raphael already owns from an older game
+// project - not his primary personal address - so this app's source
+// never has to contain that one. See this file's own header comment
+// for why this changed from a "+" alias of his primary address.
+const FEEDBACK_EMAIL = 'chibitales2@gmail.com';
 
 const APP_NAME = 'Devikins Legacy Companion';
 

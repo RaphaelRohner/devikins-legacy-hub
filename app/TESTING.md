@@ -266,7 +266,7 @@ For **each** of Devikins, Weapons, and Equipment:
   shows as selected.
 - Type a short message, tap **Open Email Draft** - your phone's email
   app should open with a new draft addressed to
-  `[old feedback address removed]`, subject line
+  `chibitales2@gmail.com`, subject line
   `Devikins Legacy Companion v<version> - <category>`, and a body in
   this exact fixed order: `App: Devikins Legacy Companion v<version>`,
   `Email: <what you typed>` (or `(not provided)` if you left it blank),

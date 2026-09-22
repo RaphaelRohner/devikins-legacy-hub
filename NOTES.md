@@ -1835,6 +1835,28 @@ like the actual filter picks are - it's a display choice, not a filter
 pick, so it's fine for it to reset to fully-collapsed every time the
 whole panel is hidden and re-shown.
 
+## Feedback address changed - primary email dropped from the app's source
+
+The Feedback address (`FEEDBACK_EMAIL` in `Feedback.js`) was
+`[old feedback address removed]` - a "+" alias of Raphael's own
+primary Gmail address - since the feature was first built (see the
+"Feedback form (V2)" section above for that original reasoning). It
+worked exactly as designed: mail addressed to that alias landed
+straight in his normal inbox, confirmed by an actual test send. But
+per feedback, having his primary personal address sitting in the
+app's source at all - even tagged with "+devikins" - wasn't something
+he wanted, given the repo isn't guaranteed to stay just-for-him-only
+forever.
+
+Switched `FEEDBACK_EMAIL` to `chibitales2@gmail.com` instead - a
+separate Gmail address Raphael already owns from an older game
+project, unrelated to his primary identity. The mechanism is
+completely unchanged (still a plain `mailto:` link, still no backend);
+only the destination address changed. Updated `ARCHITECTURE.md` and
+`TESTING.md` to match; left the original "+" alias explanation further
+up in this file as-is, since it's accurate history of a decision that
+was correct at the time, not a mistake to erase.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
