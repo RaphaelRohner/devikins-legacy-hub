@@ -97,10 +97,14 @@ export default function Feedback({ appVersion, onClose }) {
     const mailtoUrl = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
     try {
-      const canOpen = await Linking.canOpenURL(mailtoUrl);
-      if (!canOpen) {
-        throw new Error('No email app available');
-      }
+      // We used to guard this with Linking.canOpenURL() first, but on a
+      // real (non-Expo-Go) Android build that check comes back false
+      // even when an email app is installed - Android 11+ restricts
+      // which other apps yours can "see" unless it explicitly declares
+      // that ahead of time, and canOpenURL's visibility check is
+      // exactly what that restriction blocks. openURL() itself doesn't
+      // hit that restriction, so we just try it directly and let the
+      // catch below handle a genuine failure (no email app at all).
       await Linking.openURL(mailtoUrl);
     } catch (err) {
       Alert.alert(
