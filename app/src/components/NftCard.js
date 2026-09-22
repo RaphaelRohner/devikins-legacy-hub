@@ -278,7 +278,11 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
   // (see database.js's setNftStarRating) - unlike the name above, this
   // saves the moment a star is tapped rather than needing its own commit
   // step, since picking a rating IS the action (there's nothing further
-  // to "finish typing").
+  // to "finish typing"). Also handles clearing it back to "not rated" -
+  // StarRating.js already lets you do that by tapping the currently-lit
+  // star again, but per feedback that wasn't discoverable as an actual
+  // "un-rate" option, so the explicit Clear Rating button below calls
+  // this the same way (nextRating is just 0 either way).
   async function handleStarRatingChange(nextRating) {
     await setNftStarRating(kind, nft.nonce, nextRating);
     onNftUpdated?.();
@@ -315,6 +319,18 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
         onChange={handleStarRatingChange}
         size={26}
       />
+      {/* Only shown once there's actually a rating to clear - per
+          feedback asking for an explicit way to un-rate, alongside the
+          existing tap-the-lit-star-again gesture StarRating.js already
+          supports (both end up calling handleStarRatingChange(0)). */}
+      {nft.star_rating ? (
+        <TouchableOpacity
+          style={[styles.clearRatingButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => handleStarRatingChange(0)}
+        >
+          <Text style={[styles.clearRatingButtonText, { color: colors.cancelText }]}>Clear Rating</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 
@@ -1036,6 +1052,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   saveNameButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // A quieter, outlined button (not filled, unlike saveNameButton) -
+  // this is a "remove something" action, same visual weight as
+  // CollectionView.js's "Remove filters" button, and only ever shown
+  // alongside stars that are already lit, so it doesn't need to shout.
+  clearRatingButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  clearRatingButtonText: {
     fontSize: 13,
     fontWeight: '600',
   },

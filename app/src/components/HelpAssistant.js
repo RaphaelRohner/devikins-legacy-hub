@@ -95,9 +95,9 @@ const FAQ_ENTRIES = [
   {
     id: 'name-rating',
     question: 'How do I give an NFT a nickname or rating?',
-    keywords: ['nickname', 'rate', 'rating', 'name this', 'rename', 'stars'],
+    keywords: ['nickname', 'rate', 'rating', 'name this', 'rename', 'stars', 'unrate', 'un-rate', 'remove rating', 'clear rating'],
     answer:
-      "Open its detail view - right above the Notes section you'll find a Name field and a row of 5 stars. Type a name and tap away from the field to save it; tap a star to rate it, or tap that same star again to clear the rating.",
+      "Open its detail view - right above the Notes section you'll find a Name field with a Save Name button, and a row of 5 stars. Type a name and tap Save Name to save it. Tap a star to rate it - once you have, a Clear Rating button appears right below the stars to un-rate it again (tapping the same star a second time does the same thing).",
   },
   {
     id: 'feedback',

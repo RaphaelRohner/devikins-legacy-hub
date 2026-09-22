@@ -527,16 +527,21 @@ notes below.
   the in-game name pulled from fetched metadata, which is never
   hand-edited - and a 1-5 star rating (`StarRating.js`, saved to
   `star_rating` via `setNftStarRating` the instant a star is tapped -
-  no separate save step needed, since picking
-  a rating IS the action). The nickname works differently: nothing is
-  written to the database just from typing or leaving the field - a
-  **Save Name** button right below the field (greyed out/disabled
-  whenever the typed draft matches what's already saved) is the only
-  thing that actually commits it, per feedback that nothing should save
-  itself without an explicit tap. Both name and rating are
-  searchable/filterable - the name from the top search bar in `App.js`,
-  the rating from the Rating row in `FilterPanel.js` (see above) - via
-  `queryNfts`'s `searchText`/`starRating` parameters.
+  no separate save step needed, since picking a rating IS the action).
+  The nickname works differently: nothing is written to the database
+  just from typing or leaving the field - a **Save Name** button right
+  below the field (greyed out/disabled whenever the typed draft matches
+  what's already saved) is the only thing that actually commits it, per
+  feedback that nothing should save itself without an explicit tap.
+  Clearing a rating back to "not rated" always worked by tapping the
+  currently-lit star again (`StarRating.js`'s own toggle-to-0 behavior),
+  but per feedback that wasn't discoverable as an actual "un-rate"
+  option - a **Clear Rating** button now appears right below the stars
+  whenever `nft.star_rating` is set, calling the exact same
+  `handleStarRatingChange(0)` the repeat-tap already used. Both name
+  and rating are searchable/filterable - the name from the top search
+  bar in `App.js`, the rating from the Rating row in `FilterPanel.js`
+  (see above) - via `queryNfts`'s `searchText`/`starRating` parameters.
 
 - **`components/NftTile.js`** (V2) — the compact square tile shown for
   each NFT in "Tiles" view (see `App.js`'s List/Tiles toggle, passed

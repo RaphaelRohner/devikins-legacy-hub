@@ -1771,6 +1771,22 @@ entirely (matches the sibling "doesn't hold any Weapons yet" message's
 own phrasing) and made "filter"/"filters" agree with how many are
 actually listed.
 
+## Explicit "Clear Rating" button, for un-rating a Devikin/Weapon/Equipment
+
+The Rating control (`StarRating.js`) already let you un-rate something
+by tapping the currently-lit star again (that toggle-to-0 behavior has
+been there since the rating feature itself was added) - but per
+feedback asking for "an option to un-rate", that gesture apparently
+wasn't discoverable as an actual way to do it. Added a **Clear Rating**
+button right below the stars in `NftCard.js`'s Name & Rating section,
+shown only once `nft.star_rating` is actually set, calling the exact
+same `handleStarRatingChange(0)` the repeat-tap already used - so both
+ways to clear a rating do the identical thing, the button just makes it
+visible as an explicit action. Since `nameAndRatingSection` is shared
+across every detail layout (Devikins/Weapons/Equipment/the generic
+fallback), this one change covers all three collections at once, same
+as the earlier Save Name button did.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth

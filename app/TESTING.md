@@ -216,8 +216,13 @@ For **each** of Devikins, Weapons, and Equipment:
 - Tap a star in the Rating control - it and every star before it should
   light up together (same look as the Rating row's star filter under
   Filters), and this one still saves immediately on tap, no button
-  needed. Tap the same star again - the rating should clear back to
-  unrated.
+  needed. A **Clear Rating** button should now appear right below the
+  stars - tap it and the rating should clear back to unrated, and the
+  button itself should disappear again (nothing left to clear). Rate it
+  again and confirm tapping the same (already-lit) star a second time
+  does the same thing as Clear Rating. Try this for one NFT in each of
+  Devikins, Weapons, and Equipment - all three share the same detail
+  view code, but worth a quick check in each tab.
 - Go back to the list, then reopen the same NFT - both the name and the
   rating should still be there.
 - In the top search bar, search for the nickname you just gave it - it
