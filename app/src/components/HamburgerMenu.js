@@ -27,6 +27,7 @@
  */
 
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 
 export default function HamburgerMenu({
@@ -40,6 +41,13 @@ export default function HamburgerMenu({
   onSelectScreen,
 }) {
   const { colors } = useTheme();
+  // This is a plain full-screen Modal (see file comment above), not a
+  // SafeAreaView-wrapped screen like the rest of the app - Modal content
+  // isn't automatically kept clear of the status bar / notch / Dynamic
+  // Island the way App.js's own screens are, so it needs its own
+  // explicit top inset or the title row sits underneath the system UI
+  // (reported after testing on Raphael's phone).
+  const insets = useSafeAreaInsets();
 
   // Each entry: a label (walletCount is spliced into the Wallets one
   // below), which `currentScreen` value it corresponds to (for
@@ -93,7 +101,7 @@ export default function HamburgerMenu({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 24 }]}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.text }]}>Menu</Text>
           <TouchableOpacity
@@ -140,7 +148,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingTop: 24,
+    // paddingTop is set inline above (insets.top + 24) so it accounts
+    // for the device's actual status bar / notch height, not just a
+    // fixed guess - see the insets comment near the top of this file.
   },
   header: {
     flexDirection: 'row',
