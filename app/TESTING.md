@@ -58,12 +58,14 @@ button).
    except the search text, which should still apply on top of that.
    Now pick a combination guaranteed to match nothing (e.g. a star
    rating nothing has, or a Rarity plus a numeric range that don't
-   overlap) and tap Apply Filters - the empty state should read "No
-   <Devikins/Weapons/Equipment, whichever tab> NFTs match the filter(s):
-   " followed by a comma-separated list naming every filter actually
-   applied (Search first if you'd typed something, then Rating, then
-   each trait filter with the same label shown on its row in the
-   panel), not a generic "No NFTs match these filters."
+   overlap) and tap Apply Filters - the empty state should name the
+   collection and every applied filter, e.g. "No Weapons match the
+   filters: Rarity: Rare, Scaling: 80 to 100". Pick just ONE thing
+   (say, only a star rating) and confirm it switches to singular:
+   "No Weapons match the filter: Rating: 4 stars". Not a generic "No
+   NFTs match these filters", and not "NFTs" tacked onto the collection
+   name either (it's "No Weapons match...", not "No Weapons NFTs
+   match...").
 5. Tap the **List/Tiles** toggle (top-right of the search row) - the
    layout should switch between the normal picture-plus-traits rows and
    a compact grid of just pictures. Switch to a different tab (Devikins/

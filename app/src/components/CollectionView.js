@@ -416,6 +416,8 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // in the same order FilterPanel.js lists them (TRAIT_COLUMNS' own
   // declaration order for this kind - see schema.js), so this always
   // reads in the same order the controls that produced it are shown in.
+  // Returns an array (not a joined string) - the empty-state message
+  // below needs the count too, to pick "filter" vs "filters".
   function describeActiveFilters() {
     const parts = [];
 
@@ -451,8 +453,21 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
       }
     }
 
-    return parts.join(', ');
+    return parts;
   }
+
+  // The actual empty-state sentence, built here rather than inline in
+  // the JSX below since it needs a little grammar: "Weapons NFTs match"
+  // reads wrong (a plural noun modifying another noun, per feedback
+  // from a non-native-speaker read) - dropping "NFTs" and using the
+  // collection name on its own fixes that, and matches the sibling
+  // "This wallet doesn't hold any Weapons yet" message's own phrasing.
+  // "filter" vs "filters" agrees with how many are actually listed,
+  // rather than the "filter(s)" shorthand this replaced.
+  const activeFilterParts = hasActiveFilters ? describeActiveFilters() : [];
+  const emptyStateMessage = hasActiveFilters
+    ? `No ${COLLECTIONS[kind].label} match the ${activeFilterParts.length === 1 ? 'filter' : 'filters'}: ${activeFilterParts.join(', ')}`
+    : `This wallet doesn't hold any ${COLLECTIONS[kind].label} yet.`;
 
   // Whether anything picked in the controls hasn't been applied yet -
   // the "Apply Filters" button only shows up (below the toggle row)
@@ -642,9 +657,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
           ) : (
             <View style={styles.emptyContainer}>
               <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
-                {hasActiveFilters
-                  ? `No ${COLLECTIONS[kind].label} NFTs match the filter(s): ${describeActiveFilters()}`
-                  : `This wallet doesn't hold any ${COLLECTIONS[kind].label} yet.`}
+                {emptyStateMessage}
               </Text>
             </View>
           )

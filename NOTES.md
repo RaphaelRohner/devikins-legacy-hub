@@ -1748,7 +1748,7 @@ obvious which collection you were even looking at, or what was
 narrowing it. The message now reads, for example:
 
 ```
-No Weapons NFTs match the filter(s): Search: "flame", Rating: 4 stars,
+No Weapons match the filters: Search: "flame", Rating: 4 stars,
 Rarity: Rare, Scaling: 80 to 100
 ```
 
@@ -1759,6 +1759,17 @@ order `FilterPanel.js` shows them - reusing `FilterPanel.js`'s own
 filter rows themselves. The Deleted switch isn't counted as a "filter"
 here - excluding everything purely via Deleted still falls back to the
 plain "this wallet doesn't hold any X yet" wording, same as before.
+
+**Grammar fix, the same day:** the first version read "No Weapons NFTs
+match the filter(s): ..." - flagged (by Raphael, a non-native speaker,
+correctly) as reading wrong twice over: "Weapons" is a plural noun
+awkwardly modifying "NFTs" (English attributive nouns are usually
+singular - "car park", not "cars park"; "Devikins" gets away with it
+because it reads as a proper/brand name, "Weapons"/"Equipment" don't),
+and "filter(s)" is a written shorthand, not a real word. Dropped "NFTs"
+entirely (matches the sibling "doesn't hold any Weapons yet" message's
+own phrasing) and made "filter"/"filters" agree with how many are
+actually listed.
 
 ## App structure decisions (made while building)
 

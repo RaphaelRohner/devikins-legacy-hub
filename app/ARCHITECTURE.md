@@ -340,12 +340,17 @@ notes below.
      them - per feedback that once the collection tabs moved inside the
      hamburger menu, a bare "No NFTs match these filters" no longer
      said which tab you were even on. The message now names both (e.g.
-     "No Weapons NFTs match the filter(s): Rarity: Common, Rating: 4
-     stars") - see `describeActiveFilters` in this file for how that
-     list gets built, using `FilterPanel.js`'s own `humanizeColumnName`
-     so the wording matches the filter rows themselves. The Deleted
-     switch isn't counted as a "filter" for this - narrowing the list to
-     nothing purely by excluding deleted items falls back to situation
+     "No Weapons match the filters: Rarity: Common, Rating: 4 stars") -
+     see `describeActiveFilters`/`emptyStateMessage` in this file for
+     how that list gets built (and how "filter" vs "filters" picks
+     itself based on the count - "the filter(s)" read wrong per
+     feedback), using `FilterPanel.js`'s own `humanizeColumnName` so the
+     wording matches the filter rows themselves. Deliberately drops
+     "NFTs" after the collection name (e.g. "No Weapons match...", not
+     "No Weapons NFTs match...") - a plural noun awkwardly modifying
+     another noun, also per feedback. The Deleted switch isn't counted
+     as a "filter" for this - narrowing the list to nothing purely by
+     excluding deleted items falls back to situation
      2's wording instead.
 
   It also owns the list/detail switch, driven by the
