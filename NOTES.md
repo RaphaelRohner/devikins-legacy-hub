@@ -1857,6 +1857,57 @@ only the destination address changed. Updated `ARCHITECTURE.md` and
 up in this file as-is, since it's accurate history of a decision that
 was correct at the time, not a mistake to erase.
 
+## Three bugs found testing the real APK build (v2.0.0)
+
+All three were reported after installing the actual EAS-built APK on
+Raphael's phone (rather than the Expo Go / dev-client test version),
+and all three turned out to be things that only show up in a real
+build, not in testing.
+
+### Hamburger menu overlapped the status bar
+
+`HamburgerMenu.js` renders its own full-screen `Modal`, separately from
+the rest of the app's screens, which are all wrapped in
+`SafeAreaView` (see `App.js`). A `Modal`'s content isn't automatically
+kept clear of the status bar / notch / Dynamic Island the way
+`SafeAreaView` content is, so the menu's fixed `paddingTop: 24` wasn't
+enough on Raphael's phone - the "Menu" title and ✕ button sat partly
+under the system UI. Fixed by reading `useSafeAreaInsets()` (the same
+package already used elsewhere - see App.js's own insets comment) and
+using `insets.top + 24` instead of a fixed number.
+
+### Devi's typed-question answers looked like they weren't appearing
+
+Asking Devi a free-text question in `HelpAssistant.js` was, and still
+is, fully wired up (keyword matching against `FAQ_ENTRIES`, same as
+the tap-a-suggested-question flow) - but the screen used to call
+`scrollToEnd()` after every answer, and the chat bubbles share one
+long `ScrollView` with the full always-visible FAQ list underneath
+them. `scrollToEnd()` jumps to the bottom of *that whole list*, not to
+the bottom of the chat bubbles, so your new answer appeared and was
+immediately scrolled straight out of view, landing you on a wall of
+static FAQ text that looked like nothing had happened. Replaced the
+scroll-to-literal-end call with one that measures the chat bubbles'
+own height and the visible viewport height, and scrolls only far
+enough to bring the newest bubble into view at the bottom of the
+screen - the way a normal chat screen behaves.
+
+### Feedback's "Open Email Draft" button failed in the real build
+
+`Feedback.js` checked `Linking.canOpenURL(mailtoUrl)` before opening
+the device's email app, and only proceeded if that came back true.
+That check worked fine in the Expo Go / dev-client test version but
+returned false in the real build, with the app showing its own
+"Couldn't open your email app" fallback message even though an email
+app was installed. This is a known Android 11+ behavior: apps can't
+see (query) whether another app can handle a link unless they declare
+that ahead of time, and a plain Expo/EAS build doesn't declare it by
+default - but actually *opening* the link isn't restricted the same
+way. Fixed by dropping the `canOpenURL` pre-check and calling
+`Linking.openURL()` directly inside the existing try/catch, which
+still shows the same fallback message if opening genuinely fails (e.g.
+no email app installed at all).
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
