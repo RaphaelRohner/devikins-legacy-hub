@@ -526,15 +526,19 @@ notes below.
   of its own to send anything on their behalf. The subject line carries
   the app name, version, and category (Feature request/Bug
   report/Feedback); the body, per feedback, always follows one fixed
-  order regardless of category: which address it's headed to, the
-  feedback type, the name (if given, else "(not provided)"), then the
-  free-text message itself. Goes to a "+" alias of Raphael's own Gmail
-  address (mail addressed to `[old feedback address removed]` lands
-  in his normal inbox, just easy to filter/label separately) - not a
-  GitHub address, since GitHub's own commit-attribution noreply
+  order regardless of category: the app name and version, the sender's
+  own email address (a new optional field, so Raphael has a way to
+  reply - else "(not provided)"), the feedback type, the name (if
+  given, else "(not provided)"), then the free-text message itself.
+  The draft itself is always addressed to a "+" alias of Raphael's own
+  Gmail address (mail addressed to `[old feedback address removed]`
+  lands in his normal inbox, just easy to filter/label separately) -
+  not a GitHub address, since GitHub's own commit-attribution noreply
   addresses are outbound-only and can't actually forward anything
-  inbound. If no email app is available, falls back to an alert showing
-  the feedback address and the full message text to copy by hand.
+  inbound; the sender's own email in the body is separate from this and
+  purely informational. If no email app is available, falls back to an
+  alert showing the feedback address and the full message text to copy
+  by hand.
 
 - **`components/HelpAssistant.js`** ("Devi", V2) — a small, entirely
   offline, explicitly-not-a-real-AI helper, added on request for "a

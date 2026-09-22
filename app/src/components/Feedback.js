@@ -8,8 +8,9 @@
  * link and hands it to the phone's own email app via Linking.openURL().
  * The player still has to actually tap Send themselves in whatever
  * email app opens - this app never sends anything on its own. The body
- * is pre-filled in a fixed order, per feedback: which address this is
- * headed to, the feedback type, the name (if given), then the message
+ * is pre-filled in a fixed order, per feedback: the app name and
+ * version, the sender's own email address (if given, so Raphael can
+ * reply), the feedback type, the name (if given), then the message
  * itself - see handleSubmit below.
  *
  * Why mailto: and not a "send to GitHub" address: GitHub's own
@@ -64,6 +65,7 @@ const CATEGORIES = [
 export default function Feedback({ appVersion, onClose }) {
   const { colors } = useTheme();
 
+  const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [category, setCategory] = useState('feedback');
   const [message, setMessage] = useState('');
@@ -72,16 +74,15 @@ export default function Feedback({ appVersion, onClose }) {
 
   async function handleSubmit() {
     const categoryLabel = CATEGORIES.find((c) => c.key === category)?.label ?? 'Feedback';
-    // App name AND version live in the subject line now, not the body -
-    // the body's own fixed structure (below) is spoken for by other
-    // fields per feedback, but the version is still worth keeping
-    // somewhere for a bug report, and the subject line is visible the
-    // moment the draft opens either way.
     const subject = `${APP_NAME} v${appVersion} - ${categoryLabel}`;
-    // Fixed order per feedback: which address this is headed to, the
-    // feedback type, the name (if given), then the message itself.
+    // Fixed order per feedback: the app name and version, the sender's
+    // own email address (so Raphael has a way to reply - this is NOT
+    // the address the draft is sent to, see FEEDBACK_EMAIL/mailtoUrl
+    // below for that), the feedback type, the name (if given), then
+    // the message itself.
     const body =
-      `Email: ${FEEDBACK_EMAIL}\n` +
+      `App: ${APP_NAME} v${appVersion}\n` +
+      `Email: ${email.trim() || '(not provided)'}\n` +
       `Feedback type: ${categoryLabel}\n` +
       `Name: ${name.trim() || '(not provided)'}\n\n` +
       `Message:\n${message.trim()}`;
@@ -121,6 +122,18 @@ export default function Feedback({ appVersion, onClose }) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.formContent}>
+          <Text style={[styles.fieldLabel, { color: colors.text }]}>Your email (optional, so we can reply)</Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+            placeholder="you@example.com"
+            placeholderTextColor={colors.secondaryText}
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+
           <Text style={[styles.fieldLabel, { color: colors.text }]}>What kind of feedback is this?</Text>
           <View style={[styles.pickerWrapper, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Picker

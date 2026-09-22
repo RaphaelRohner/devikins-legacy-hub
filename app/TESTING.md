@@ -215,6 +215,9 @@ For **each** of Devikins, Weapons, and Equipment:
 ### 10. Feedback (V2)
 
 - Open the ☰ menu → Feedback.
+- Fill in "Your email" and confirm it accepts a normal email address
+  (this is YOUR own address, for Raphael to reply to - not where the
+  draft gets sent).
 - Tap the category dropdown and confirm all three options (Feature
   request / Bug report / Feedback) are listed; pick one and confirm it
   shows as selected.
@@ -222,13 +225,15 @@ For **each** of Devikins, Weapons, and Equipment:
   app should open with a new draft addressed to
   `[old feedback address removed]`, subject line
   `Devikins Legacy Companion v<version> - <category>`, and a body in
-  this exact fixed order: `Email: ...`, `Feedback type: ...`,
-  `Name: ...` (or `(not provided)` if you left it blank), then
-  `Message:` followed by what you typed. You do NOT need to actually
-  send it for this test - confirming the draft opens correctly,
-  pre-filled in that order, is enough.
+  this exact fixed order: `App: Devikins Legacy Companion v<version>`,
+  `Email: <what you typed>` (or `(not provided)` if you left it blank),
+  `Feedback type: ...`, `Name: ...` (or `(not provided)` if you left it
+  blank), then `Message:` followed by what you typed. You do NOT need
+  to actually send it for this test - confirming the draft opens
+  correctly, pre-filled in that order, is enough.
 - Leave the message field empty and confirm **Open Email Draft** is
-  disabled (there's nothing to send yet).
+  disabled (there's nothing to send yet). The email and name fields
+  should both stay optional - blank is fine for either.
 - If your phone/emulator has no email app configured at all, confirm you
   get a clear alert with the feedback address and your message, instead
   of a silent failure or crash.

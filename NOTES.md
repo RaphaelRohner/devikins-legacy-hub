@@ -1677,24 +1677,28 @@ unchanged.
 ## Feedback email body restructured to a fixed order
 
 Per feedback, the `mailto:` draft's body now always follows one fixed
-order: which address it's headed to, the feedback type, the name (if
-given), then the message itself:
+order:
 
 ```
-Email: [old feedback address removed]
+App: Devikins Legacy Companion v1.x
+Email: jane@example.com
 Feedback type: Bug report
-
 Name: (not provided)
 
 Message:
 <your typed message>
 ```
 
-The app name and version used to be the first line of the body; they
-moved into the subject line instead (`Devikins Legacy Companion v1.x -
-Bug report`) so the body's four lines stay exactly the ones asked for,
-while the version is still there for a bug report - just visible the
-moment the draft opens either way, not buried in the body text.
+Two follow-up corrections after the first pass at this: the app
+name/version moved back to the top of the body (it had briefly lived
+only in the subject line - now it's in both places, since the subject
+line is still handy for scanning an inbox); and the "Email:" line is
+now a new optional form field for the sender's OWN email address, not
+the fixed `[old feedback address removed]` address the draft is
+addressed to - the point of that line is giving Raphael a way to reply
+to whoever sent the feedback, which the fixed address can't do since
+it's always the same value. The draft's actual `mailto:` recipient is
+unchanged; only what appears as body text changed.
 
 ## App structure decisions (made while building)
 
