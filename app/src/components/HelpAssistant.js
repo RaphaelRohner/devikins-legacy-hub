@@ -146,7 +146,7 @@ const FAQ_ENTRIES = [
     question: 'Who or what are you?',
     keywords: ['who are you', 'what are you', 'are you ai', 'are you claude', 'real ai', 'robot'],
     answer:
-      "I'm Devi - a tiny, offline helper built into this app. I'm not a real AI: I can't think, I don't learn, and I only know the handful of canned answers listed here about using this app. (Fittingly, I exist because Raphael asked the real Claude, only half-joking, to build \"a downgraded version of you\" into the app.)",
+      "I'm Devi - a tiny, offline helper built into this app. I'm not a real AI: I can't think, I don't learn, and I only know the handful of canned answers listed here about using this app.",
   },
 ];
 
