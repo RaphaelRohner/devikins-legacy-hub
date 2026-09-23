@@ -97,7 +97,7 @@ export default function ProgressBar({ progress, onCancel, isCancelling }) {
     <View
       style={[
         styles.container,
-        { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+        { backgroundColor: colors.surface, borderColor: colors.border },
       ]}
     >
       {/* Everything except the ✕ is one big tap target for showDetail() -
@@ -167,8 +167,13 @@ const styles = StyleSheet.create({
     // height, fetch running or not - the reason this file's whole
     // layout changed from a stacked, full-detail block to a single
     // slim row. Border/background match the hamburger button and theme
-    // toggle too (colors.surfaceAlt/colors.border), so this reads as a
-    // third control in the same row rather than a separate banner.
+    // toggle too (colors.surface/colors.border - all three switched
+    // from colors.surfaceAlt once menuRow itself got a surfaceAlt
+    // background of its own, per feedback wanting one unified band
+    // across all the app's control rows; surface is what keeps these
+    // three still standing out against it, rather than blending in),
+    // so this reads as a third control in the same row rather than a
+    // separate banner.
     height: 44,
     borderRadius: 8,
     borderWidth: 1,

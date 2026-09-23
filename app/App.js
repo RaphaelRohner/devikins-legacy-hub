@@ -812,9 +812,9 @@ function AppContent() {
           toggle is NOT gated on having a wallet, unlike the search
           field below - it needs to stay reachable even on a brand-new
           install with nothing added yet. */}
-      <View style={styles.menuRow}>
+      <View style={[styles.menuRow, { backgroundColor: colors.surfaceAlt }]}>
         <TouchableOpacity
-          style={[styles.hamburgerButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+          style={[styles.hamburgerButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={() => setIsMenuOpen(true)}
         >
           <Text style={[styles.hamburgerIcon, { color: colors.text }]}>☰</Text>
@@ -841,7 +841,7 @@ function AppContent() {
         )}
 
         <TouchableOpacity
-          style={[styles.themeToggle, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+          style={[styles.themeToggle, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={toggleTheme}
         >
           <Text style={styles.themeToggleIcon}>{isDark ? '☀️' : '🌙'}</Text>
@@ -877,7 +877,7 @@ function AppContent() {
           see FilterPanel.js. */}
       {walletAddresses.length > 0 && (
         <>
-        <View style={styles.searchRow}>
+        <View style={[styles.searchRow, { backgroundColor: colors.surfaceAlt }]}>
           {/* Opens SortPickerModal below. Sits leftmost in this row now
               (originally to the right of Search) per a later round of
               feedback - purely a position swap, same button, same
@@ -899,7 +899,7 @@ function AppContent() {
 
           <View style={styles.searchInputWrapper}>
             <TextInput
-              style={[styles.searchInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
+              style={[styles.searchInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
               placeholder="Search by name or ID"
               placeholderTextColor={colors.secondaryText}
               value={searchText}
