@@ -35,13 +35,14 @@
 import { COLLECTIONS } from '../constants/schema';
 import { fetchWalletNonces } from './kleverApi';
 import { fetchNftMetadata } from './metadataApi';
-import { storeImage } from './imageStorage';
+import { storeImage, fetchImageEtag } from './imageStorage';
 import {
   getExistingStatuses,
   upsertNft,
   getFailedNonces,
   getNoncesMissingCachedImage,
   updateLocalImagePath,
+  getCachedImageRows,
 } from '../db/database';
 
 const CONCURRENCY = 4; // "no more than 3-5 parallel requests" - see NOTES.md
@@ -92,8 +93,8 @@ async function fetchAndSaveNonces(kind, label, nonces, ownerAddress, { skippedCo
         // and it'll get picked up again next time retryPendingItems
         // runs, since it specifically looks for 'ok' rows missing a
         // cached image.
-        const localImagePath = await storeImage(kind, nonce, result.metadata?.image ?? null);
-        await upsertNft(kind, { nonce, ownerAddress, status: 'ok', metadata: result.metadata, localImagePath });
+        const { localImagePath, etag } = await storeImage(kind, nonce, result.metadata?.image ?? null);
+        await upsertNft(kind, { nonce, ownerAddress, status: 'ok', metadata: result.metadata, localImagePath, imageEtag: etag });
       } else if (result.outcome === 'unavailable') {
         await upsertNft(kind, { nonce, ownerAddress, status: 'unavailable', metadata: null });
       } else {
@@ -201,15 +202,102 @@ export async function retryPendingItems(walletAddress, { onProgress, shouldCance
       for (const row of missingImageRows) {
         if (shouldCancel()) return;
 
-        const localImagePath = await storeImage(kind, row.nonce, row.image);
+        const { localImagePath, etag } = await storeImage(kind, row.nonce, row.image);
         if (localImagePath) {
-          await updateLocalImagePath(kind, row.nonce, localImagePath);
+          await updateLocalImagePath(kind, row.nonce, localImagePath, etag);
         }
 
         completedCount += 1;
         onProgress({ phase: 'fetching', kind, label: imageLabel, completed: completedCount, total: totalCount, skipped: 0 });
       }
     }
+  }
+
+  onProgress({ phase: 'done' });
+}
+
+/**
+ * The other half of the automatic background maintenance (see App.js's
+ * timer for how this gets scheduled): periodically asks "did Moonlabs
+ * change any already-downloaded picture?" for every cached image across
+ * all of a wallet's NFTs, using a cheap HTTP HEAD request per image (see
+ * imageStorage.js's fetchImageEtag) rather than re-downloading anything
+ * just to check. A cheaply-confirmed real change forces a real
+ * re-download (storeImage's forceRedownload); an image with no ETag on
+ * record yet (anything cached before this feature existed) just gets
+ * today's ETag backfilled, without assuming it changed, so future
+ * checks have something to compare against; anything inconclusive
+ * (network hiccup, host sent no ETag) is left alone entirely and tried
+ * again next time.
+ *
+ * Deliberately its own separate pass, not folded into
+ * retryPendingItemsForWallets above - that one exists to fix broken/
+ * missing fetches quickly (fast burst, then hourly), while this one is
+ * about a rare, low-urgency event (the game studio correcting artwork),
+ * so it runs on its own plain hourly cadence regardless of whether
+ * there's anything else pending. See App.js for how the two share one
+ * timer without stepping on each other.
+ */
+export async function checkImageFreshnessForWallets(walletAddresses, { onProgress, shouldCancel }) {
+  const walletTotal = walletAddresses.length;
+
+  for (let i = 0; i < walletTotal; i++) {
+    if (shouldCancel()) return;
+
+    const walletAddress = walletAddresses[i];
+    const walletIndex = i + 1;
+
+    for (const kind of Object.keys(COLLECTIONS)) {
+      if (shouldCancel()) return;
+
+      const { label } = COLLECTIONS[kind];
+      const rows = await getCachedImageRows(kind, walletAddress);
+      if (rows.length === 0) continue;
+
+      let completedCount = 0;
+      const totalCount = rows.length;
+      const checkLabel = `${label} (image check)`;
+
+      // Tagged with walletIndex/walletTotal the same way
+      // fetchAllForWallets/retryPendingItemsForWallets do, so a multi-
+      // wallet setup's tap-to-detail text says which wallet this is for
+      // instead of looking like just one is taking a long time.
+      onProgress({
+        phase: 'fetching', kind, label: checkLabel, completed: completedCount, total: totalCount, skipped: 0,
+        walletAddress, walletIndex, walletTotal,
+      });
+
+      for (const row of rows) {
+        if (shouldCancel()) return;
+
+        const currentEtag = await fetchImageEtag(row.image);
+
+        if (!currentEtag) {
+          // Inconclusive - couldn't ask, or the host didn't answer with
+          // one. Leave this row exactly as it is and try again next time.
+        } else if (!row.image_etag) {
+          // Nothing on record to compare against yet (downloaded before
+          // this column existed) - record today's ETag for next time,
+          // without assuming the already-cached file is wrong.
+          await updateLocalImagePath(kind, row.nonce, row.local_image_path, currentEtag);
+        } else if (currentEtag !== row.image_etag) {
+          // Confirmed changed - force a real re-download and save its
+          // new ETag too.
+          const { localImagePath, etag } = await storeImage(kind, row.nonce, row.image, { forceRedownload: true });
+          if (localImagePath) {
+            await updateLocalImagePath(kind, row.nonce, localImagePath, etag);
+          }
+        }
+
+        completedCount += 1;
+        onProgress({
+          phase: 'fetching', kind, label: checkLabel, completed: completedCount, total: totalCount, skipped: 0,
+          walletAddress, walletIndex, walletTotal,
+        });
+      }
+    }
+
+    if (shouldCancel()) return;
   }
 
   onProgress({ phase: 'done' });

@@ -56,8 +56,8 @@ import {
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
-import { initDatabase, getWallets, getSetting, setSetting } from './src/db/database';
-import { fetchAllForWallets } from './src/api/fetchAllForWallet';
+import { initDatabase, getWallets, getSetting, setSetting, countPendingRetries } from './src/db/database';
+import { fetchAllForWallets, retryPendingItemsForWallets, checkImageFreshnessForWallets } from './src/api/fetchAllForWallet';
 import { COLLECTIONS } from './src/constants/schema';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import HamburgerMenu from './src/components/HamburgerMenu';
@@ -122,6 +122,33 @@ function AppContent() {
   // to land in, after the first one, to actually exit the app instead
   // of just re-arming the "press again" toast.
   const EXIT_CONFIRM_WINDOW_MS = 2000;
+
+  // How often to check for anything left unfinished (failed items,
+  // missing images) and quietly retry it in the background, how many
+  // times in a row to try at that fast pace, and how long to wait between
+  // attempts after that fast pace is used up. At one retry round per
+  // minute, 10 rounds is about 10 minutes of fast automatic retrying -
+  // generous enough to ride out a temporary hiccup in the metadata
+  // Lambda (see NOTES.md) without the user doing anything, but if
+  // something's still broken after 10 minutes straight, a longer-lived
+  // problem (the item genuinely doesn't exist, say) is more likely, and
+  // there's no point hammering it every minute forever. Tapping
+  // Fetch/Update manually always resets straight back to the fast pace.
+  // Re-added per feedback, after being removed for a while (see NOTES.md
+  // - "Automatic background retry removed") - only runs while the app is
+  // open, same as before; nothing registers a real background task.
+  const AUTO_RETRY_INTERVAL_MS = 60000;
+  const MAX_AUTO_RETRY_ROUNDS = 10;
+  const SLOW_RETRY_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+  // How often the SEPARATE image-freshness check (did Moonlabs correct
+  // an already-downloaded picture?) is allowed to run - see
+  // checkImageFreshnessForWallets in fetchAllForWallet.js. This shares
+  // the same once-a-minute timer as the retry rounds above, but has its
+  // own plain hourly cadence, independent of whatever pace the retry
+  // rounds are currently at - a rare, low-urgency event like this
+  // doesn't need a fast burst the way a broken fetch does.
+  const IMAGE_FRESHNESS_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
   // The full list of saved wallets (each { id, address, created_at }),
   // loaded from the database (see WalletManager.js for how they're
@@ -260,6 +287,33 @@ function AppContent() {
   // and that happens through isFetching/progress instead.
   const cancelRequestedRef = useRef(false);
 
+  // Whether the background auto-retry timer is currently running a round
+  // (either a pending-items retry or an image-freshness check - see the
+  // timer effect below), and what it's up to - shown via the same
+  // ProgressBar component the manual Fetch uses, so it looks consistent.
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [retryProgress, setRetryProgress] = useState(null);
+
+  // How many automatic retry rounds have run in a row since the last
+  // manual Fetch, so we know when to switch from the fast (once a
+  // minute) pace to the slow (once an hour) one.
+  const retryRoundRef = useRef(0);
+
+  // The earliest time (a Date.now() timestamp in milliseconds) the next
+  // automatic retry attempt is allowed to run. Starts at 0, meaning "no
+  // wait, try as soon as there's something pending" - this is what lets
+  // one single timer (ticking every AUTO_RETRY_INTERVAL_MS) serve both
+  // the fast and slow paces, just by skipping ticks until this time is
+  // reached, rather than needing a second, separate timer for the hourly
+  // pace.
+  const nextRetryAtRef = useRef(0);
+
+  // Same idea as nextRetryAtRef above, but for the separate image-
+  // freshness check - its own independent "not before this time" gate,
+  // since it runs on a plain hourly cadence regardless of whatever pace
+  // the pending-items retry above is currently at.
+  const nextFreshnessCheckAtRef = useRef(0);
+
   // Timestamp (Date.now()) of the last Back press that reached the
   // "genuinely nothing left to close" fallback below - i.e. you're on a
   // collection screen's list view, with no detail view open and the
@@ -363,6 +417,17 @@ function AppContent() {
 
     cancelRequestedRef.current = false;
     busyRef.current = true;
+    // A fresh manual fetch always gets a full new budget of automatic
+    // retry rounds afterward, even if the previous ones had run out (and
+    // switches back to the fast once-a-minute pace, even if it had
+    // backed off to the slow hourly one). Deliberately does NOT touch
+    // nextFreshnessCheckAtRef - the image-freshness check runs on its
+    // own plain hourly cadence regardless of manual fetches (a normal
+    // Fetch/Update doesn't re-verify an already-cached image against the
+    // remote host at all, so there's no reason a manual fetch should
+    // reset or hurry that check along).
+    retryRoundRef.current = 0;
+    nextRetryAtRef.current = 0;
     setIsFetching(true);
     setProgress({ phase: 'listing', label: 'your wallet' });
 
@@ -414,6 +479,130 @@ function AppContent() {
     setIsMenuOpen(false);
     handleFetchPress();
   }
+
+  // The automatic background maintenance timer: every AUTO_RETRY_INTERVAL_MS
+  // (once a minute), if nothing else is currently fetching, does up to
+  // two independent things:
+  //
+  //   1. Pending-items retry: checks whether any saved wallet has
+  //      anything left unfinished (failed items, or items missing a
+  //      cached image) and quietly retries just those - see
+  //      retryPendingItemsForWallets in fetchAllForWallet.js. Fast (once
+  //      a minute) for the first MAX_AUTO_RETRY_ROUNDS rounds after
+  //      anything triggers it, then backs off to slow (once an hour) -
+  //      see the AUTO_RETRY_INTERVAL_MS/MAX_AUTO_RETRY_ROUNDS/
+  //      SLOW_RETRY_INTERVAL_MS comment above for the reasoning. This is
+  //      what fixes "some items stayed failed/imageless after the last
+  //      Fetch" without the user having to keep tapping Fetch by hand.
+  //
+  //   2. Image-freshness check: on its own separate, plain hourly
+  //      cadence (nextFreshnessCheckAtRef/IMAGE_FRESHNESS_CHECK_INTERVAL_MS,
+  //      independent of whatever pace #1 is currently at), asks whether
+  //      Moonlabs has corrected any already-downloaded picture - see
+  //      checkImageFreshnessForWallets in fetchAllForWallet.js.
+  //
+  // Both share the same busyRef/isRetrying/retryProgress machinery and
+  // run one at a time, never concurrently with each other or with a
+  // manual fetch - see busyRef's own comment above.
+  useEffect(() => {
+    if (walletAddresses.length === 0) return undefined;
+
+    retryRoundRef.current = 0;
+    nextRetryAtRef.current = 0;
+    nextFreshnessCheckAtRef.current = 0;
+
+    const intervalId = setInterval(async () => {
+      if (busyRef.current) return;
+
+      // Part 1: the fast/slow-paced pending-items retry.
+      if (Date.now() >= nextRetryAtRef.current) {
+        const pending = await countPendingRetries(walletAddresses);
+
+        if (pending.total === 0) {
+          // Fully caught up - reset both the round count and the pace,
+          // so a future problem gets a full fast burst of retry
+          // attempts again rather than starting from wherever the pace
+          // last left off.
+          retryRoundRef.current = 0;
+          nextRetryAtRef.current = 0;
+        } else {
+          retryRoundRef.current += 1;
+          busyRef.current = true;
+          cancelRequestedRef.current = false;
+          setIsRetrying(true);
+
+          // Say up front what KIND of work this round is about to do -
+          // a full NFT refetch (metadata never came through) is a
+          // different, slower thing than just retrying an image, so
+          // it's worth being specific rather than a generic "N item(s)"
+          // count.
+          const summaryParts = [];
+          if (pending.failedCount > 0) {
+            summaryParts.push(`${pending.failedCount} NFT refetch${pending.failedCount === 1 ? '' : 'es'}`);
+          }
+          if (pending.missingImageCount > 0) {
+            summaryParts.push(`${pending.missingImageCount} image refetch${pending.missingImageCount === 1 ? '' : 'es'}`);
+          }
+          setRetryProgress({ phase: 'summary', label: `Retrying: ${summaryParts.join(' and ')}` });
+
+          try {
+            await retryPendingItemsForWallets(walletAddresses, {
+              onProgress: setRetryProgress,
+              shouldCancel: () => cancelRequestedRef.current,
+            });
+          } finally {
+            busyRef.current = false;
+            setIsRetrying(false);
+            setIsCancelling(false);
+            setRetryProgress(null);
+            setRefreshKey((key) => key + 1);
+
+            // Once the fast burst is used up, don't check again for
+            // another hour instead of giving up for good - see the
+            // constants' comment above for why. This re-applies every
+            // hourly round too (not just the first time), so it keeps
+            // retrying once an hour indefinitely rather than only
+            // backing off once.
+            if (retryRoundRef.current >= MAX_AUTO_RETRY_ROUNDS) {
+              nextRetryAtRef.current = Date.now() + SLOW_RETRY_INTERVAL_MS;
+            }
+          }
+        }
+      }
+
+      // Part 2: the separate, plain-hourly image-freshness check - only
+      // runs if part 1 above didn't just leave something mid-flight
+      // (busyRef check repeated here since part 1 may have just finished
+      // synchronously above).
+      if (!busyRef.current && Date.now() >= nextFreshnessCheckAtRef.current) {
+        busyRef.current = true;
+        cancelRequestedRef.current = false;
+        setIsRetrying(true);
+        setRetryProgress({ phase: 'summary', label: 'Checking cached images for updates' });
+
+        try {
+          await checkImageFreshnessForWallets(walletAddresses, {
+            onProgress: setRetryProgress,
+            shouldCancel: () => cancelRequestedRef.current,
+          });
+        } finally {
+          busyRef.current = false;
+          setIsRetrying(false);
+          setIsCancelling(false);
+          setRetryProgress(null);
+          setRefreshKey((key) => key + 1);
+          nextFreshnessCheckAtRef.current = Date.now() + IMAGE_FRESHNESS_CHECK_INTERVAL_MS;
+        }
+      }
+    }, AUTO_RETRY_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+    // Re-runs whenever the actual set of wallet addresses changes (not on
+    // every unrelated re-render) - comparing the joined string is a
+    // simple, reliable way to depend on "the addresses themselves changed"
+    // rather than "the wallets array is a new reference".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletAddresses.join(',')]);
 
   // react-native-safe-area-context's SafeAreaView (imported above)
   // correctly reserves space for the status bar / notch / Dynamic Island
@@ -524,9 +713,13 @@ function AppContent() {
             container style for the small adjustment that went with this
             (it used to carry its own margin, meant for being a
             standalone full-width block). */}
-        {isFetching && (
+        {(isFetching || isRetrying) && (
           <View style={styles.inlineProgressWrapper}>
-            <ProgressBar progress={progress} onCancel={handleCancelPress} isCancelling={isCancelling} />
+            <ProgressBar
+              progress={isFetching ? progress : retryProgress}
+              onCancel={handleCancelPress}
+              isCancelling={isCancelling}
+            />
           </View>
         )}
 
@@ -613,7 +806,7 @@ function AppContent() {
         onClose={() => setIsMenuOpen(false)}
         walletCount={wallets.length}
         currentScreen={currentScreen}
-        isBusy={isFetching || walletAddresses.length === 0}
+        isBusy={isFetching || isRetrying || walletAddresses.length === 0}
         onSelectWallets={() => handleMenuSelectScreen('wallets')}
         onSelectFetch={handleMenuSelectFetch}
         onSelectScreen={handleMenuSelectScreen}

@@ -96,6 +96,17 @@ export async function initDatabase() {
     // slow or briefly unreachable.
     await ensureColumn(db, kind, 'local_image_path', 'TEXT');
 
+    // The image host's ETag (a content fingerprint) for whatever's
+    // currently saved at local_image_path, captured at download time.
+    // Lets a periodic check ask "did Moonlabs change this picture?"
+    // with a cheap HTTP HEAD request (see imageStorage.js's
+    // fetchImageEtag) instead of re-downloading every image just to
+    // compare it - see NOTES.md's "Automatic background retry" entries
+    // for the full reasoning. NULL for anything downloaded before this
+    // column existed; the freshness check backfills it the first time
+    // it looks at an older row rather than assuming a change.
+    await ensureColumn(db, kind, 'image_etag', 'TEXT');
+
     // "Deleted" here doesn't mean the row is actually removed from the
     // database - it's a soft flag the user sets themselves from an NFT's
     // detail view (see NftCard.js's "Mark as Deleted" button) to hide
@@ -346,7 +357,7 @@ export async function getExistingStatuses(kind, nonces) {
  *     column. If our column list is ever wrong or incomplete, no data is
  *     gone - it's sitting in raw_json waiting to be re-parsed.
  */
-export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, localImagePath = null }) {
+export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, localImagePath = null, imageEtag = null }) {
   const db = await getDatabase();
   const traitColumns = TRAIT_COLUMNS[kind];
 
@@ -428,8 +439,12 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
   // that never comes from the metadata API at all - there's no reason a
   // nickname or star rating should ever be wiped just because the item
   // was successfully re-fetched, so this reads their current values
-  // first and carries them forward, the same way local_image_path
-  // already effectively persists via updateLocalImagePath's own writes.
+  // first and carries them forward. `local_image_path`/`image_etag` get
+  // their own, similar-but-not-identical preservation just below (see
+  // finalLocalImagePath/finalImageEtag) - similar in that a re-fetch
+  // shouldn't blindly wipe a good already-downloaded picture, but not
+  // identical, because unlike a nickname, a fresh value for these two
+  // SHOULD win when this call actually has one (a real image change).
   //
   // IMPORTANT: `deleted` and `comment` deliberately do NOT get the same
   // treatment - see "Marking NFTs as deleted" in NOTES.md, which
@@ -439,15 +454,31 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
   // and says explicitly not to "fix" it. Do not add deleted/comment to
   // the preserved columns below without re-reading that note first.
   const existingUserData = await db.getFirstAsync(
-    `SELECT custom_name, star_rating FROM ${kind} WHERE nonce = ?`,
+    `SELECT custom_name, star_rating, local_image_path, image_etag FROM ${kind} WHERE nonce = ?`,
     [nonce]
   );
   const preservedCustomName = existingUserData?.custom_name ?? null;
   const preservedStarRating = existingUserData?.star_rating ?? null;
 
+  // Same idea as custom_name/star_rating above, extended to the locally-
+  // downloaded image: if THIS call didn't produce a fresh local path (or
+  // a fresh ETag for it), keep whatever was already stored instead of
+  // wiping it to null. Before this existed, a metadata response that
+  // happened to come back without an image field, or an image download
+  // that failed for an item whose file extension changed since last
+  // time, could silently disconnect a perfectly good already-downloaded
+  // picture from its database row - see NOTES.md's V3 notes for the
+  // full explanation. Each of the two is preserved independently, since
+  // a successful re-fetch can produce a path without a fresh ETag (the
+  // fast-path reuse in imageStorage.js's storeImage doesn't re-check the
+  // remote host at all) - in that case the path is "fresh" but the ETag
+  // genuinely hasn't changed, so keeping the old ETag is correct too.
+  const finalLocalImagePath = localImagePath || existingUserData?.local_image_path || null;
+  const finalImageEtag = imageEtag || existingUserData?.image_etag || null;
+
   const traitColumnNames = Object.keys(traitColumns);
   const allColumnNames = [
-    'nonce', 'owner_address', 'name', 'image', 'local_image_path', 'description', 'status', 'fetched_at', 'raw_json',
+    'nonce', 'owner_address', 'name', 'image', 'local_image_path', 'image_etag', 'description', 'status', 'fetched_at', 'raw_json',
     'custom_name', 'star_rating',
     ...traitColumnNames,
   ];
@@ -458,7 +489,8 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
     ownerAddress,
     name,
     image,
-    localImagePath,
+    finalLocalImagePath,
+    finalImageEtag,
     description,
     status,
     Date.now(),
@@ -693,14 +725,38 @@ export async function getNoncesMissingCachedImage(kind, ownerAddress) {
 }
 
 /**
- * Updates just the local_image_path column for one row - used when a
- * retry successfully caches an image for an item whose metadata had
- * already been saved successfully, so nothing else about that row needs
- * to change.
+ * Updates the local_image_path (and, now, image_etag) columns for one
+ * row - used when a retry successfully caches an image for an item
+ * whose metadata had already been saved successfully, so nothing else
+ * about that row needs to change. `imageEtag` is optional and defaults
+ * to null (unknown) rather than being required, since not every caller
+ * has one on hand.
  */
-export async function updateLocalImagePath(kind, nonce, localImagePath) {
+export async function updateLocalImagePath(kind, nonce, localImagePath, imageEtag = null) {
   const db = await getDatabase();
-  await db.runAsync(`UPDATE ${kind} SET local_image_path = ? WHERE nonce = ?`, [localImagePath, nonce]);
+  await db.runAsync(
+    `UPDATE ${kind} SET local_image_path = ?, image_etag = ? WHERE nonce = ?`,
+    [localImagePath, imageEtag, nonce]
+  );
+}
+
+/**
+ * Rows with a cached local image already saved - the candidates for the
+ * periodic "did Moonlabs change this picture?" freshness check (see
+ * fetchAllForWallet.js's checkImageFreshnessForWallets and
+ * imageStorage.js's fetchImageEtag). Includes image_etag (may be null,
+ * for anything downloaded before that column existed) and
+ * local_image_path itself, since the freshness check needs to pass the
+ * existing path back in when it's only backfilling an ETag rather than
+ * forcing a real re-download.
+ */
+export async function getCachedImageRows(kind, ownerAddress) {
+  const db = await getDatabase();
+  return db.getAllAsync(
+    `SELECT nonce, image, image_etag, local_image_path FROM ${kind}
+     WHERE owner_address = ? AND status = 'ok' AND image IS NOT NULL AND local_image_path IS NOT NULL`,
+    [ownerAddress]
+  );
 }
 
 /**

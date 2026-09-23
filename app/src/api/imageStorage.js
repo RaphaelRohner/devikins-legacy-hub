@@ -45,16 +45,17 @@
  *     never retry it, since as far as the rest of the app could tell,
  *     saving that image had already succeeded.
  *
- * Trade-off worth knowing about: this assumes an NFT's image doesn't
- * change once saved. That's true for almost everything here, but
- * NOTES.md flags that OTHER fields (level, slots) genuinely can change
- * over time for the same NFT. If the game ever changes an NFT's artwork
- * after we've already saved it, this would keep showing the old picture.
- * If that turns out to matter, the fix is to compare the freshly-fetched
- * image URL against the one already stored in the database (see
- * database.js's upsertNft) and only reuse the saved file when the URL is
- * unchanged - upsertNft already has both values on hand to do that check
- * cheaply, without touching this file.
+ * Used to assume an NFT's image never changes once saved, which mostly
+ * holds - but NOTES.md's V3 entries describe a real case where Moonlabs
+ * could correct a wrong image, at either a new URL or the exact same
+ * one. That's now handled two ways: a new URL is caught automatically,
+ * since a different filename means a different local path, so
+ * storeImage() below just downloads it fresh like any other new image;
+ * the same-URL case needs fetchImageEtag() below plus a periodic check
+ * (see fetchAllForWallet.js's checkImageFreshnessForWallets) that
+ * compares the image host's current ETag - a content fingerprint the
+ * server sends back - against whatever was saved at download time, and
+ * forces storeImage() to actually re-download when they differ.
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
@@ -88,27 +89,59 @@ function withTimeout(promise, ms, message) {
   ]);
 }
 
+// HTTP header names are case-insensitive, but a plain JS object (which
+// is what expo-file-system's downloadAsync gives back - unlike a real
+// fetch() Response, which has a proper case-insensitive Headers.get())
+// keeps whatever casing the server actually sent. Looks a header up
+// regardless of casing rather than assuming "etag" is always lowercase.
+function getHeaderCaseInsensitive(headers, name) {
+  if (!headers) return null;
+  const lowerName = name.toLowerCase();
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === lowerName) return headers[key];
+  }
+  return null;
+}
+
 /**
  * Downloads `remoteUrl` into local, persistent app storage (unless we
- * already have a good saved copy for this exact nonce), and returns a
- * local file:// path to use in place of the remote URL. Never throws -
- * if the download fails for any reason, this just returns null, and the
- * caller falls back to the remote URL (or a placeholder) for that one
- * item, same as before this file existed. Safe to call again later for
- * the same nonce - a missing or previously-broken file is retried, a
- * good one is reused.
+ * already have a good saved copy for this exact nonce, and
+ * `forceRedownload` isn't set), and returns
+ * `{ localImagePath, etag }` to use in place of the remote URL.
+ *
+ * `etag` is only ever populated when an actual download just happened -
+ * on the "already have a good copy" fast path, it comes back null on
+ * purpose, since no network request was made to know one. That's fine:
+ * callers (see database.js's upsertNft) keep whatever ETag was already
+ * stored when this comes back null, rather than treating a reused file
+ * as if its ETag were suddenly unknown.
+ *
+ * Never throws - if the download fails for any reason, this returns
+ * `{ localImagePath: null, etag: null }`, and the caller falls back to
+ * the remote URL (or a placeholder) for that one item, same as before
+ * this file existed. Safe to call again later for the same nonce - a
+ * missing or previously-broken file is retried, a good one is reused
+ * (unless forceRedownload says otherwise).
+ *
+ * @param {boolean} [options.forceRedownload] - Skip the "already have a
+ *   good copy" fast path and download fresh even if a valid file
+ *   already exists at the expected local path. Used by the freshness
+ *   check (see fetchAllForWallet.js) once it's confirmed via ETag that
+ *   the remote picture actually changed.
  */
-export async function storeImage(kind, nonce, remoteUrl) {
-  if (!remoteUrl) return null;
+export async function storeImage(kind, nonce, remoteUrl, { forceRedownload = false } = {}) {
+  if (!remoteUrl) return { localImagePath: null, etag: null };
 
   const localPath = `${IMAGE_STORAGE_DIR}${kind}-${nonce}.${extensionFromUrl(remoteUrl)}`;
 
   try {
     await ensureStorageDirExists();
 
-    const existingFile = await FileSystem.getInfoAsync(localPath);
-    if (existingFile.exists && existingFile.size >= MIN_VALID_IMAGE_BYTES) {
-      return localPath;
+    if (!forceRedownload) {
+      const existingFile = await FileSystem.getInfoAsync(localPath);
+      if (existingFile.exists && existingFile.size >= MIN_VALID_IMAGE_BYTES) {
+        return { localImagePath: localPath, etag: null };
+      }
     }
 
     const result = await withTimeout(
@@ -118,7 +151,7 @@ export async function storeImage(kind, nonce, remoteUrl) {
     );
 
     if (result.status !== 200) {
-      return null;
+      return { localImagePath: null, etag: null };
     }
 
     const savedFile = await FileSystem.getInfoAsync(localPath);
@@ -127,12 +160,44 @@ export async function storeImage(kind, nonce, remoteUrl) {
       // image (see MIN_VALID_IMAGE_BYTES above) - don't leave a broken
       // file behind that we'd otherwise mistake for a good save later.
       await FileSystem.deleteAsync(localPath, { idempotent: true });
-      return null;
+      return { localImagePath: null, etag: null };
     }
 
-    return localPath;
+    return { localImagePath: localPath, etag: getHeaderCaseInsensitive(result.headers, 'etag') };
   } catch (err) {
     console.log(`[imageStorage] Couldn't save image for ${kind} #${nonce}: ${err.message}`);
+    return { localImagePath: null, etag: null };
+  }
+}
+
+/**
+ * Asks the image host "what's your current ETag for this URL?" with a
+ * plain HTTP HEAD request - no image body gets transferred, so this
+ * costs a small fraction of what a real download would, which is what
+ * makes it cheap enough to check a whole wallet's worth of already-
+ * cached images periodically (see fetchAllForWallet.js's
+ * checkImageFreshnessForWallets). Confirmed against the actual image
+ * host (img.devikins.com, S3/CloudFront-backed) that it sends a real
+ * content-hash ETag on a HEAD request - see NOTES.md's V3 entries.
+ *
+ * Returns null - never throws - if the request fails, times out, or the
+ * server doesn't send an ETag at all. The caller treats that as
+ * "couldn't tell, assume unchanged" rather than forcing a redownload on
+ * an inconclusive check.
+ */
+export async function fetchImageEtag(remoteUrl) {
+  if (!remoteUrl) return null;
+
+  try {
+    const response = await withTimeout(
+      fetch(remoteUrl, { method: 'HEAD' }),
+      DOWNLOAD_TIMEOUT_MS,
+      'image HEAD request timed out'
+    );
+    if (!response.ok) return null;
+    return response.headers.get('etag');
+  } catch (err) {
+    console.log(`[imageStorage] Couldn't check freshness for ${remoteUrl}: ${err.message}`);
     return null;
   }
 }
