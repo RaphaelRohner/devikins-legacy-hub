@@ -56,8 +56,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Switch, BackHandler, useWindowDimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Switch, BackHandler, PanResponder, useWindowDimensions } from 'react-native';
 import FilterPanel, { NO_FILTER, humanizeColumnName } from './FilterPanel';
 import { getTileColumns, getCenteredContentPadding } from '../constants/layout';
 import NftCard from './NftCard';
@@ -79,21 +78,41 @@ const SUMMARY_ROW_COMPONENTS = {
   equipment: EquipmentSummaryRow,
 };
 
-export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onToggleViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded }) {
+// Sizing/positioning for the floating "Filters ✕" button (see
+// hasAppliedFilters' JSX further down). It used to float bottom-
+// center, sized to match the row of buttons above it (paddingHorizontal
+// 10, height 40) - per feedback it now floats top-right instead,
+// roughly under the Deleted pill, and about 50% bigger (height 40 -> 60,
+// fontSize 13 -> 20) so it reads as a more deliberate, separate control
+// rather than one more toolbar button. WIDTH_ESTIMATE is a guess at the
+// button's actual rendered width (it isn't measured - RN can't know a
+// View's size before it's laid out without an onLayout round-trip,
+// which would make the button jump position on its first render each
+// time the filters get applied); it only affects how far right the
+// button's default/clamped position can go, so a slightly-off guess
+// just means a little extra or missing breathing room on the right
+// edge, not a broken layout.
+const FLOATING_BUTTON_WIDTH_ESTIMATE = 150;
+const FLOATING_BUTTON_HEIGHT = 60;
+const FLOATING_BUTTON_TOP_DEFAULT = 68;
+const FLOATING_BUTTON_RIGHT_DEFAULT = 12;
+const FLOATING_BUTTON_EDGE_MARGIN = 8;
+// How far a touch has to move before it's treated as a drag rather
+// than a tap - see the PanResponder below.
+const FLOATING_BUTTON_DRAG_THRESHOLD = 4;
+
+export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onSetViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded }) {
   const { colors } = useTheme();
-  // For the floating "Filters ✕" pill below (see hasAppliedFilters'
-  // JSX further down) - keeps it clear of the phone's own home
-  // indicator / gesture bar rather than sitting flush against the
-  // very bottom edge.
-  const insets = useSafeAreaInsets();
 
   // Tablet support: how many tiles fit per row, and how much extra
   // padding a single-column list row or the detail view needs so it
   // doesn't stretch edge-to-edge on a much wider screen - see
   // src/constants/layout.js. useWindowDimensions (rather than a one-
   // time Dimensions.get()) means both update live on rotation or an
-  // iPad's split-screen resizing, not just at first render.
-  const { width: windowWidth } = useWindowDimensions();
+  // iPad's split-screen resizing, not just at first render. `height`
+  // is also used now, to keep the draggable "Filters ✕" button
+  // (further down) from being dragged off the bottom of the screen.
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const tileColumns = getTileColumns(windowWidth);
   const centeredContentPadding = getCenteredContentPadding(windowWidth);
   const [filters, setFilters] = useState({});
@@ -128,10 +147,16 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // across Devikins/Weapons/Equipment either way - see App.js's own
   // comment for the persistence/sharing details (previously explained
   // here, back when this component owned the state directly). The
-  // toggle button itself now lives down in this file's own filterBar
-  // row instead (see the JSX below) - displaced from App.js's search
-  // row once Filters moved up onto it, taking List/Tiles' old spot -
-  // onToggleViewMode is what that button calls.
+  // toggle buttons themselves now live down in this file's own
+  // filterBar row instead (see the JSX below) - displaced from App.js's
+  // search row once Filters moved up onto it, taking List/Tiles' old
+  // spot. Briefly a single merged toggle button down here too (per
+  // feedback, back when this row was tight on space with Filters ✕
+  // also living in it) - split back into two separate buttons once
+  // Filters ✕ floated out of this row and left room again. onSetViewMode
+  // is what each button calls, with its own target mode ('list' or
+  // 'tiles') - unlike the merged version, which just flipped between
+  // them.
   // --- Filter state (moved here from FilterPanel.js so the toggle and
   // Apply/Remove button can be pinned outside the scrollable list while
   // still sharing this same state with the rows rendered inside it -
@@ -513,17 +538,88 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     JSON.stringify(pendingFilters) !== JSON.stringify(appliedFilters) ||
     pendingStarFilter !== starFilter;
   // Whether a filter selection is actually live right now - drives the
-  // floating "Filters ✕" pill at the bottom of the screen (see its own
-  // JSX further down, after the FlatList), so a filter can be cleared
-  // in one tap without opening the panel first. Includes the star
-  // filter, so it still shows up (and still clears it) when a star
-  // rating is the only thing currently narrowing the list.
+  // floating "Filters ✕" pill (see its own JSX further down, after the
+  // FlatList), so a filter can be cleared in one tap without opening
+  // the panel first. Includes the star filter, so it still shows up
+  // (and still clears it) when a star rating is the only thing
+  // currently narrowing the list.
   const hasAppliedFilters = Object.keys(appliedFilters).length > 0 || starFilter > 0;
+
+  // Where the floating "Filters ✕" button currently sits, as an {x, y}
+  // offset from its default top-right position (FLOATING_BUTTON_
+  // TOP_DEFAULT/RIGHT_DEFAULT above) rather than an absolute screen
+  // position - so the default spot (and the clamping below) only has
+  // to be worked out once, and "not dragged yet" is simply {x: 0, y:
+  // 0}. State drives the re-render that actually moves the button on
+  // screen; the ref alongside it holds the same value for the
+  // PanResponder callbacks below to read/write without waiting for a
+  // re-render (and without going stale inside a closure captured at
+  // the start of the gesture).
+  const [floatingOffset, setFloatingOffset] = useState({ x: 0, y: 0 });
+  const floatingOffsetRef = useRef(floatingOffset);
+  // The offset at the moment the current drag started, so each move
+  // event can compute the new position from gestureState's cumulative
+  // dx/dy (measured from the touch's start, not the previous event)
+  // without drifting.
+  const dragStartOffsetRef = useRef({ x: 0, y: 0 });
+
+  // Keeps the button from being dragged off-screen (or up under the
+  // toolbar rows, or down past the bottom edge) - clamps to
+  // FLOATING_BUTTON_EDGE_MARGIN px of breathing room on every side.
+  // windowWidth/windowHeight (not the exact height of this component's
+  // own container, which isn't directly knowable) are the best
+  // available stand-in for "the visible screen," so this is an
+  // approximation like the rest of the button's sizing/position - see
+  // the constants' own comment above.
+  function clampFloatingOffset(offset) {
+    const baseLeft = windowWidth - FLOATING_BUTTON_RIGHT_DEFAULT - FLOATING_BUTTON_WIDTH_ESTIMATE;
+    const minX = FLOATING_BUTTON_EDGE_MARGIN - baseLeft;
+    const maxX = windowWidth - FLOATING_BUTTON_EDGE_MARGIN - FLOATING_BUTTON_WIDTH_ESTIMATE - baseLeft;
+    const minY = FLOATING_BUTTON_EDGE_MARGIN - FLOATING_BUTTON_TOP_DEFAULT;
+    const maxY = windowHeight - FLOATING_BUTTON_EDGE_MARGIN - FLOATING_BUTTON_HEIGHT - FLOATING_BUTTON_TOP_DEFAULT;
+    return {
+      x: Math.min(Math.max(offset.x, minX), maxX),
+      y: Math.min(Math.max(offset.y, minY), maxY),
+    };
+  }
+
+  // Makes the floating button draggable without pulling in a gesture
+  // library (react-native-gesture-handler/reanimated) just for one
+  // button - PanResponder ships with React Native itself. A tap still
+  // works as a normal tap: onStartShouldSetPanResponder is false, so a
+  // touch starts out belonging to the TouchableOpacity underneath (see
+  // the JSX below) exactly as if this wrapper wasn't there at all;
+  // onMoveShouldSetPanResponder only grabs the gesture, mid-touch, once
+  // it's moved more than FLOATING_BUTTON_DRAG_THRESHOLD px - past that
+  // point it's clearly a drag, not a tap, so the TouchableOpacity never
+  // sees a move that large and won't also fire its onPress when the
+  // finger lifts. A short tap that never crosses the threshold never
+  // reaches the PanResponder at all, so it reaches the TouchableOpacity
+  // completely normally.
+  const floatingButtonPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_evt, gestureState) =>
+        Math.abs(gestureState.dx) > FLOATING_BUTTON_DRAG_THRESHOLD ||
+        Math.abs(gestureState.dy) > FLOATING_BUTTON_DRAG_THRESHOLD,
+      onPanResponderGrant: () => {
+        dragStartOffsetRef.current = floatingOffsetRef.current;
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        const nextOffset = clampFloatingOffset({
+          x: dragStartOffsetRef.current.x + gestureState.dx,
+          y: dragStartOffsetRef.current.y + gestureState.dy,
+        });
+        floatingOffsetRef.current = nextOffset;
+        setFloatingOffset(nextOffset);
+      },
+    })
+  ).current;
 
   // The item count and Deleted switch. Used to be shared between two
   // JSX spots (this row, or a second row below it, depending on
   // whether "Remove filters" needed the space) - now that button
-  // floats at the bottom of the screen instead of living in this row,
+  // floats near the top of the screen instead of living in this row,
   // there's only ever one spot, so nothing about this pair moves
   // around anymore. Kept as its own variable regardless, since it's
   // still one clearly-scoped chunk of JSX either way.
@@ -592,36 +688,62 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {filterableColumnNames.length > 0 && (
         <View style={[styles.filterBar, { backgroundColor: colors.toolbarBackground, borderBottomColor: colors.toolbarDivider }]}>
-          {/* One row: the List/Tiles toggle on the left, the item
-              count centered, the Deleted switch on the right - always,
-              regardless of whether a filter's applied. Used to make
-              room for a "Filters ✕" button here too by dropping the
-              count/switch onto their own second row whenever a filter
-              was applied - per later feedback that the row appearing/
-              disappearing broke the now-more-polished toolbar's
-              consistency once List/Tiles, the count, and Deleted all
-              got their own button styling too. "Filters ✕" moved out
-              of this row entirely instead - it now floats at the
-              bottom of the screen instead (see hasAppliedFilters' JSX
-              further down, after the FlatList) - so this row's height
-              never changes.
+          {/* One row: List and Tiles as two separate buttons on the
+              left, the item count centered, the Deleted switch on the
+              right - always, regardless of whether a filter's applied.
+              List/Tiles used to be a single button that toggled
+              between the two states (merged per earlier feedback, when
+              this row was short on space) - split back into two once
+              Filters moving up to App.js's row freed up room here
+              again, so both options are visible/tappable at once
+              rather than needing a second tap to see what you'd switch
+              to. Tiles sits to the right of List per that feedback.
+              Both share anchorToggleButton's base pill style; the
+              active one additionally gets colors.primary/
+              chipBackground (same active-state treatment
+              FilterPanel.js's own option chips use) so it's clear at a
+              glance which mode is currently showing.
 
-              List/Tiles wasn't always the button anchoring this row's
-              left side - "Show filters ▼ / Hide filters ▲" used to sit
-              here instead, until Filters moved up to join Search and
-              Sort on App.js's own row per feedback (so all three of
-              Search/Sort/Filters could sit together, in that order).
-              List/Tiles, displaced from that row by Filters, took over
-              this spot rather than needing a new one of its own. */}
+              "Filters ✕" isn't in this row - it floats over the list
+              instead (see hasAppliedFilters' JSX further down, after
+              the FlatList), so this row's height never changes
+              regardless of whether a filter's applied.
+
+              List/Tiles wasn't always the button(s) anchoring this
+              row's left side - "Show filters ▼ / Hide filters ▲" used
+              to sit here instead, until Filters moved up to join
+              Search and Sort on App.js's own row per feedback (so all
+              three of Search/Sort/Filters could sit together, in that
+              order). List/Tiles, displaced from that row by Filters,
+              took over this spot rather than needing a new one of its
+              own. */}
           <View style={styles.toggleRow}>
-            <TouchableOpacity
-              style={[styles.anchorToggleButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={onToggleViewMode}
-            >
-              <Text style={[styles.anchorToggleText, { color: colors.secondaryText }]}>
-                {viewMode === 'list' ? 'List' : 'Tiles'}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.viewModeButtonGroup}>
+              <TouchableOpacity
+                style={[
+                  styles.anchorToggleButton,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  viewMode === 'list' && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
+                ]}
+                onPress={() => onSetViewMode('list')}
+              >
+                <Text style={[styles.anchorToggleText, { color: viewMode === 'list' ? colors.primary : colors.secondaryText }]}>
+                  List
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.anchorToggleButton,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  viewMode === 'tiles' && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
+                ]}
+                onPress={() => onSetViewMode('tiles')}
+              >
+                <Text style={[styles.anchorToggleText, { color: viewMode === 'tiles' ? colors.primary : colors.secondaryText }]}>
+                  Tiles
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {countAndDeletedSwitch}
           </View>
@@ -684,54 +806,54 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
             </View>
           )
         }
-        contentContainerStyle={[
+        contentContainerStyle={
           viewMode === 'tiles'
             ? styles.tilesListContent
-            : [styles.listContent, { paddingHorizontal: centeredContentPadding }],
-          // Extra room at the bottom only while the floating "Filters
-          // ✕" pill below is showing, so the last row of the list can
-          // still scroll clear of it rather than sitting hidden behind
-          // it.
-          hasAppliedFilters && styles.listContentWithFloatingButton,
-        ]}
+            : [styles.listContent, { paddingHorizontal: centeredContentPadding }]
+        }
       />
 
       {/* Floats over the list rather than living inline in toggleRow
           above (where it used to sit, pushing the count/Deleted switch
           onto their own extra row whenever a filter was applied) - per
           feedback that the row appearing/disappearing broke the
-          toolbar's now-more-consistent look. position: 'absolute' on
-          the OUTER wrap (full width, centered content) rather than on
-          the button itself is what centers it purely against the
-          screen's own width regardless of anything else on screen -
-          same centering technique as countTextWrap above, for the same
-          reason. pointerEvents="box-none" (not "none", unlike
-          countTextWrap) is required here specifically because this
-          wrap DOES contain something tappable - "none" would also
-          block taps on the button itself, not just the empty space
-          around it; "box-none" lets the empty space pass taps through
-          to the list underneath while the button stays tappable.
-          insets.bottom clears the phone's own home indicator/gesture
-          bar rather than sitting flush against the true bottom edge -
-          same reasoning SortPickerModal.js already uses insets.bottom
-          for. Shadow/elevation match the app's existing card-shadow
-          recipe (see e.g. DevikinSummaryRow.js), just applied here so
-          this reads as floating above the list rather than sitting
-          flush on it. */}
+          toolbar's now-more-consistent look. Used to float bottom-
+          center instead - moved up to float top-right, roughly under
+          the Deleted pill, per later feedback, since that reads more
+          like "undo the thing you just saw at the top of this screen"
+          than a bottom-center button did. left/top (rather than
+          countTextWrap's centering left/right: 0 technique) is what
+          lets it be dragged freely in both directions - see
+          floatingOffset/floatingButtonPanResponder above.
+          {...floatingButtonPanResponder.panHandlers} goes on this
+          OUTER wrap rather than directly on the TouchableOpacity below
+          it, so the PanResponder and the TouchableOpacity are two
+          separate views layered on top of each other rather than
+          fighting over the same one - see the PanResponder's own
+          comment above for how a tap still reaches the TouchableOpacity
+          normally. Shadow/elevation match the app's existing card-
+          shadow recipe (see e.g. DevikinSummaryRow.js), just bumped up
+          a little here so this reads as floating above the list rather
+          than sitting flush on it. */}
       {hasAppliedFilters && (
         <View
-          pointerEvents="box-none"
-          style={[styles.floatingRemoveWrap, { bottom: insets.bottom + 16 }]}
+          {...floatingButtonPanResponder.panHandlers}
+          style={[
+            styles.floatingRemoveWrap,
+            {
+              left: windowWidth - FLOATING_BUTTON_RIGHT_DEFAULT - FLOATING_BUTTON_WIDTH_ESTIMATE + floatingOffset.x,
+              top: FLOATING_BUTTON_TOP_DEFAULT + floatingOffset.y,
+            },
+          ]}
         >
           <TouchableOpacity
             style={[
-              styles.removeButton,
               styles.floatingRemoveButton,
               { backgroundColor: colors.surface, borderColor: colors.border, shadowColor: colors.cardShadow },
             ]}
             onPress={handleRemovePress}
           >
-            <Text style={[styles.removeLinkText, { color: colors.cancelText }]}>Filters ✕</Text>
+            <Text style={[styles.floatingRemoveButtonText, { color: colors.cancelText }]}>Filters ✕</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -789,16 +911,26 @@ const styles = StyleSheet.create({
     // 'absolute' against THIS row - see countTextWrap's own comment.
     position: 'relative',
   },
+  // Groups the List and Tiles buttons together with a small gap, so
+  // the pair reads as one control (like Apple's segmented controls)
+  // rather than two unrelated buttons that happen to sit next to each
+  // other - same idea as deletedSwitchGroup's gap below, just applied
+  // to two whole buttons instead of a label+Switch.
+  viewModeButtonGroup: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   // Turned into a real button (background, border, generous padding)
   // rather than bare colored text, per feedback from an Android
-  // touch-target audit - this and removeButton below were the two
-  // smallest tap targets in the whole app (no padding at all, just the
-  // text itself), so they got the biggest bump. Originally the "Show/
-  // Hide filters" button specifically (hence the name) - now reused for
-  // the List/Tiles toggle that took over this same anchor spot once
-  // Filters moved up to App.js's row instead. Kept the generic name
-  // since it just describes the SLOT (this row's left-anchoring
-  // button), not any longer tied to which control sits in it.
+  // touch-target audit - this and the floating "Filters ✕" button
+  // further down were the two smallest tap targets in the whole app
+  // (no padding at all, just the text itself), so they got the biggest
+  // bump. Originally the "Show/Hide filters" button specifically
+  // (hence the name) - now reused for List and Tiles, which took over
+  // this same anchor spot once Filters moved up to App.js's row
+  // instead. Kept the generic name since it just describes the SLOT
+  // (this row's left-anchoring button(s)), not any longer tied to
+  // which control sits in it.
   anchorToggleButton: {
     borderWidth: 1,
     borderRadius: 8,
@@ -867,49 +999,40 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  // Same button treatment as anchorToggleButton above, for the same
-  // reason - see its comment. Also pinned to the same explicit height
-  // now, for the same reason anchorToggleButton is - it used to match
-  // that button only because both happened to share the same
-  // paddingVertical number, which would have silently drifted apart
-  // once anchorToggleButton moved to an explicit height instead.
-  removeButton: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    height: 40,
-    justifyContent: 'center',
-  },
-  removeLinkText: {
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  // Centers the floating "Filters ✕" button purely against the
-  // screen's own width, the same absolute-positioning technique
-  // countTextWrap above uses for the same reason (ignoring whatever
-  // else is on screen rather than trying to balance around it). `left:
-  // 0, right: 0` span the full width; `alignItems: 'center'` is what
-  // then centers the button itself within that span, since (unlike
-  // countTextWrap's plain centered text) this wraps a normal button
-  // that shouldn't stretch to fill it. `bottom` is set inline per
-  // instance (see the JSX), since it depends on the device's own
-  // safe-area inset.
+  // Positions the floating "Filters ✕" button with plain left/top
+  // (rather than countTextWrap's centering left/right: 0 technique),
+  // since it needs to be draggable in both directions rather than
+  // pinned to center - both are set inline per render (see the JSX),
+  // since they depend on windowWidth and the button's current drag
+  // offset.
   floatingRemoveWrap: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
   },
-  // Same shadow/elevation recipe the app's cards already use (see e.g.
-  // DevikinSummaryRow.js's own `row` style) - shadowColor comes from
-  // the theme inline (see the JSX), the rest is fixed here. Reads as
+  // About 50% bigger than the rest of the row's buttons (height 40 ->
+  // 60, fontSize 13 -> 20, see floatingRemoveButtonText below) per
+  // feedback, now that it's a standalone control rather than one more
+  // button sitting in that row - big enough to read clearly and stay
+  // easy to tap on its own. Shadow/elevation are the same recipe the
+  // app's cards already use (see e.g. DevikinSummaryRow.js's own `row`
+  // style), just bumped up a little further here so this reads as
   // floating above the list rather than a button that just happens to
-  // sit on top of it.
+  // sit on top of it - shadowColor comes from the theme inline (see
+  // the JSX), the rest is fixed here.
   floatingRemoveButton: {
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    height: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
+  },
+  floatingRemoveButtonText: {
+    fontWeight: '600',
+    fontSize: 20,
   },
   applyButton: {
     borderRadius: 8,
@@ -933,15 +1056,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingVertical: 12,
-  },
-  // Applied on top of tilesListContent/listContent above (not instead
-  // of) only while the floating "Filters ✕" pill is showing - see the
-  // FlatList's own contentContainerStyle. Bigger than either one's own
-  // paddingBottom so the last row can still scroll clear of the pill
-  // sitting over it, rather than ending up permanently hidden behind
-  // it.
-  listContentWithFloatingButton: {
-    paddingBottom: 76,
   },
   // Made into a proper button (filled background, rounded corners)
   // rather than a plain text link, per feedback that it was easy to

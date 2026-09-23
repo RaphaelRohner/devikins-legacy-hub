@@ -979,7 +979,7 @@ function AppContent() {
           starFilter={starFilter}
           onStarFilterChange={setStarFilter}
           viewMode={viewMode}
-          onToggleViewMode={() => handleSetViewMode(viewMode === 'list' ? 'tiles' : 'list')}
+          onSetViewMode={handleSetViewMode}
           sortField={sortField}
           sortDirection={sortDirection}
           expanded={isFiltersExpanded}
