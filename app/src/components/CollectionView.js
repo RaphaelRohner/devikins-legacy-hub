@@ -572,11 +572,19 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // own container, which isn't directly knowable) are the best
   // available stand-in for "the visible screen," so this is an
   // approximation like the rest of the button's sizing/position - see
-  // the constants' own comment above.
+  // the constants' own comment above. X is worked out in terms of the
+  // button's `right` distance from the screen's right edge (see the
+  // JSX below for why), not a `left` position, so FLOATING_BUTTON_
+  // WIDTH_ESTIMATE only has to be right enough to keep the button from
+  // being dragged too far left off the screen - it no longer affects
+  // where the button rests by default, which is now exact regardless
+  // of the estimate (see the "resting position" screenshot feedback
+  // that prompted this).
   function clampFloatingOffset(offset) {
-    const baseLeft = windowWidth - FLOATING_BUTTON_RIGHT_DEFAULT - FLOATING_BUTTON_WIDTH_ESTIMATE;
-    const minX = FLOATING_BUTTON_EDGE_MARGIN - baseLeft;
-    const maxX = windowWidth - FLOATING_BUTTON_EDGE_MARGIN - FLOATING_BUTTON_WIDTH_ESTIMATE - baseLeft;
+    const minRight = FLOATING_BUTTON_EDGE_MARGIN;
+    const maxRight = windowWidth - FLOATING_BUTTON_WIDTH_ESTIMATE - FLOATING_BUTTON_EDGE_MARGIN;
+    const minX = FLOATING_BUTTON_RIGHT_DEFAULT - maxRight;
+    const maxX = FLOATING_BUTTON_RIGHT_DEFAULT - minRight;
     const minY = FLOATING_BUTTON_EDGE_MARGIN - FLOATING_BUTTON_TOP_DEFAULT;
     const maxY = windowHeight - FLOATING_BUTTON_EDGE_MARGIN - FLOATING_BUTTON_HEIGHT - FLOATING_BUTTON_TOP_DEFAULT;
     return {
@@ -808,11 +816,19 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
             </View>
           )
         }
-        contentContainerStyle={
+        contentContainerStyle={[
           viewMode === 'tiles'
             ? styles.tilesListContent
-            : [styles.listContent, { paddingHorizontal: centeredContentPadding }]
-        }
+            : [styles.listContent, { paddingHorizontal: centeredContentPadding }],
+          // Extra room at the TOP only while the floating "Filters ✕"
+          // button is showing, so the first row of the list starts
+          // below it instead of sitting hidden behind it (the button's
+          // own name-tag-chip-sized corner was covering the first
+          // card's own name-tag chip before this was added - the
+          // mirror image of the bottom-clearance padding this button
+          // used to need back when it floated at the bottom instead).
+          hasAppliedFilters && styles.listContentClearFloatingButton,
+        ]}
       />
 
       {/* Floats over the list rather than living inline in toggleRow
@@ -823,10 +839,19 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
           center instead - moved up to float top-right, roughly under
           the Deleted pill, per later feedback, since that reads more
           like "undo the thing you just saw at the top of this screen"
-          than a bottom-center button did. left/top (rather than
-          countTextWrap's centering left/right: 0 technique) is what
-          lets it be dragged freely in both directions - see
-          floatingOffset/floatingButtonPanResponder above.
+          than a bottom-center button did. `right` (rather than a
+          computed `left`) is what anchors it horizontally now - an
+          earlier version computed `left` from a guessed button width
+          (FLOATING_BUTTON_WIDTH_ESTIMATE), which left a visible gap
+          between the button and the screen's right edge once the
+          actual rendered width turned out narrower than the guess (see
+          a screenshot's own feedback); `right` instead hugs the true
+          edge exactly, no matter how wide the button actually renders,
+          the same way it would with plain (non-dragged) CSS - the
+          estimate is only still used for how far the drag can go (see
+          clampFloatingOffset above). `top` needs no such trick, since
+          the button's height IS set explicitly (floatingRemoveButton's
+          own height), unlike its width.
           {...floatingButtonPanResponder.panHandlers} goes on this
           OUTER wrap rather than directly on the TouchableOpacity below
           it, so the PanResponder and the TouchableOpacity are two
@@ -843,7 +868,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
           style={[
             styles.floatingRemoveWrap,
             {
-              left: windowWidth - FLOATING_BUTTON_RIGHT_DEFAULT - FLOATING_BUTTON_WIDTH_ESTIMATE + floatingOffset.x,
+              right: FLOATING_BUTTON_RIGHT_DEFAULT - floatingOffset.x,
               top: FLOATING_BUTTON_TOP_DEFAULT + floatingOffset.y,
             },
           ]}
@@ -1062,6 +1087,16 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingVertical: 12,
+  },
+  // Applied on top of listContent above (not instead of - see the
+  // FlatList's own contentContainerStyle) only while the floating
+  // "Filters ✕" button is showing, so the first row of the list
+  // starts clear of it instead of sitting partly hidden underneath it.
+  // FLOATING_BUTTON_TOP_DEFAULT (68) + FLOATING_BUTTON_HEIGHT (50) is
+  // where the button's own bottom edge sits, plus a little extra
+  // breathing room below that.
+  listContentClearFloatingButton: {
+    paddingTop: FLOATING_BUTTON_TOP_DEFAULT + FLOATING_BUTTON_HEIGHT + 12,
   },
   // Made into a proper button (filled background, rounded corners)
   // rather than a plain text link, per feedback that it was easy to
