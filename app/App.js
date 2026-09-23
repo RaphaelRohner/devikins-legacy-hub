@@ -897,32 +897,24 @@ function AppContent() {
             </Text>
           </TouchableOpacity>
 
-          <View style={styles.viewModeGroup}>
-            <TouchableOpacity
-              style={[
-                styles.viewModeButton,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-                viewMode === 'list' && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
-              ]}
-              onPress={() => handleSetViewMode('list')}
-            >
-              <Text style={[styles.viewModeButtonText, { color: viewMode === 'list' ? colors.primary : colors.secondaryText }]}>
-                List
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.viewModeButton,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-                viewMode === 'tiles' && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
-              ]}
-              onPress={() => handleSetViewMode('tiles')}
-            >
-              <Text style={[styles.viewModeButtonText, { color: viewMode === 'tiles' ? colors.primary : colors.secondaryText }]}>
-                Tiles
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {/* Used to be two separate buttons (List / Tiles, whichever
+              wasn't active shown dimmed) - collapsed into one per
+              feedback once the Sort button above made this row feel
+              crowded, with no room to add a fourth row for it. A single
+              button toggling between the two is enough since there are
+              only ever two states: it shows whichever mode is CURRENTLY
+              active, and tapping it switches straight to the other one -
+              no need for the old side-by-side "here's your other option
+              too" layout when there's only one other option to begin
+              with. */}
+          <TouchableOpacity
+            style={[styles.viewModeButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => handleSetViewMode(viewMode === 'list' ? 'tiles' : 'list')}
+          >
+            <Text style={[styles.viewModeButtonText, { color: colors.secondaryText }]}>
+              {viewMode === 'list' ? 'List' : 'Tiles'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <SortPickerModal
@@ -1087,12 +1079,6 @@ const styles = StyleSheet.create({
   searchClearButtonText: {
     fontSize: 14,
     fontWeight: '700',
-  },
-  // The List/Tiles pair, grouped so they move as one unit at the right
-  // end of searchRow rather than each needing their own gap handling.
-  viewModeGroup: {
-    flexDirection: 'row',
-    gap: 8,
   },
   viewModeButton: {
     borderWidth: 1,
