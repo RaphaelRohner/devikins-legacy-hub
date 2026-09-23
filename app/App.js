@@ -845,7 +845,11 @@ function AppContent() {
           onPress={toggleTheme}
         >
           <Text style={styles.themeToggleIcon}>{isDark ? '☀️' : '🌙'}</Text>
-          <Text style={[styles.themeToggleLabel, { color: colors.text }]}>
+          <Text
+            style={[styles.themeToggleLabel, { color: colors.text }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
             {isDark ? 'Light' : 'Dark'}
           </Text>
         </TouchableOpacity>
@@ -934,7 +938,11 @@ function AppContent() {
             style={[styles.filtersToggleButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => setIsFiltersExpanded((current) => !current)}
           >
-            <Text style={[styles.filtersToggleButtonText, { color: colors.secondaryText }]}>
+            <Text
+              style={[styles.filtersToggleButtonText, { color: colors.secondaryText }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               {isFiltersExpanded ? 'Filters ▲' : 'Filters ▼'}
             </Text>
           </TouchableOpacity>
@@ -1125,11 +1133,21 @@ const styles = StyleSheet.create({
   // comment for why a fixed number, not just matching padding, is what
   // actually guarantees the two line up.
   filtersToggleButton: {
+    // Matches themeToggle's own explicit width above (see its comment)
+    // - previously sized to its own "Filters ▼/▲" content instead. Now
+    // that width is fixed rather than sized to content, alignItems is
+    // needed too (not just justifyContent, which only centers
+    // vertically here - default flexDirection is column, so alignItems
+    // is what centers the label horizontally) - with intrinsic sizing
+    // this never mattered, since the button was never wider than its
+    // own text to begin with.
+    width: 96,
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 14,
     height: 40,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   // Explicit lineHeight (rather than leaving it to the default) so
   // this renders at exactly the same height as sortButtonText below,
@@ -1210,7 +1228,19 @@ const styles = StyleSheet.create({
   // relocated onto searchRow above (having previously been relocated
   // onto menuRow, back when Fetch/Update and Wallets moved into the
   // hamburger menu instead of sharing this row with it).
+  // Explicit width (rather than sizing to its own icon+label content,
+  // which is how this used to work) so this matches the Filters
+  // button's width exactly, per feedback that it looked noticeably
+  // wider - same explicit-shared-number approach as searchInput/
+  // sortButton/filtersToggleButton's own height match above, and for
+  // the same reason: matching padding numbers alone doesn't guarantee
+  // matching sizes once the actual content differs (an icon + word here
+  // vs. just a word there). filtersToggleButtonText/themeToggleLabel
+  // both got a numberOfLines/ellipsizeMode safety net in the JSX, in
+  // case this number ever runs tight against a longer label on some
+  // device/font - graceful truncation rather than a broken layout.
   themeToggle: {
+    width: 96,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
