@@ -1100,14 +1100,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
   },
+  // Explicit lineHeight (rather than leaving it to the default) so
+  // this renders at exactly the same height as sortButtonText below,
+  // even though the two show different characters - see that style's
+  // own comment for why that isn't automatic.
   viewModeButtonText: {
     fontSize: 13,
     fontWeight: '600',
+    lineHeight: 16,
   },
-  // The Sort button - same border/radius family as viewModeButton above
-  // so it reads as one row of controls, but its own slightly tighter
-  // padding since its label (arrow + field name) tends to run longer
-  // than "List"/"Tiles".
+  // The Sort button - same border/radius/padding as viewModeButton
+  // above so all three controls in this row line up at the same
+  // height. That match isn't automatic just from matching padding,
+  // though: this button's label always starts with an arrow character
+  // (↑/↓), and on at least one device (Raphael's Samsung tablet) that
+  // glyph rendered with a taller default line height than the plain
+  // "List"/"Tiles" text, making this button visibly shorter than tall
+  // (padding matched, but the extra line height pushed its own box
+  // taller than the other two). Pinning both this and
+  // viewModeButtonText to the SAME explicit lineHeight removes that
+  // platform-dependent difference instead of guessing at a fix that
+  // might not hold on every device/font.
   sortButton: {
     borderWidth: 1,
     borderRadius: 8,
@@ -1118,6 +1131,7 @@ const styles = StyleSheet.create({
   sortButtonText: {
     fontSize: 13,
     fontWeight: '600',
+    lineHeight: 16,
   },
   // The very first row on screen: the ☰ hamburger button on the left,
   // the light/dark theme toggle on the right (per feedback - it used to
