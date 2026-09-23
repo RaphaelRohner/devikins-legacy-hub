@@ -15,11 +15,14 @@
  * goal being just a clear, glanceable "something is happening" signal,
  * not the full detail.
  *
- * The full detail (which collection, how many done, or the exact
- * error) is still built exactly as before - it just isn't shown
- * directly anymore. Tapping the bar (anywhere except the ✕) shows it in
- * a plain Alert instead, so nothing that used to be visible here is
- * actually gone, it's just one tap further away.
+ * The full detail (exact counts, the specific kind of retry, or the
+ * exact error) is still built exactly as before and only shown when
+ * the bar is tapped (see `showDetail` below) - there just isn't room
+ * for it at a glance. What IS shown at a glance, per feedback, is
+ * which collection is currently being worked on - a short "Devikins" /
+ * "Weapons" / "Equipment" badge (see `badgeLabel` below) next to the
+ * spinner/progress fill, so it's obvious when the scan moves from one
+ * collection to the next without needing to tap anything.
  *
  * `progress` is whatever fetchAllForWallet.js's onProgress callback
  * most recently received - see that file for the exact shape.
@@ -41,15 +44,12 @@ export default function ProgressBar({ progress, onCancel, isCancelling }) {
   if (progress.phase === 'listing') {
     message = `Looking up ${progress.label} held by this wallet...`;
   } else if (progress.phase === 'summary') {
-    // A plain, pre-worded status line - meant for a caller to say up
-    // front what kind of work is about to happen (e.g. an NFT refetch
-    // vs an image refetch) before the per-collection 'fetching' messages
-    // below start coming in. Nothing currently produces this phase (the
-    // background auto-retry timer that used to be its only source was
-    // removed from App.js, per feedback that fetching should only ever
-    // happen when Fetch/Update is tapped) - left in place since it's a
-    // harmless, generic capability of this component, not tied to that
-    // removed feature specifically.
+    // A plain, pre-worded status line - a caller (the background retry
+    // timer in App.js) uses this to say up front what kind of work is
+    // about to happen (e.g. an NFT refetch vs an image refetch, or the
+    // image freshness check) before the per-collection 'fetching'
+    // messages below start coming in. Not tied to one collection, so
+    // it isn't given the short per-collection badge below either.
     message = progress.label;
   } else if (progress.phase === 'fetching') {
     message = `${progress.label}: ${progress.completed} / ${progress.total} fetched`;
@@ -70,6 +70,23 @@ export default function ProgressBar({ progress, onCancel, isCancelling }) {
     message = `Wallet ${progress.walletIndex} of ${progress.walletTotal}: ${message}`;
   }
 
+  // A short, glanceable label for which collection is currently being
+  // worked on - "Devikins", "Weapons" or "Equipment" - shown right in
+  // the compact bar itself (not just in the tap-to-reveal Alert), so
+  // it's obvious when the scan moves from one collection to the next.
+  // 'listing'/'fetching'/'error' all carry a per-collection `label`
+  // from fetchAllForWallet.js, e.g. "Weapons" or, during a retry,
+  // "Weapons (image refetch)" - the parenthetical suffix is stripped
+  // here since it's extra detail the Alert already covers and there
+  // isn't room for it in this compact a space. 'summary' isn't tied to
+  // one collection (see above), so it keeps its own full label instead.
+  let badgeLabel = '';
+  if (progress.phase === 'summary') {
+    badgeLabel = progress.label;
+  } else if (progress.label) {
+    badgeLabel = progress.label.replace(/\s*\([^)]*\)\s*$/, '');
+  }
+
   function showDetail() {
     if (message) {
       Alert.alert('Fetch status', message);
@@ -87,6 +104,16 @@ export default function ProgressBar({ progress, onCancel, isCancelling }) {
           the compact view on purpose doesn't have room for the full
           status text, so tapping it is how that text is still reachable. */}
       <TouchableOpacity style={styles.tapArea} onPress={showDetail} activeOpacity={0.7}>
+        {badgeLabel ? (
+          <Text
+            style={[styles.badgeText, { color: colors.text }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {badgeLabel}
+          </Text>
+        ) : null}
+
         {fractionComplete !== null ? (
           // Fetching a specific collection: we know how far through it
           // we are, so show that - a slim fill track plus the percent
@@ -155,6 +182,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  // The short per-collection badge ("Devikins" / "Weapons" /
+  // "Equipment") - sized to its own content (no flex) so it doesn't
+  // eat into the track/percent next to it during 'fetching', but still
+  // shrinks and ellipsizes via numberOfLines/ellipsizeMode above if a
+  // longer 'summary' label ever needs to share this same slot.
+  badgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flexShrink: 1,
   },
   track: {
     flex: 1,
