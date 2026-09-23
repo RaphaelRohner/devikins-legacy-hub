@@ -2177,7 +2177,133 @@ to track, since it only fills the Add field rather than adding a
 wallet directly (see above), so the worst case is a scan that doesn't
 work as expected, not silent data corruption.
 
+## Sort button, next to List/Tiles
+
+Discussed before writing any code: Raphael's first idea was a new
+hamburger-menu entry with its own subpage, modeled on SQL's multi-column
+`ORDER BY`. Went with something smaller instead, for two reasons. First,
+a full multi-field sort (rarity, then level, then ID, ...) is a lot of
+UI for a benefit that's mostly covered already by the per-collection
+filters - the filters narrow the list down, sorting just decides what
+order the narrowed list reads in, which is usually driven by one thing
+at a time ("show me my rarest first", "show me by level"). Second, a
+single sortable field still needed a tiebreaker to be useful - sorting
+100 Devikins by Rarity alone, with dozens tied at "Common", would leave
+those ties in a meaningless, effectively random order.
+
+Landed on: a compact Sort button next to the existing List/Tiles toggle
+(searchRow in App.js), opening a small bottom-sheet picker
+(SortPickerModal.js) rather than a full subpage - the whole choice is
+"which field, which direction", which doesn't need a screen of its own.
+Tapping a field that isn't already active picks it, at a sensible
+starting direction (descending for stats, ascending for ID); tapping the
+ACTIVE field again flips its direction instead - one tap either sets or
+flips, never a separate control for direction. The tiebreaker is
+automatic and free: `queryNfts()` in database.js always asks SQLite for
+`ORDER BY nonce ASC` first, and JS's `Array.prototype.sort()` is
+guaranteed stable (ES2019+), so sorting that already-ID-ordered array by
+whatever field was picked leaves ties in ID order without any extra
+code. Rarity sorts by game order (Common → Eldritch, via the existing
+`RARITY_ORDER` list), not alphabetically; missing values always sort to
+the end regardless of direction, so an unset stat doesn't jump to the
+top on a descending sort.
+
+Per feedback, the field list offered is whatever `getSortableFieldNames()`
+(schema.js) says is sortable for the CURRENT collection - ID and
+"Recently Added" (see next section) everywhere, plus each collection's
+own real stat columns (the same ones the Filters panel already treats as
+user-facing, via `filterable !== false` - bookkeeping fields like
+`icon_image` are excluded the same way there too). Switching tabs keeps
+the current sort if the new tab also has that field (e.g. Rarity exists
+on all three), and quietly resets to ID/ascending if it doesn't (e.g.
+leaving a Weapon-only stat behind when switching to Devikins) - handled
+by a small effect in App.js that re-checks the active field whenever
+`currentScreen` changes.
+
+The search field visibly got a bit narrower to make room for this
+button, which was raised and accepted as a fair tradeoff before building.
+
+## "Recently Added" sorting, via a new `first_seen` column
+
+A byproduct of the sort discussion: Raphael pointed out that knowing
+when an NFT first showed up in the app would be useful on its own,
+letting the sort button offer "Recently Added" as a field even though
+it isn't one of the game's own stats. Added a `first_seen` column
+(INTEGER, epoch ms) to each collection table, set once and never
+overwritten: `upsertNft()` in database.js now reads any existing row's
+`first_seen` before writing and reuses it (`existingUserData?.first_seen
+?? Date.now()`), so a normal re-fetch of an already-known NFT doesn't
+reset its "first seen" date just because the app happened to refetch it
+again. Existing rows from before this column existed are backfilled once
+at startup to their `fetched_at` value (the closest available stand-in,
+since there's no way to know the real original date), inside
+`initDatabase()`.
+
+## Passive per-NFT change history (`nft_history` table)
+
+Came out of the same conversation, from a different angle: Raphael's
+"m2n table with NFT as ID, date and change" idea, motivated by wanting
+to eventually answer questions like "how long did it take this weapon to
+go from Common to Eldritch?" - something the filters and the sort button
+above can't do, since both only ever look at the CURRENT value of a
+stat, not its history.
+
+The important decision, made before writing anything, was the table
+shape. The obvious-looking alternative - a dedicated table (or columns)
+per trait, e.g. tracking rarity changes and level changes separately -
+would need a new one added by hand every time a new trait gets tracked
+in `schema.js`, and wouldn't handle a trait no one anticipated. Instead,
+one generic append-only table:
+
+```
+nft_history(id, kind, nonce, field_name, old_value, new_value, changed_at)
+```
+
+One row per detected change, to any tracked field, on any collection -
+exactly the "NFT as ID, date, change" shape Raphael described. This is
+what actually needed deciding NOW rather than later: once more features
+start relying on a specific table shape, changing it gets harder, and
+starting to log from today, in this shape, means any future
+history/timeline viewer already has real data to show going back to
+whenever this shipped - rather than only starting to collect data
+whenever that later viewer actually gets built.
+
+**Logging is passive and silent for now - there is no viewer UI yet.**
+`upsertNft()` diffs each trait field's old value (read from the existing
+row before overwriting it) against the new one on every fetch, and
+inserts a history row for anything genuinely different. Two deliberate
+safety rules, both driven by the metadata endpoint's already-documented
+flakiness (see the image-caching/retry notes above) making a fetch
+occasionally come back with a field missing or `null` that has a real
+value the rest of the time:
+
+- **A value disappearing (going to `null`/missing) is never logged as a
+  change.** A real in-game trait doesn't un-set itself; a flaky partial
+  response looking like one shouldn't get written into permanent
+  history.
+- **Comparisons use loose (`==`) equality**, not strict, so a value
+  coming back as the SQLite-stored number `5` one time and the
+  JSON-parsed string `"5"` another doesn't get logged as a "change" that
+  never actually happened in-game.
+
+Scoped to the same `filterable !== false` trait fields as the Filters
+panel and the sort field list above - no bookkeeping columns, no
+`icon_image`. Only fires when there's a previous row to compare against
+(`existingUserData` exists) and the fetch succeeded (`status === 'ok'`),
+so a brand-new NFT's first-ever fetch never logs "changes" against
+nothing.
+
+Known, accepted limits, worth remembering when a viewer for this
+eventually gets built: history can't be backfilled retroactively - it
+only starts from whenever this shipped, nothing earlier; it only
+captures a change if a wallet holding that NFT is actually in the app
+and gets fetched/refetched while the change is current (an NFT can
+change and change back between two fetches with nothing logged, and
+anything before this feature's first commit is invisible); and it's
+necessarily per-NFT, not some global game timeline.
+
 ## App structure decisions (made while building)
+ (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
   screen stack, plain React state (`useState` in `App.js`) decides which
