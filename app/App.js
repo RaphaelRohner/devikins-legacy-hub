@@ -851,25 +851,48 @@ function AppContent() {
         </TouchableOpacity>
       </View>
 
-      {/* Search, Sort, and Filters, in that order per feedback - meant
+      {/* Sort, Search, and Filters, in that order per feedback - meant
           to read as one row/one unit, since all three narrow down or
           reorder the same list below (search/filter decide WHICH items
-          show, sort decides what ORDER they show in). List/Tiles used
-          to be the third control here instead of Filters; it moved down
-          into CollectionView.js's own row once Filters moved up to join
-          Search and Sort - see the Filters button's own comment below.
-          The whole row is only shown once there's at least one wallet,
-          with nothing fetched yet there's nothing to search/sort/filter
-          either way, same reasoning the old tab bar/CollectionView used
-          to decide whether to show themselves at all (this whole row is
-          skipped rather than left empty in that case, now that the
-          theme toggle that used to always keep this row non-empty has
-          moved up onto menuRow above). The star-rating filter that used
-          to sit here too has moved down into each collection's own
-          Filters panel instead - see FilterPanel.js. */}
+          show, sort decides what ORDER they show in). Sort moved to the
+          left of Search (originally the other way around, with Filters
+          last in both versions) per a later round of feedback - no
+          change in what each control does, just the order they sit in.
+          List/Tiles used to be the third control here instead of
+          Filters; it moved down into CollectionView.js's own row once
+          Filters moved up to join Search and Sort - see the Filters
+          button's own comment below. The whole row is only shown once
+          there's at least one wallet, with nothing fetched yet there's
+          nothing to search/sort/filter either way, same reasoning the
+          old tab bar/CollectionView used to decide whether to show
+          themselves at all (this whole row is skipped rather than left
+          empty in that case, now that the theme toggle that used to
+          always keep this row non-empty has moved up onto menuRow
+          above). The star-rating filter that used to sit here too has
+          moved down into each collection's own Filters panel instead -
+          see FilterPanel.js. */}
       {walletAddresses.length > 0 && (
         <>
         <View style={styles.searchRow}>
+          {/* Opens SortPickerModal below. Sits leftmost in this row now
+              (originally to the right of Search) per a later round of
+              feedback - purely a position swap, same button, same
+              behavior. Shows the active field's short label plus an
+              arrow for the current direction, so the current sort is
+              visible without opening the sheet. */}
+          <TouchableOpacity
+            style={[styles.sortButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => setIsSortPickerVisible(true)}
+          >
+            <Text
+              style={[styles.sortButtonText, { color: colors.secondaryText }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {sortDirection === 'asc' ? '↑' : '↓'} {sortFieldOptions.find((option) => option.name === sortField)?.label ?? 'ID'}
+            </Text>
+          </TouchableOpacity>
+
           <View style={styles.searchInputWrapper}>
             <TextInput
               style={[styles.searchInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
@@ -895,33 +918,10 @@ function AppContent() {
             )}
           </View>
 
-          {/* Opens SortPickerModal below - sits between the search field
-              and Filters, per feedback discussion (a new menu point +
-              subpage felt heavier than needed for what's really a
-              single small choice). Shows the active field's short label
-              plus an arrow for the current direction, so the current
-              sort is visible without opening the sheet. List/Tiles used
-              to be the button on the OTHER side of this one - moved
-              down into CollectionView.js's own row once Filters took
-              its spot here, so Search/Sort/Filters could read as one
-              row/one unit, in that order, per feedback. */}
-          <TouchableOpacity
-            style={[styles.sortButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => setIsSortPickerVisible(true)}
-          >
-            <Text
-              style={[styles.sortButtonText, { color: colors.secondaryText }]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {sortDirection === 'asc' ? '↑' : '↓'} {sortFieldOptions.find((option) => option.name === sortField)?.label ?? 'ID'}
-            </Text>
-          </TouchableOpacity>
-
           {/* Filters used to live entirely inside CollectionView.js,
               as its own "Show filters ▼ / Hide filters ▲" button
               anchoring its own row above the list. Moved up here per
-              feedback, so Search/Sort/Filters read as one row/one
+              feedback, so Sort/Search/Filters read as one row/one
               unit, in that order - the actual filter panel still lives
               in CollectionView.js and still expands in place below the
               list exactly as before, this button just controls it
@@ -1088,6 +1088,13 @@ const styles = StyleSheet.create({
     position: 'relative',
     justifyContent: 'center',
   },
+  // Explicit height (rather than sizing purely from paddingVertical,
+  // which is how this used to work) so Sort and Filters, both fixed to
+  // this SAME number below, are guaranteed to line up with this field
+  // exactly - per feedback that they didn't. textAlignVertical keeps
+  // the typed text centered within that fixed height on Android, which
+  // (unlike iOS) doesn't center single-line TextInput content inside a
+  // taller box on its own.
   searchInput: {
     borderWidth: 1,
     borderRadius: 8,
@@ -1095,7 +1102,8 @@ const styles = StyleSheet.create({
     // Extra room on the right so typed text never runs under the clear
     // button - see searchClearButton below.
     paddingRight: 34,
-    paddingVertical: 8,
+    height: 40,
+    textAlignVertical: 'center',
   },
   searchClearButton: {
     position: 'absolute',
@@ -1112,11 +1120,16 @@ const styles = StyleSheet.create({
   // instead (see the JSX comment above). Kept as one shared style
   // rather than a new one, since it's still just "this row's third
   // pill button", now showing "Filters ▼/▲" instead of "List"/"Tiles".
+  // height/justifyContent (rather than paddingVertical) matches this
+  // to searchInput's own explicit height above - see that style's
+  // comment for why a fixed number, not just matching padding, is what
+  // actually guarantees the two line up.
   filtersToggleButton: {
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    height: 40,
+    justifyContent: 'center',
   },
   // Explicit lineHeight (rather than leaving it to the default) so
   // this renders at exactly the same height as sortButtonText below,
@@ -1143,7 +1156,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    // height/justifyContent (not paddingVertical) for the same reason
+    // as filtersToggleButton above - matches searchInput's own fixed
+    // height exactly, rather than relying on padding numbers alone to
+    // add up to the same total (which is exactly what went wrong with
+    // the arrow-glyph line-height issue this button already ran into
+    // once - see sortButtonText's own comment below).
+    height: 40,
+    justifyContent: 'center',
     maxWidth: 110,
   },
   sortButtonText: {
