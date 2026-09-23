@@ -1,25 +1,33 @@
 /**
  * ProgressBar.js
  *
- * Shows what's happening while fetchAllForWallet.js is running: which
- * collection is currently being worked on, how many NFTs are done out of
- * how many total, and a Stop button. This exists specifically so a big
- * wallet fetch (which can take a while, since the metadata server is slow)
- * never looks like the app has frozen.
+ * Shows that fetchAllForWallet.js is running, inline in App.js's top
+ * menuRow between the hamburger button and the theme toggle (see
+ * App.js's own comment where it's rendered).
  *
- * `progress` is whatever fetchAllForWallet.js's onProgress callback most
- * recently received - see that file for the exact shape.
+ * Used to be a full-width block below that row instead, showing a
+ * status line (which collection, how many done), a progress track, and
+ * a text "Stop" button - all stacked vertically, which worked fine as
+ * its own block but was visibly taller than the row it got moved into.
+ * Per feedback, this version is fixed to the SAME 44px height as the
+ * hamburger button next to it (see `container` below), so the top row
+ * stays one consistent height whether or not a fetch is running - the
+ * goal being just a clear, glanceable "something is happening" signal,
+ * not the full detail.
+ *
+ * The full detail (which collection, how many done, or the exact
+ * error) is still built exactly as before - it just isn't shown
+ * directly anymore. Tapping the bar (anywhere except the ✕) shows it in
+ * a plain Alert instead, so nothing that used to be visible here is
+ * actually gone, it's just one tap further away.
+ *
+ * `progress` is whatever fetchAllForWallet.js's onProgress callback
+ * most recently received - see that file for the exact shape.
  */
 
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
-// Used inline, inside App.js's top menuRow (between the hamburger button
-// and the theme toggle) - see App.js's own comment where it's rendered
-// for why. Used to be its own full-width block below that row instead,
-// which is why `container` below no longer carries a margin of its own:
-// App.js's inlineProgressWrapper (flex: 1, marginHorizontal: 10) handles
-// spacing now, so this doesn't also add its own on top of that.
 export default function ProgressBar({ progress, onCancel, isCancelling }) {
   const { colors } = useTheme();
 
@@ -62,23 +70,63 @@ export default function ProgressBar({ progress, onCancel, isCancelling }) {
     message = `Wallet ${progress.walletIndex} of ${progress.walletTotal}: ${message}`;
   }
 
-  return (
-    <View style={[styles.container, { backgroundColor: colors.progressBackground }]}>
-      <Text style={[styles.message, { color: colors.progressText }]}>{message}</Text>
+  function showDetail() {
+    if (message) {
+      Alert.alert('Fetch status', message);
+    }
+  }
 
-      {fractionComplete !== null && (
-        <View style={[styles.track, { backgroundColor: colors.progressTrack }]}>
-          <View style={[styles.fill, { width: `${Math.round(fractionComplete * 100)}%`, backgroundColor: colors.primary }]} />
-        </View>
-      )}
+  return (
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+      ]}
+    >
+      {/* Everything except the ✕ is one big tap target for showDetail() -
+          the compact view on purpose doesn't have room for the full
+          status text, so tapping it is how that text is still reachable. */}
+      <TouchableOpacity style={styles.tapArea} onPress={showDetail} activeOpacity={0.7}>
+        {fractionComplete !== null ? (
+          // Fetching a specific collection: we know how far through it
+          // we are, so show that - a slim fill track plus the percent
+          // as a number, both small enough to fit this row's height.
+          <>
+            <View style={[styles.track, { backgroundColor: colors.progressTrack }]}>
+              <View
+                style={[
+                  styles.fill,
+                  { width: `${Math.round(fractionComplete * 100)}%`, backgroundColor: colors.primary },
+                ]}
+              />
+            </View>
+            <Text style={[styles.percentText, { color: colors.text }]}>
+              {Math.round(fractionComplete * 100)}%
+            </Text>
+          </>
+        ) : (
+          // Listing/summary/error phases have no fraction to show (we
+          // don't yet know a total, or there isn't one) - a plain
+          // spinner still reads as "something is happening" without
+          // needing a percentage.
+          <ActivityIndicator size="small" color={colors.primary} />
+        )}
+      </TouchableOpacity>
 
       <TouchableOpacity
         onPress={onCancel}
         disabled={isCancelling}
-        style={[styles.cancelButton, isCancelling && styles.cancelButtonDisabled]}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        style={styles.cancelButton}
       >
-        <Text style={[styles.cancelText, { color: colors.cancelText }]}>
-          {isCancelling ? 'Stopping...' : 'Stop'}
+        <Text
+          style={[
+            styles.cancelText,
+            { color: colors.cancelText },
+            isCancelling && styles.cancelTextDisabled,
+          ]}
+        >
+          {isCancelling ? '…' : '✕'}
         </Text>
       </TouchableOpacity>
     </View>
@@ -87,14 +135,29 @@ export default function ProgressBar({ progress, onCancel, isCancelling }) {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 8,
+    // Matches the hamburger button's own height exactly (see App.js's
+    // hamburgerButton style) so the whole top row stays one consistent
+    // height, fetch running or not - the reason this file's whole
+    // layout changed from a stacked, full-detail block to a single
+    // slim row. Border/background match the hamburger button and theme
+    // toggle too (colors.surfaceAlt/colors.border), so this reads as a
+    // third control in the same row rather than a separate banner.
+    height: 44,
     borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  message: {
-    marginBottom: 6,
-    fontSize: 12,
+  tapArea: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   track: {
+    flex: 1,
     height: 6,
     borderRadius: 3,
     overflow: 'hidden',
@@ -102,14 +165,21 @@ const styles = StyleSheet.create({
   fill: {
     height: 6,
   },
-  cancelButton: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
+  percentText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
-  cancelButtonDisabled: {
-    opacity: 0.5,
+  cancelButton: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cancelText: {
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  cancelTextDisabled: {
+    opacity: 0.5,
   },
 });

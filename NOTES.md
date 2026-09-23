@@ -1933,6 +1933,26 @@ for why it's off today, and that any future automatic check would need
 to stay consistent with that (nothing happens over the network without
 an explicit tap).
 
+**Follow-up after testing on an actual phone (same day):** the width
+adjusted correctly, but the element was visibly taller than the
+hamburger button/theme toggle either side of it, since its content was
+still the original full-width design (a status line, then a progress
+track below it, then a Stop button below that). Per feedback -
+matching the row's height mattered more than showing full detail,
+"just so users can see something is going on" - `ProgressBar.js` was
+rebuilt as a single slim row fixed to the same 44px height as the
+hamburger button: a thin fill track + percent number while a specific
+collection is being fetched, or a plain spinner during phases with no
+known total (listing/summary/error). The full status text (which
+collection, exact counts, or the exact error) is still built
+internally exactly as before - it's just not shown directly anymore.
+Tapping the bar (anywhere except the ✕) shows it via a plain Alert, so
+nothing that used to be visible is actually gone, it's one tap further
+away instead. Background/border now match the hamburger button and
+theme toggle (`colors.surfaceAlt`/`colors.border`) instead of the
+earlier distinct blue-tinted block, so it reads as a third control in
+the same row rather than a separate banner.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
