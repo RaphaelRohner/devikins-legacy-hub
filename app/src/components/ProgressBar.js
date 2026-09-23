@@ -14,6 +14,12 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
+// Used inline, inside App.js's top menuRow (between the hamburger button
+// and the theme toggle) - see App.js's own comment where it's rendered
+// for why. Used to be its own full-width block below that row instead,
+// which is why `container` below no longer carries a margin of its own:
+// App.js's inlineProgressWrapper (flex: 1, marginHorizontal: 10) handles
+// spacing now, so this doesn't also add its own on top of that.
 export default function ProgressBar({ progress, onCancel, isCancelling }) {
   const { colors } = useTheme();
 
@@ -81,12 +87,12 @@ export default function ProgressBar({ progress, onCancel, isCancelling }) {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 12,
+    padding: 8,
     borderRadius: 8,
-    margin: 12,
   },
   message: {
     marginBottom: 6,
+    fontSize: 12,
   },
   track: {
     height: 6,

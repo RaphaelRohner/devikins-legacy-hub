@@ -514,6 +514,22 @@ function AppContent() {
           <Text style={[styles.hamburgerIcon, { color: colors.text }]}>☰</Text>
         </TouchableOpacity>
 
+        {/* Trying this here per feedback, in place of its own full-width
+            row below menuRow/searchRow - the concern being that the old
+            placement felt too prominent and the app felt less responsive
+            while it was up. First attempt: just relocate the same
+            ProgressBar between the two buttons on this row, wrapped in a
+            flex:1 View so it fills whatever space isn't taken by the
+            hamburger button and theme toggle. See ProgressBar.js's own
+            container style for the small adjustment that went with this
+            (it used to carry its own margin, meant for being a
+            standalone full-width block). */}
+        {isFetching && (
+          <View style={styles.inlineProgressWrapper}>
+            <ProgressBar progress={progress} onCancel={handleCancelPress} isCancelling={isCancelling} />
+          </View>
+        )}
+
         <TouchableOpacity
           style={[styles.themeToggle, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
           onPress={toggleTheme}
@@ -602,8 +618,6 @@ function AppContent() {
         onSelectFetch={handleMenuSelectFetch}
         onSelectScreen={handleMenuSelectScreen}
       />
-
-      {isFetching && <ProgressBar progress={progress} onCancel={handleCancelPress} isCancelling={isCancelling} />}
 
       {walletAddresses.length > 0 ? (
         <CollectionView
@@ -773,6 +787,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 28,
     paddingBottom: 12,
+  },
+  // Wraps ProgressBar when it's shown inline in menuRow (see the JSX
+  // comment above) - flex: 1 so it takes up whatever horizontal space
+  // is left between the hamburger button and the theme toggle, rather
+  // than sizing to its own content and potentially overlapping either
+  // one.
+  inlineProgressWrapper: {
+    flex: 1,
+    marginHorizontal: 10,
   },
   hamburgerButton: {
     width: 44,

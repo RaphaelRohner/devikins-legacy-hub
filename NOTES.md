@@ -1909,6 +1909,30 @@ way. Fixed by dropping the `canOpenURL` pre-check and calling
 still shows the same fallback message if opening genuinely fails (e.g.
 no email app installed at all).
 
+## Trying the fetch progress bar inline in the top row (experiment, not final)
+
+Per feedback: the Fetch/Update progress display (`ProgressBar.js`) used
+to render as its own full-width block below the top menuRow/searchRow
+rows whenever a fetch was running - the concern being that it felt too
+prominent and the app felt less responsive while it was up. First
+thing tried, at Raphael's request: relocate the exact same component
+to sit inline in `menuRow` itself, between the ☰ hamburger button and
+the light/dark theme toggle, wrapped in a `flex: 1` View
+(`inlineProgressWrapper`) so it fills whatever width is left between
+those two buttons rather than overlapping either one. `ProgressBar.js`'s
+own outer spacing (padding/margin) was trimmed slightly since it's no
+longer a standalone block - App.js's wrapper handles spacing now.
+
+Explicitly a first attempt, not a settled design - the component's
+internal content (a status line, a progress track, and a Stop button)
+was built for a full-width block, and squeezing that between two small
+buttons may or may not read well on an actual phone. Comes from the
+same conversation as reconsidering whether background retry checking
+should ever come back - see "Automatic background retry removed" above
+for why it's off today, and that any future automatic check would need
+to stay consistent with that (nothing happens over the network without
+an explicit tap).
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
