@@ -82,18 +82,20 @@ const SUMMARY_ROW_COMPONENTS = {
 // hasAppliedFilters' JSX further down). It used to float bottom-
 // center, sized to match the row of buttons above it (paddingHorizontal
 // 10, height 40) - per feedback it now floats top-right instead,
-// roughly under the Deleted pill, and about 50% bigger (height 40 -> 60,
-// fontSize 13 -> 20) so it reads as a more deliberate, separate control
-// rather than one more toolbar button. WIDTH_ESTIMATE is a guess at the
-// button's actual rendered width (it isn't measured - RN can't know a
-// View's size before it's laid out without an onLayout round-trip,
-// which would make the button jump position on its first render each
-// time the filters get applied); it only affects how far right the
-// button's default/clamped position can go, so a slightly-off guess
-// just means a little extra or missing breathing room on the right
-// edge, not a broken layout.
-const FLOATING_BUTTON_WIDTH_ESTIMATE = 150;
-const FLOATING_BUTTON_HEIGHT = 60;
+// roughly under the Deleted pill, and a bit bigger (height 40 -> 50,
+// fontSize ~13 -> 17, see floatingRemoveButton/floatingRemoveButtonText
+// below) so it reads as a more deliberate, separate control rather than
+// one more toolbar button - a first pass at +50% (height 60) read as
+// too big once actually seen on-device, so this settled at +25%
+// instead. WIDTH_ESTIMATE is a guess at the button's actual rendered
+// width (it isn't measured - RN can't know a View's size before it's
+// laid out without an onLayout round-trip, which would make the button
+// jump position on its first render each time the filters get
+// applied); it only affects how far right the button's default/clamped
+// position can go, so a slightly-off guess just means a little extra
+// or missing breathing room on the right edge, not a broken layout.
+const FLOATING_BUTTON_WIDTH_ESTIMATE = 145;
+const FLOATING_BUTTON_HEIGHT = 50;
 const FLOATING_BUTTON_TOP_DEFAULT = 68;
 const FLOATING_BUTTON_RIGHT_DEFAULT = 12;
 const FLOATING_BUTTON_EDGE_MARGIN = 8;
@@ -1008,21 +1010,25 @@ const styles = StyleSheet.create({
   floatingRemoveWrap: {
     position: 'absolute',
   },
-  // About 50% bigger than the rest of the row's buttons (height 40 ->
-  // 60, fontSize 13 -> 20, see floatingRemoveButtonText below) per
+  // A bit bigger than the rest of the row's buttons (height 40 -> 50,
+  // fontSize ~13 -> 17, see floatingRemoveButtonText below) per
   // feedback, now that it's a standalone control rather than one more
   // button sitting in that row - big enough to read clearly and stay
-  // easy to tap on its own. Shadow/elevation are the same recipe the
-  // app's cards already use (see e.g. DevikinSummaryRow.js's own `row`
-  // style), just bumped up a little further here so this reads as
-  // floating above the list rather than a button that just happens to
-  // sit on top of it - shadowColor comes from the theme inline (see
-  // the JSX), the rest is fixed here.
+  // easy to tap on its own, without dominating the screen (an earlier
+  // +50% pass, height 60, read as too big once seen on-device - this
+  // settled at +25% instead). height matches FLOATING_BUTTON_HEIGHT
+  // above, which the drag-clamping math also uses, so the two can't
+  // drift apart. Shadow/elevation are the same recipe the app's cards
+  // already use (see e.g. DevikinSummaryRow.js's own `row` style), just
+  // bumped up a little further here so this reads as floating above
+  // the list rather than a button that just happens to sit on top of
+  // it - shadowColor comes from the theme inline (see the JSX), the
+  // rest is fixed here.
   floatingRemoveButton: {
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    height: 60,
+    borderRadius: 10,
+    paddingHorizontal: 13,
+    height: FLOATING_BUTTON_HEIGHT,
     justifyContent: 'center',
     alignItems: 'center',
     shadowOpacity: 0.2,
@@ -1032,7 +1038,7 @@ const styles = StyleSheet.create({
   },
   floatingRemoveButtonText: {
     fontWeight: '600',
-    fontSize: 20,
+    fontSize: 17,
   },
   applyButton: {
     borderRadius: 8,
