@@ -2131,6 +2131,46 @@ looking actually broken, so left alone for now rather than expanding
 scope beyond what was actually asked for. Worth revisiting once this
 has been tried on a real tablet.
 
+## QR code scanner for adding a wallet
+
+Second item on the V3 list: a camera button next to the "Add a wallet"
+field on the Wallets screen, so a wallet address can be scanned from
+its QR code instead of always having to type or paste it. Installed
+`expo-camera` via `npx expo install` (matches it to this project's
+Expo SDK 57 automatically) - it's one of the core Expo SDK modules
+Expo Go itself already supports, so this works with the same
+`npx expo start` + Expo Go workflow the rest of the app is tested with,
+no custom/"dev client" build needed.
+
+New `QrScannerModal.js` is a full-screen camera overlay: requests
+camera permission via `useCameraPermissions()`, shows a plain message
+(plus a request button, or an "enable it in Settings" message if it
+was already denied and can't be asked again) if permission isn't
+granted, and otherwise shows the live camera feed via `CameraView`,
+watching for a QR code via `onBarcodeScanned`. That callback fires on
+every camera frame a code is still visible in, not just once, so it's
+guarded to only act on the first one per time the scanner is opened.
+
+**Deliberately doesn't add the scanned wallet directly** - it only
+fills the exact same text field a manual paste would
+(`WalletManager.js`'s `handleScanned`), then closes back to the normal
+Wallets screen, so the actual Add button - and everything that already
+happens when it's tapped (the "first wallet ever" heads-up, etc.) -
+runs completely unchanged either way the address got into that field.
+This also means a scan stays visible and editable before anything is
+actually added.
+
+**Caveat worth testing for real:** a real Klever wallet app's own QR
+code wasn't available to check this against, so it's only assumed to
+encode the plain `klv1...` address as-is. `QrScannerModal.js`'s
+`extractAddress()` has a fallback for this - if the scanned text isn't
+just the bare address (e.g. some wallet apps wrap an address in their
+own URI scheme, like a payment-request link), it pulls a `klv1...`
+pattern back out of whatever was scanned rather than handing the raw
+wrapper text straight to the Add field. If a real scan from Klever's
+own app comes back looking different than expected once this is
+actually tried, that extraction logic is the one place to adjust.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
