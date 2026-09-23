@@ -103,7 +103,7 @@ const FLOATING_BUTTON_EDGE_MARGIN = 8;
 // than a tap - see the PanResponder below.
 const FLOATING_BUTTON_DRAG_THRESHOLD = 4;
 
-export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onSetViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded }) {
+export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onSetViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded, onAppliedFiltersChange = () => {} }) {
   const { colors } = useTheme();
 
   // Tablet support: how many tiles fit per row, and how much extra
@@ -510,6 +510,32 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     })
   ).current;
 
+  // Whether a filter selection is actually live right now - drives the
+  // floating "Filters ✕" pill (see its own JSX further down, after the
+  // FlatList), so a filter can be cleared in one tap without opening
+  // the panel first. Includes the star filter, so it still shows up
+  // (and still clears it) when a star rating is the only thing
+  // currently narrowing the list. Used to live right next to where
+  // it's used, further down - moved up here (its dependencies,
+  // appliedFilters and starFilter, are both already available this
+  // early) once the useEffect below needed it declared ahead of the
+  // early returns too, for the same rules-of-hooks reason as the
+  // floating-button state above.
+  const hasAppliedFilters = Object.keys(appliedFilters).length > 0 || starFilter > 0;
+
+  // Tells App.js whether a filter is currently applied, purely so the
+  // Filters button itself (which lives up in App.js's own row) can
+  // show the same active-state highlight List/Tiles already gets when
+  // a filter's live - per feedback that this was the one control in
+  // the toolbar that didn't say anything about its own current state,
+  // unlike everything else in that row. Mirrors how starFilter changes
+  // already bubble up via onStarFilterChange - onAppliedFiltersChange
+  // is optional (defaults to a no-op below) so this component doesn't
+  // break if a future caller doesn't pass it.
+  useEffect(() => {
+    onAppliedFiltersChange(hasAppliedFilters);
+  }, [hasAppliedFilters, onAppliedFiltersChange]);
+
   if (!ownerAddresses || ownerAddresses.length === 0) {
     return (
       <View style={styles.emptyContainer}>
@@ -631,14 +657,6 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   const hasPendingChanges =
     JSON.stringify(pendingFilters) !== JSON.stringify(appliedFilters) ||
     pendingStarFilter !== starFilter;
-  // Whether a filter selection is actually live right now - drives the
-  // floating "Filters ✕" pill (see its own JSX further down, after the
-  // FlatList), so a filter can be cleared in one tap without opening
-  // the panel first. Includes the star filter, so it still shows up
-  // (and still clears it) when a star rating is the only thing
-  // currently narrowing the list.
-  const hasAppliedFilters = Object.keys(appliedFilters).length > 0 || starFilter > 0;
-
   // The item count and Deleted switch. Used to be shared between two
   // JSX spots (this row, or a second row below it, depending on
   // whether "Remove filters" needed the space) - now that button

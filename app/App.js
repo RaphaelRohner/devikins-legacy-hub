@@ -275,6 +275,17 @@ function AppContent() {
   // changes, same as before this moved.
   const [isFiltersExpanded, setIsFiltersExpanded] = useState(false);
 
+  // Whether a filter (trait or star) is currently applied - not owned
+  // here, just mirrored from CollectionView.js, which is the only
+  // place that actually knows (it owns appliedFilters, the trait-level
+  // state - starFilter alone isn't the whole picture). Used purely to
+  // give the Filters button below the same active-state highlight
+  // List/Tiles already gets, per feedback that it was the one control
+  // in this row that didn't visually say anything about its own
+  // current state. CollectionView reports changes to it via the
+  // onAppliedFiltersChange callback passed down below.
+  const [isFiltersActive, setIsFiltersActive] = useState(false);
+
   // V3: which field the current collection is sorted by, and which
   // direction - unlike viewMode above, this is deliberately NOT one
   // shared value across all three tabs, since most fields (a Devikin's
@@ -933,13 +944,33 @@ function AppContent() {
               (passed down as the expanded/setExpanded props). List/
               Tiles, displaced from this spot by Filters, moved down to
               take over the button slot Filters used to occupy inside
-              CollectionView's own row - see that file's own comments. */}
+              CollectionView's own row - see that file's own comments.
+
+              isFiltersActive tints the button the same way List/Tiles'
+              own active state does (colors.primary border/text,
+              chipBackground fill) whenever a filter is actually
+              applied right now - separate from whether the panel is
+              currently open/closed (isFiltersExpanded, which only
+              changes the ▼/▲ label). A filter can be applied with the
+              panel closed, so these two are deliberately independent -
+              the highlight is what used to be visible only as the
+              separate floating "Filters ✕" button further down the
+              screen; this just gives the toggle itself the same
+              at-a-glance state every other control in this row now
+              has. */}
           <TouchableOpacity
-            style={[styles.filtersToggleButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            style={[
+              styles.filtersToggleButton,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              isFiltersActive && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
+            ]}
             onPress={() => setIsFiltersExpanded((current) => !current)}
           >
             <Text
-              style={[styles.filtersToggleButtonText, { color: colors.secondaryText }]}
+              style={[
+                styles.filtersToggleButtonText,
+                { color: isFiltersActive ? colors.primary : colors.secondaryText },
+              ]}
               numberOfLines={1}
               ellipsizeMode="tail"
             >
@@ -984,6 +1015,7 @@ function AppContent() {
           sortDirection={sortDirection}
           expanded={isFiltersExpanded}
           setExpanded={setIsFiltersExpanded}
+          onAppliedFiltersChange={setIsFiltersActive}
         />
       ) : (
         !isFetching && (
