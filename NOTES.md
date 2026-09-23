@@ -1572,6 +1572,15 @@ were already written to work from either an automatic timer or a manual
 tap, so no code needed to change there, only `App.js`'s own timer that
 called them.
 
+**Reinstated later - see "Automatic background retry + image-freshness
+check, reinstated" further down.** The concern that led to removing it
+(nothing should happen over the network unless Fetch/Update is tapped)
+turned out to matter less than it seemed once the fetch progress
+display itself became a slim, glanceable row instead of a prominent
+full-width banner (see "Trying the fetch progress bar inline" and its
+follow-up) - with that fixed, quiet background checking stopped feeling
+like a surprise.
+
 ## Back buttons shortened to just "‹" (an arrow, not "‹ Back to Home")
 
 `WalletManager.js`, `CollectionView.js` (NFT detail view), `Feedback.js`,
@@ -1952,6 +1961,70 @@ away instead. Background/border now match the hamburger button and
 theme toggle (`colors.surfaceAlt`/`colors.border`) instead of the
 earlier distinct blue-tinted block, so it reads as a third control in
 the same row rather than a separate banner.
+
+## Automatic background retry + image-freshness check, reinstated
+
+Per feedback, once the inline progress bar (see the two entries above)
+made a running fetch/retry unobtrusive rather than a prominent banner,
+the original objection to background network activity mattered less -
+so the automatic background retry timer removed in "Automatic
+background retry removed" above is back, restored close to its
+original design (same `AUTO_RETRY_INTERVAL_MS`/`MAX_AUTO_RETRY_ROUNDS`/
+`SLOW_RETRY_INTERVAL_MS` constants and fast-then-slow pacing:
+once-a-minute for up to 10 rounds after anything needs it, backing off
+to once-an-hour after that, resetting to the fast pace on every manual
+Fetch/Update), plus one genuinely new piece alongside it.
+
+**New: a periodic image-freshness check.** From an earlier discussion
+about `imageStorage.js`'s "download once, trust forever" behavior -
+Moonlabs could in principle fix a wrong NFT image, either at a new URL
+(already handled automatically, since a different filename just means
+a normal fresh download) or by replacing the file at the exact same
+URL (previously undetectable). Confirmed against the actual image host
+(`img.devikins.com`, S3/CloudFront-backed) that a plain HTTP HEAD
+request - no image body transferred - returns a real content-hash
+ETag, cheaply enough to check a whole wallet's cached images
+periodically. `checkImageFreshnessForWallets` (in
+`fetchAllForWallet.js`) does exactly that: HEAD each cached image,
+compare its ETag against what's on record (`image_etag`, a new column
+added via `ensureColumn`, same migration pattern as `local_image_path`
+originally), and force a real re-download (`storeImage`'s new
+`forceRedownload` option) only when they genuinely differ. An image
+with no ETag on record yet (anything cached before this column
+existed) gets today's ETag backfilled without assuming it changed, so
+future checks have something to compare against, rather than either
+permanently skipping it or wrongly treating it as "changed" the first time
+it's ever checked.
+
+Deliberately a SEPARATE concern from the pending-items retry, sharing
+only the same once-a-minute timer tick and busy/UI state: the
+freshness check runs on its own plain hourly cadence
+(`nextFreshnessCheckAtRef`/`IMAGE_FRESHNESS_CHECK_INTERVAL_MS`),
+independent of whatever pace the pending-items retry is currently at,
+and does NOT get reset by a manual Fetch/Update the way the pending-
+items retry does - a normal Fetch/Update doesn't re-verify an
+already-cached image against the remote host at all (see
+`storeImage`'s fast-path reuse), so there's no reason a manual fetch
+should hurry the freshness check along.
+
+**Also fixed while touching this code:** `upsertNft` used to set
+`local_image_path` to whatever a given call provided, with no
+"keep the old value if this call didn't produce a fresh one" fallback
+- unlike `custom_name`/`star_rating`, which already had exactly that
+protection. In practice this stayed hidden most of the time (see
+`storeImage`'s own "already have a good copy" fast path), but a
+metadata response that happened to come back without an image field,
+or an image whose file extension changed between fetches, could
+silently disconnect a perfectly good already-downloaded picture from
+its database row. `local_image_path` and the new `image_etag` are now
+each preserved independently the same way `custom_name`/`star_rating`
+are, when a given `upsertNft` call doesn't have a fresh value for
+them.
+
+Both mechanisms only run while the app is actually open, same as
+before - nothing here registers a real background task
+(`expo-background-fetch`/`expo-task-manager`), which stays a separate,
+bigger feature on the V2 ideas list if it's ever wanted.
 
 ## App structure decisions (made while building)
 
