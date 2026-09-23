@@ -57,6 +57,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Switch, BackHandler, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FilterPanel, { NO_FILTER, humanizeColumnName } from './FilterPanel';
 import { getTileColumns, getCenteredContentPadding } from '../constants/layout';
 import NftCard from './NftCard';
@@ -80,6 +81,11 @@ const SUMMARY_ROW_COMPONENTS = {
 
 export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onToggleViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded }) {
   const { colors } = useTheme();
+  // For the floating "Filters ✕" pill below (see hasAppliedFilters'
+  // JSX further down) - keeps it clear of the phone's own home
+  // indicator / gesture bar rather than sitting flush against the
+  // very bottom edge.
+  const insets = useSafeAreaInsets();
 
   // Tablet support: how many tiles fit per row, and how much extra
   // padding a single-column list row or the detail view needs so it
@@ -507,22 +513,20 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     JSON.stringify(pendingFilters) !== JSON.stringify(appliedFilters) ||
     pendingStarFilter !== starFilter;
   // Whether a filter selection is actually live right now - drives the
-  // small "Remove filters" link shown to the right of the "Show
-  // filters" toggle, so a filter can be cleared in one tap without
-  // opening the panel first. Includes the star filter, so it still
-  // shows up (and Remove filters still clears it) when a star rating is
-  // the only thing currently narrowing the list.
+  // floating "Filters ✕" pill at the bottom of the screen (see its own
+  // JSX further down, after the FlatList), so a filter can be cleared
+  // in one tap without opening the panel first. Includes the star
+  // filter, so it still shows up (and still clears it) when a star
+  // rating is the only thing currently narrowing the list.
   const hasAppliedFilters = Object.keys(appliedFilters).length > 0 || starFilter > 0;
 
-  // The item count and Deleted switch - shared between two spots below.
-  // Normally they ride along on the same row as "Show filters" (there's
-  // room, since Remove filters isn't showing). Once Remove filters
-  // appears, that row is full, so this pair drops down onto its own
-  // second row instead - see the two spots that use this below for
-  // exactly when each layout applies. Defined once here rather than
-  // duplicated in both JSX spots below (only one spot ever renders it
-  // at a time, since hasAppliedFilters can't be both true and false, so
-  // reusing the same element reference is safe).
+  // The item count and Deleted switch. Used to be shared between two
+  // JSX spots (this row, or a second row below it, depending on
+  // whether "Remove filters" needed the space) - now that button
+  // floats at the bottom of the screen instead of living in this row,
+  // there's only ever one spot, so nothing about this pair moves
+  // around anymore. Kept as its own variable regardless, since it's
+  // still one clearly-scoped chunk of JSX either way.
   const countAndDeletedSwitch = (
     <>
       {/* "142 Devikins" - how many active (not-deleted) items this
@@ -588,19 +592,19 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {filterableColumnNames.length > 0 && (
         <View style={[styles.filterBar, { backgroundColor: colors.toolbarBackground, borderBottomColor: colors.toolbarDivider }]}>
-          {/* Normally everything fits on one row: the List/Tiles
-              toggle on the left, the item count centered, the Deleted
-              switch on the right - there's room, since "Remove
-              filters" (a real button now, not bare text - see
-              anchorToggleButton/removeButton's own comments) isn't
-              showing. Once a filter gets applied and Remove filters
-              needs to appear too, that row is full, so the count and
-              Deleted switch drop down onto their own second row
-              instead, leaving List/Tiles and Remove filters alone on
-              the first row (left/right). This is per feedback that the
-              count/switch should only move down when Remove filters
-              actually needs the space, rather than always sitting on a
-              second row.
+          {/* One row: the List/Tiles toggle on the left, the item
+              count centered, the Deleted switch on the right - always,
+              regardless of whether a filter's applied. Used to make
+              room for a "Filters ✕" button here too by dropping the
+              count/switch onto their own second row whenever a filter
+              was applied - per later feedback that the row appearing/
+              disappearing broke the now-more-polished toolbar's
+              consistency once List/Tiles, the count, and Deleted all
+              got their own button styling too. "Filters ✕" moved out
+              of this row entirely instead - it now floats at the
+              bottom of the screen instead (see hasAppliedFilters' JSX
+              further down, after the FlatList) - so this row's height
+              never changes.
 
               List/Tiles wasn't always the button anchoring this row's
               left side - "Show filters ▼ / Hide filters ▲" used to sit
@@ -608,10 +612,8 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
               Sort on App.js's own row per feedback (so all three of
               Search/Sort/Filters could sit together, in that order).
               List/Tiles, displaced from that row by Filters, took over
-              this spot rather than needing a new one of its own - same
-              button size/position, same row-wrapping behavior below,
-              just a different control anchoring it. */}
-          <View style={[styles.toggleRow, !hasAppliedFilters && styles.toggleRowLast]}>
+              this spot rather than needing a new one of its own. */}
+          <View style={styles.toggleRow}>
             <TouchableOpacity
               style={[styles.anchorToggleButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
               onPress={onToggleViewMode}
@@ -621,41 +623,8 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
               </Text>
             </TouchableOpacity>
 
-            {/* Rides along on this row only while Remove filters isn't
-                showing - see countAndDeletedSwitch's own comment above
-                for why the same element is reused rather than
-                duplicated. */}
-            {!hasAppliedFilters && countAndDeletedSwitch}
-
-            {/* Only takes up space once a filter is actually applied -
-                when it's hidden, List/Tiles just stays flush left
-                (space-between with a single child does that
-                automatically). Lets you clear a filter in one tap
-                without even opening the panel - per feedback that having
-                to expand the panel first just to remove a filter was an
-                extra, unnecessary step. Labeled "Filters ✕" rather than
-                the original "Remove filters ✕", per feedback - shorter,
-                and the ✕ alone already says "tap to clear" clearly
-                enough once a filter's actually applied (which is the
-                only time this button ever shows). */}
-            {hasAppliedFilters && (
-              <TouchableOpacity
-                style={[styles.removeButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                onPress={handleRemovePress}
-              >
-                <Text style={[styles.removeLinkText, { color: colors.cancelText }]}>Filters ✕</Text>
-              </TouchableOpacity>
-            )}
+            {countAndDeletedSwitch}
           </View>
-
-          {/* Only rendered once Remove filters has pushed the count and
-              Deleted switch off the row above - see the comment on
-              toggleRow above for the full reasoning. */}
-          {hasAppliedFilters && (
-            <View style={styles.secondaryRow}>
-              {countAndDeletedSwitch}
-            </View>
-          )}
 
           {expanded && hasPendingChanges && (
             <TouchableOpacity
@@ -715,12 +684,57 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
             </View>
           )
         }
-        contentContainerStyle={
+        contentContainerStyle={[
           viewMode === 'tiles'
             ? styles.tilesListContent
-            : [styles.listContent, { paddingHorizontal: centeredContentPadding }]
-        }
+            : [styles.listContent, { paddingHorizontal: centeredContentPadding }],
+          // Extra room at the bottom only while the floating "Filters
+          // ✕" pill below is showing, so the last row of the list can
+          // still scroll clear of it rather than sitting hidden behind
+          // it.
+          hasAppliedFilters && styles.listContentWithFloatingButton,
+        ]}
       />
+
+      {/* Floats over the list rather than living inline in toggleRow
+          above (where it used to sit, pushing the count/Deleted switch
+          onto their own extra row whenever a filter was applied) - per
+          feedback that the row appearing/disappearing broke the
+          toolbar's now-more-consistent look. position: 'absolute' on
+          the OUTER wrap (full width, centered content) rather than on
+          the button itself is what centers it purely against the
+          screen's own width regardless of anything else on screen -
+          same centering technique as countTextWrap above, for the same
+          reason. pointerEvents="box-none" (not "none", unlike
+          countTextWrap) is required here specifically because this
+          wrap DOES contain something tappable - "none" would also
+          block taps on the button itself, not just the empty space
+          around it; "box-none" lets the empty space pass taps through
+          to the list underneath while the button stays tappable.
+          insets.bottom clears the phone's own home indicator/gesture
+          bar rather than sitting flush against the true bottom edge -
+          same reasoning SortPickerModal.js already uses insets.bottom
+          for. Shadow/elevation match the app's existing card-shadow
+          recipe (see e.g. DevikinSummaryRow.js), just applied here so
+          this reads as floating above the list rather than sitting
+          flush on it. */}
+      {hasAppliedFilters && (
+        <View
+          pointerEvents="box-none"
+          style={[styles.floatingRemoveWrap, { bottom: insets.bottom + 16 }]}
+        >
+          <TouchableOpacity
+            style={[
+              styles.removeButton,
+              styles.floatingRemoveButton,
+              { backgroundColor: colors.surface, borderColor: colors.border, shadowColor: colors.cardShadow },
+            ]}
+            onPress={handleRemovePress}
+          >
+            <Text style={[styles.removeLinkText, { color: colors.cancelText }]}>Filters ✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -757,27 +771,23 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  // Used to only carry top padding, with a second row (secondaryRow,
+  // removed - see below) providing the bottom padding on the (common)
+  // occasions it rendered. Now that the count/Deleted switch never
+  // move to a second row anymore (see countAndDeletedSwitch's own
+  // comment above) and "Filters ✕" floats at the bottom of the screen
+  // instead of living in this row, this is simply the row's own top
+  // AND bottom padding, always - no more conditional toggleRowLast
+  // variant needed.
   toggleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    // Just top padding now (bottom padding moved to secondaryRow below,
-    // with a small gap between the two) - anchorToggleButton and
-    // removeButton carry their own vertical padding too, so this stays
-    // trimmed down to avoid padding stacking on padding.
     paddingTop: 8,
-    // Required so the count text can center itself with position:
-    // 'absolute' against THIS row on the (common) occasions it rides
-    // along here instead of on its own secondaryRow below - see
-    // countTextWrap's own comment.
-    position: 'relative',
-  },
-  // Added on top of toggleRow only when there's no secondaryRow below
-  // it (i.e. no applied filters) - gives the filter bar its bottom
-  // padding here instead, since secondaryRow (which normally provides
-  // it) isn't rendered in that case.
-  toggleRowLast: {
     paddingBottom: 8,
+    // Required so the count text can center itself with position:
+    // 'absolute' against THIS row - see countTextWrap's own comment.
+    position: 'relative',
   },
   // Turned into a real button (background, border, generous padding)
   // rather than bare colored text, per feedback from an Android
@@ -803,20 +813,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
-  },
-  // Bottom row: the NFT count sits at true center, with the Deleted
-  // switch pinned to the right edge - see the JSX comment above for the
-  // full arrangement. position: 'relative' is required here because
-  // countTextWrap (below) positions itself absolutely against this
-  // row; justifyContent: 'flex-end' is what pushes the Deleted switch
-  // (the only thing left in normal flow) to the right edge.
-  secondaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    marginTop: 6,
-    paddingBottom: 8,
-    position: 'relative',
   },
   // Pulls the count text out of the row's normal flow entirely and
   // centers it purely against the row's own width (left: 0, right: 0,
@@ -888,6 +884,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 13,
   },
+  // Centers the floating "Filters ✕" button purely against the
+  // screen's own width, the same absolute-positioning technique
+  // countTextWrap above uses for the same reason (ignoring whatever
+  // else is on screen rather than trying to balance around it). `left:
+  // 0, right: 0` span the full width; `alignItems: 'center'` is what
+  // then centers the button itself within that span, since (unlike
+  // countTextWrap's plain centered text) this wraps a normal button
+  // that shouldn't stretch to fill it. `bottom` is set inline per
+  // instance (see the JSX), since it depends on the device's own
+  // safe-area inset.
+  floatingRemoveWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  // Same shadow/elevation recipe the app's cards already use (see e.g.
+  // DevikinSummaryRow.js's own `row` style) - shadowColor comes from
+  // the theme inline (see the JSX), the rest is fixed here. Reads as
+  // floating above the list rather than a button that just happens to
+  // sit on top of it.
+  floatingRemoveButton: {
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
   applyButton: {
     borderRadius: 8,
     paddingVertical: 10,
@@ -910,6 +933,15 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingVertical: 12,
+  },
+  // Applied on top of tilesListContent/listContent above (not instead
+  // of) only while the floating "Filters ✕" pill is showing - see the
+  // FlatList's own contentContainerStyle. Bigger than either one's own
+  // paddingBottom so the last row can still scroll clear of the pill
+  // sitting over it, rather than ending up permanently hidden behind
+  // it.
+  listContentWithFloatingButton: {
+    paddingBottom: 76,
   },
   // Made into a proper button (filled background, rounded corners)
   // rather than a plain text link, per feedback that it was easy to
