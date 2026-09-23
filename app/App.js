@@ -262,6 +262,19 @@ function AppContent() {
     setSetting('viewMode', nextMode);
   }
 
+  // Whether CollectionView's filter panel is expanded. Used to live as
+  // local state inside CollectionView itself, right next to
+  // pendingFilters/appliedFilters (which still do) - but the button
+  // that opens/closes it moved up to this file's own search row, to sit
+  // together with Search and Sort as one row per feedback. That meant
+  // the open/closed flag had to move up too, so it could be both read
+  // and set from up here - same lift already done for viewMode above
+  // and sortField/sortDirection below. Not persisted across restarts
+  // (unlike viewMode) and not worth persisting across tabs either -
+  // CollectionView still resets it to false on its own whenever `kind`
+  // changes, same as before this moved.
+  const [isFiltersExpanded, setIsFiltersExpanded] = useState(false);
+
   // V3: which field the current collection is sorted by, and which
   // direction - unlike viewMode above, this is deliberately NOT one
   // shared value across all three tabs, since most fields (a Devikin's
@@ -838,18 +851,22 @@ function AppContent() {
         </TouchableOpacity>
       </View>
 
-      {/* Search by NFT name/custom name or ID, plus the List/Tiles
-          toggle on the right (moved up here from its own row inside
-          CollectionView.js, per feedback) - both only shown once
-          there's at least one wallet, with nothing fetched yet there's
-          nothing to search or view either way, same reasoning the old
-          tab bar/CollectionView used to decide whether to show
-          themselves at all (this whole row is skipped rather than left
-          empty in that case, now that the theme toggle that used to
-          always keep this row non-empty has moved up onto menuRow
-          above). The star-rating filter that used to sit here too has
-          moved down into each collection's own Filters panel instead -
-          see FilterPanel.js. */}
+      {/* Search, Sort, and Filters, in that order per feedback - meant
+          to read as one row/one unit, since all three narrow down or
+          reorder the same list below (search/filter decide WHICH items
+          show, sort decides what ORDER they show in). List/Tiles used
+          to be the third control here instead of Filters; it moved down
+          into CollectionView.js's own row once Filters moved up to join
+          Search and Sort - see the Filters button's own comment below.
+          The whole row is only shown once there's at least one wallet,
+          with nothing fetched yet there's nothing to search/sort/filter
+          either way, same reasoning the old tab bar/CollectionView used
+          to decide whether to show themselves at all (this whole row is
+          skipped rather than left empty in that case, now that the
+          theme toggle that used to always keep this row non-empty has
+          moved up onto menuRow above). The star-rating filter that used
+          to sit here too has moved down into each collection's own
+          Filters panel instead - see FilterPanel.js. */}
       {walletAddresses.length > 0 && (
         <>
         <View style={styles.searchRow}>
@@ -879,11 +896,15 @@ function AppContent() {
           </View>
 
           {/* Opens SortPickerModal below - sits between the search field
-              and the List/Tiles toggle, per feedback discussion (a new
-              menu point + subpage felt heavier than needed for what's
-              really a single small choice). Shows the active field's
-              short label plus an arrow for the current direction, so the
-              current sort is visible without opening the sheet. */}
+              and Filters, per feedback discussion (a new menu point +
+              subpage felt heavier than needed for what's really a
+              single small choice). Shows the active field's short label
+              plus an arrow for the current direction, so the current
+              sort is visible without opening the sheet. List/Tiles used
+              to be the button on the OTHER side of this one - moved
+              down into CollectionView.js's own row once Filters took
+              its spot here, so Search/Sort/Filters could read as one
+              row/one unit, in that order, per feedback. */}
           <TouchableOpacity
             style={[styles.sortButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => setIsSortPickerVisible(true)}
@@ -897,22 +918,24 @@ function AppContent() {
             </Text>
           </TouchableOpacity>
 
-          {/* Used to be two separate buttons (List / Tiles, whichever
-              wasn't active shown dimmed) - collapsed into one per
-              feedback once the Sort button above made this row feel
-              crowded, with no room to add a fourth row for it. A single
-              button toggling between the two is enough since there are
-              only ever two states: it shows whichever mode is CURRENTLY
-              active, and tapping it switches straight to the other one -
-              no need for the old side-by-side "here's your other option
-              too" layout when there's only one other option to begin
-              with. */}
+          {/* Filters used to live entirely inside CollectionView.js,
+              as its own "Show filters ▼ / Hide filters ▲" button
+              anchoring its own row above the list. Moved up here per
+              feedback, so Search/Sort/Filters read as one row/one
+              unit, in that order - the actual filter panel still lives
+              in CollectionView.js and still expands in place below the
+              list exactly as before, this button just controls it
+              remotely now via the isFiltersExpanded state above
+              (passed down as the expanded/setExpanded props). List/
+              Tiles, displaced from this spot by Filters, moved down to
+              take over the button slot Filters used to occupy inside
+              CollectionView's own row - see that file's own comments. */}
           <TouchableOpacity
-            style={[styles.viewModeButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => handleSetViewMode(viewMode === 'list' ? 'tiles' : 'list')}
+            style={[styles.filtersToggleButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => setIsFiltersExpanded((current) => !current)}
           >
-            <Text style={[styles.viewModeButtonText, { color: colors.secondaryText }]}>
-              {viewMode === 'list' ? 'List' : 'Tiles'}
+            <Text style={[styles.filtersToggleButtonText, { color: colors.secondaryText }]}>
+              {isFiltersExpanded ? 'Filters ▲' : 'Filters ▼'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -948,8 +971,11 @@ function AppContent() {
           starFilter={starFilter}
           onStarFilterChange={setStarFilter}
           viewMode={viewMode}
+          onToggleViewMode={() => handleSetViewMode(viewMode === 'list' ? 'tiles' : 'list')}
           sortField={sortField}
           sortDirection={sortDirection}
+          expanded={isFiltersExpanded}
+          setExpanded={setIsFiltersExpanded}
         />
       ) : (
         !isFetching && (
@@ -1080,7 +1106,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  viewModeButton: {
+  // Originally viewModeButton/viewModeButtonText (List/Tiles was the
+  // button living in this row) - renamed once Filters took over this
+  // spot and List/Tiles moved down into CollectionView.js's own row
+  // instead (see the JSX comment above). Kept as one shared style
+  // rather than a new one, since it's still just "this row's third
+  // pill button", now showing "Filters ▼/▲" instead of "List"/"Tiles".
+  filtersToggleButton: {
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 14,
@@ -1090,23 +1122,23 @@ const styles = StyleSheet.create({
   // this renders at exactly the same height as sortButtonText below,
   // even though the two show different characters - see that style's
   // own comment for why that isn't automatic.
-  viewModeButtonText: {
+  filtersToggleButtonText: {
     fontSize: 13,
     fontWeight: '600',
     lineHeight: 16,
   },
-  // The Sort button - same border/radius/padding as viewModeButton
+  // The Sort button - same border/radius/padding as filtersToggleButton
   // above so all three controls in this row line up at the same
   // height. That match isn't automatic just from matching padding,
   // though: this button's label always starts with an arrow character
   // (↑/↓), and on at least one device (Raphael's Samsung tablet) that
   // glyph rendered with a taller default line height than the plain
-  // "List"/"Tiles" text, making this button visibly shorter than tall
+  // text next to it, making this button visibly shorter than tall
   // (padding matched, but the extra line height pushed its own box
   // taller than the other two). Pinning both this and
-  // viewModeButtonText to the SAME explicit lineHeight removes that
-  // platform-dependent difference instead of guessing at a fix that
-  // might not hold on every device/font.
+  // filtersToggleButtonText to the SAME explicit lineHeight removes
+  // that platform-dependent difference instead of guessing at a fix
+  // that might not hold on every device/font.
   sortButton: {
     borderWidth: 1,
     borderRadius: 8,

@@ -23,12 +23,17 @@
  * "Show/Hide filters" toggle and "Apply/Remove Filters" button should
  * stay fixed on screen while the individual filter rows underneath them
  * scroll with the list:
- *   - THIS file owns all of the filter STATE (which options are
- *     available, what's picked but not yet applied, what's actually
- *     applied) and renders the toggle + Apply/Remove button as a plain
- *     sibling directly above the FlatList - never inside it, so it can
- *     never be scrolled out of view no matter how tall the filter list
- *     gets.
+ *   - THIS file owns most of the filter STATE (what's picked but not
+ *     yet applied, what's actually applied) and renders the Apply/
+ *     Remove button as a plain sibling directly above the FlatList -
+ *     never inside it, so it can never be scrolled out of view no
+ *     matter how tall the filter list gets. `expanded` (whether the
+ *     panel below is open) is the one exception - it's a prop from
+ *     App.js now, not local state, since the "Show/Hide filters" button
+ *     that used to live right here moved up to App.js's own search row
+ *     (to sit together with Search and Sort as one row/unit - see
+ *     App.js's own comment). List/Tiles took over this row's now-empty
+ *     anchor spot in its place - see the JSX below.
  *   - FilterPanel.js renders the actual rows (dropdowns / min-max boxes)
  *     and is only ever placed inside the FlatList's `ListHeaderComponent`
  *     - and only while `expanded` is true - so it scrolls together with
@@ -73,7 +78,7 @@ const SUMMARY_ROW_COMPONENTS = {
   equipment: EquipmentSummaryRow,
 };
 
-export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', sortField = 'nonce', sortDirection = 'asc' }) {
+export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onToggleViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded }) {
   const { colors } = useTheme();
 
   // Tablet support: how many tiles fit per row, and how much extra
@@ -116,12 +121,23 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // this component owning that state itself. Still ONE shared choice
   // across Devikins/Weapons/Equipment either way - see App.js's own
   // comment for the persistence/sharing details (previously explained
-  // here, back when this component owned the state directly).
+  // here, back when this component owned the state directly). The
+  // toggle button itself now lives down in this file's own filterBar
+  // row instead (see the JSX below) - displaced from App.js's search
+  // row once Filters moved up onto it, taking List/Tiles' old spot -
+  // onToggleViewMode is what that button calls.
   // --- Filter state (moved here from FilterPanel.js so the toggle and
   // Apply/Remove button can be pinned outside the scrollable list while
   // still sharing this same state with the rows rendered inside it -
-  // see the file comment above.) ---
-  const [expanded, setExpanded] = useState(false);
+  // see the file comment above.) `expanded` itself moved the other
+  // direction from viewMode above: it used to be local state here, but
+  // once its OWN toggle button ("Show/Hide filters") moved up to
+  // App.js's search row (swapping places with List/Tiles - see that
+  // file's own comment), the open/closed state had to move up with it,
+  // the same lift already done for sortField/viewMode. Everything else
+  // in this block (pendingFilters, appliedFilters, the actual
+  // filters used in the query) stays local here, unaffected - only the
+  // panel's own open/closed flag moved. ---
   // availableOptions describes what CAN be filtered on right now, based
   // on what's actually in the database - e.g.
   //   { rarity: { kind: 'text', values: ['Common', 'Rare'] },
@@ -564,25 +580,36 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {filterableColumnNames.length > 0 && (
         <View style={[styles.filterBar, { backgroundColor: colors.surfaceAlt }]}>
-          {/* Normally everything fits on one row: "Show filters" on
-              the left, the item count centered, the Deleted switch on
-              the right - there's room, since "Remove filters" (a real
-              button now, not bare text - see filterToggleButton/
-              removeButton's own comments) isn't showing. Once a filter
-              gets applied and Remove filters needs to appear too, that
-              row is full, so the count and Deleted switch drop down
-              onto their own second row instead, leaving Show filters
-              and Remove filters alone on the first row (left/right).
-              This is per feedback that the count/switch should only
-              move down when Remove filters actually needs the space,
-              rather than always sitting on a second row. */}
+          {/* Normally everything fits on one row: the List/Tiles
+              toggle on the left, the item count centered, the Deleted
+              switch on the right - there's room, since "Remove
+              filters" (a real button now, not bare text - see
+              anchorToggleButton/removeButton's own comments) isn't
+              showing. Once a filter gets applied and Remove filters
+              needs to appear too, that row is full, so the count and
+              Deleted switch drop down onto their own second row
+              instead, leaving List/Tiles and Remove filters alone on
+              the first row (left/right). This is per feedback that the
+              count/switch should only move down when Remove filters
+              actually needs the space, rather than always sitting on a
+              second row.
+
+              List/Tiles wasn't always the button anchoring this row's
+              left side - "Show filters ▼ / Hide filters ▲" used to sit
+              here instead, until Filters moved up to join Search and
+              Sort on App.js's own row per feedback (so all three of
+              Search/Sort/Filters could sit together, in that order).
+              List/Tiles, displaced from that row by Filters, took over
+              this spot rather than needing a new one of its own - same
+              button size/position, same row-wrapping behavior below,
+              just a different control anchoring it. */}
           <View style={[styles.toggleRow, !hasAppliedFilters && styles.toggleRowLast]}>
             <TouchableOpacity
-              style={[styles.filterToggleButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => setExpanded(!expanded)}
+              style={[styles.anchorToggleButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={onToggleViewMode}
             >
-              <Text style={[styles.toggleText, { color: colors.primary }]}>
-                {expanded ? 'Hide filters ▲' : 'Show filters ▼'}
+              <Text style={[styles.anchorToggleText, { color: colors.secondaryText }]}>
+                {viewMode === 'list' ? 'List' : 'Tiles'}
               </Text>
             </TouchableOpacity>
 
@@ -715,7 +742,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     // Just top padding now (bottom padding moved to secondaryRow below,
-    // with a small gap between the two) - filterToggleButton and
+    // with a small gap between the two) - anchorToggleButton and
     // removeButton carry their own vertical padding too, so this stays
     // trimmed down to avoid padding stacking on padding.
     paddingTop: 8,
@@ -736,14 +763,19 @@ const styles = StyleSheet.create({
   // rather than bare colored text, per feedback from an Android
   // touch-target audit - this and removeButton below were the two
   // smallest tap targets in the whole app (no padding at all, just the
-  // text itself), so they got the biggest bump.
-  filterToggleButton: {
+  // text itself), so they got the biggest bump. Originally the "Show/
+  // Hide filters" button specifically (hence the name) - now reused for
+  // the List/Tiles toggle that took over this same anchor spot once
+  // Filters moved up to App.js's row instead. Kept the generic name
+  // since it just describes the SLOT (this row's left-anchoring
+  // button), not any longer tied to which control sits in it.
+  anchorToggleButton: {
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  toggleText: {
+  anchorToggleText: {
     fontWeight: '600',
   },
   countText: {
@@ -791,7 +823,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  // Same button treatment as filterToggleButton above, for the same
+  // Same button treatment as anchorToggleButton above, for the same
   // reason - see its comment.
   removeButton: {
     borderWidth: 1,
