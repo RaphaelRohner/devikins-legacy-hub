@@ -17,13 +17,19 @@
  * a small pill in the tile's top-right corner - same reasoning as the
  * summary rows (DevikinSummaryRow.js etc.) - a named item should be
  * recognizable from the overview without opening it.
+ *
+ * `columns` (from CollectionView.js, via src/constants/layout.js's
+ * getTileColumns) says how many of these sit in a row right now - more
+ * on a tablet's wider screen than the original fixed 3 - so this tile
+ * sizes its own width to match rather than a hardcoded fraction.
  */
 
 import { useEffect, useState } from 'react';
 import { Image, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { getTileFlexBasisPercent } from '../constants/layout';
 
-export default function NftTile({ nft, onPress }) {
+export default function NftTile({ nft, onPress, columns = 3 }) {
   const { colors } = useTheme();
 
   // Same "prefer the locally-saved copy" logic as the summary rows and
@@ -54,7 +60,11 @@ export default function NftTile({ nft, onPress }) {
 
   return (
     <TouchableOpacity
-      style={[styles.tile, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }, isDeleted && styles.deletedTile]}
+      style={[
+        styles.tile,
+        { flexBasis: getTileFlexBasisPercent(columns), backgroundColor: colors.surface, shadowColor: colors.cardShadow },
+        isDeleted && styles.deletedTile,
+      ]}
       onPress={onPress}
       activeOpacity={0.7}
     >
@@ -76,6 +86,9 @@ export default function NftTile({ nft, onPress }) {
 
 const styles = StyleSheet.create({
   tile: {
+    // Phone-only (3-column) fallback - actual width normally comes
+    // from the inline flexBasis override above, computed from the
+    // `columns` prop.
     flexBasis: '31%',
     borderRadius: 10,
     padding: 8,

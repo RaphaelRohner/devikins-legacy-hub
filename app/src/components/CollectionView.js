@@ -51,8 +51,9 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Switch, BackHandler } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Switch, BackHandler, useWindowDimensions } from 'react-native';
 import FilterPanel, { NO_FILTER, humanizeColumnName } from './FilterPanel';
+import { getTileColumns, getCenteredContentPadding } from '../constants/layout';
 import NftCard from './NftCard';
 import NftTile from './NftTile';
 import DevikinSummaryRow from './DevikinSummaryRow';
@@ -74,6 +75,16 @@ const SUMMARY_ROW_COMPONENTS = {
 
 export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list' }) {
   const { colors } = useTheme();
+
+  // Tablet support: how many tiles fit per row, and how much extra
+  // padding a single-column list row or the detail view needs so it
+  // doesn't stretch edge-to-edge on a much wider screen - see
+  // src/constants/layout.js. useWindowDimensions (rather than a one-
+  // time Dimensions.get()) means both update live on rotation or an
+  // iPad's split-screen resizing, not just at first render.
+  const { width: windowWidth } = useWindowDimensions();
+  const tileColumns = getTileColumns(windowWidth);
+  const centeredContentPadding = getCenteredContentPadding(windowWidth);
   const [filters, setFilters] = useState({});
   const [rows, setRows] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -389,7 +400,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
         >
           <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹</Text>
         </TouchableOpacity>
-        <ScrollView contentContainerStyle={styles.detailScrollContent}>
+        <ScrollView contentContainerStyle={[styles.detailScrollContent, { paddingHorizontal: centeredContentPadding }]}>
           <NftCard kind={kind} nft={selectedRow} onNftUpdated={reloadRows} />
         </ScrollView>
       </View>
@@ -620,17 +631,19 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
       <FlatList
         // React Native doesn't support changing numColumns on an
         // already-mounted FlatList - it throws ("Changing numColumns on
-        // the fly is not supported"). Keying the list by viewMode forces
-        // React to unmount and remount a fresh FlatList instance
-        // whenever List/Tiles is toggled, which sidesteps that entirely.
-        key={viewMode}
+        // the fly is not supported"). Keying the list by viewMode AND
+        // tileColumns forces React to unmount and remount a fresh
+        // FlatList instance whenever List/Tiles is toggled, or whenever
+        // tileColumns itself changes (e.g. rotating a tablet) - either
+        // one sidesteps that restriction the same way.
+        key={`${viewMode}-${tileColumns}`}
         data={rows}
         keyExtractor={(item) => String(item.nonce)}
-        numColumns={viewMode === 'tiles' ? 3 : 1}
+        numColumns={viewMode === 'tiles' ? tileColumns : 1}
         columnWrapperStyle={viewMode === 'tiles' ? styles.tilesRow : undefined}
         renderItem={({ item }) => {
           if (viewMode === 'tiles') {
-            return <NftTile nft={item} onPress={() => setSelectedNonce(item.nonce)} />;
+            return <NftTile nft={item} onPress={() => setSelectedNonce(item.nonce)} columns={tileColumns} />;
           }
           const SummaryRow = SUMMARY_ROW_COMPONENTS[kind];
           return SummaryRow ? (
@@ -663,7 +676,11 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
             </View>
           )
         }
-        contentContainerStyle={viewMode === 'tiles' ? styles.tilesListContent : styles.listContent}
+        contentContainerStyle={
+          viewMode === 'tiles'
+            ? styles.tilesListContent
+            : [styles.listContent, { paddingHorizontal: centeredContentPadding }]
+        }
       />
     </View>
   );
