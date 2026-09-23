@@ -620,18 +620,22 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
             {!hasAppliedFilters && countAndDeletedSwitch}
 
             {/* Only takes up space once a filter is actually applied -
-                when it's hidden, Show filters just stays flush left
+                when it's hidden, List/Tiles just stays flush left
                 (space-between with a single child does that
                 automatically). Lets you clear a filter in one tap
                 without even opening the panel - per feedback that having
                 to expand the panel first just to remove a filter was an
-                extra, unnecessary step. */}
+                extra, unnecessary step. Labeled "Filters ✕" rather than
+                the original "Remove filters ✕", per feedback - shorter,
+                and the ✕ alone already says "tap to clear" clearly
+                enough once a filter's actually applied (which is the
+                only time this button ever shows). */}
             {hasAppliedFilters && (
               <TouchableOpacity
                 style={[styles.removeButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 onPress={handleRemovePress}
               >
-                <Text style={[styles.removeLinkText, { color: colors.cancelText }]}>Remove filters ✕</Text>
+                <Text style={[styles.removeLinkText, { color: colors.cancelText }]}>Filters ✕</Text>
               </TouchableOpacity>
             )}
           </View>
