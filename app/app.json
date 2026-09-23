@@ -22,7 +22,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Devikins Legacy Companion to access your camera to scan a wallet address QR code."
+        }
+      ]
     ],
     "extra": {
       "eas": {

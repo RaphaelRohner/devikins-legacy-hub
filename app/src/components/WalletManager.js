@@ -24,6 +24,11 @@
  * list from the database and pass the fresh version back down. That keeps
  * "what wallets exist" living in exactly one place (the database, read
  * through App.js) rather than two copies that could drift out of sync.
+ *
+ * The "Add a wallet" row also has a camera button (see
+ * QrScannerModal.js) as an alternative to typing/pasting an address -
+ * it only fills the same text field a paste would, so Add still works
+ * exactly the same way either way the address got there.
  */
 
 import { useState } from 'react';
@@ -41,12 +46,15 @@ import {
 import { addWallet, updateWalletAddress, deleteWallet, resetAllData } from '../db/database';
 import { deleteAllStoredImages } from '../api/imageStorage';
 import { useTheme } from '../context/ThemeContext';
+import QrScannerModal from './QrScannerModal';
 
 export default function WalletManager({ wallets, onWalletsChanged, onClose }) {
   const { colors } = useTheme();
 
   // The "Add a wallet" text field at the top.
   const [newAddressInput, setNewAddressInput] = useState('');
+  // Whether the QR scanner overlay (QrScannerModal.js) is currently open.
+  const [isScannerVisible, setIsScannerVisible] = useState(false);
 
   // Which wallet row (by id) is currently being edited, if any - only one
   // at a time. While a row is being edited, its own address text is
@@ -81,6 +89,16 @@ export default function WalletManager({ wallets, onWalletsChanged, onClose }) {
         "Next, tap Fetch/Update on the home screen to pull in its Devikins, Weapons, and Equipment. The first fetch can take a few minutes, since nothing is cached yet - after that, updates are much faster."
       );
     }
+  }
+
+  // Fills the same field handleAdd reads from, rather than adding the
+  // wallet directly - see the file comment above for why. Doesn't
+  // auto-submit, so a scan that came out wrong (or a QR that wasn't
+  // actually a plain address) is still visible and editable, same as
+  // if it had been pasted in by hand.
+  function handleScanned(scannedAddress) {
+    setNewAddressInput(scannedAddress);
+    setIsScannerVisible(false);
   }
 
   function handleStartEdit(wallet) {
@@ -172,6 +190,12 @@ export default function WalletManager({ wallets, onWalletsChanged, onClose }) {
             autoCorrect={false}
           />
           <TouchableOpacity
+            style={[styles.scanButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+            onPress={() => setIsScannerVisible(true)}
+          >
+            <Text style={styles.scanButtonIcon}>📷</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[
               styles.addButton,
               { backgroundColor: colors.primary },
@@ -184,6 +208,12 @@ export default function WalletManager({ wallets, onWalletsChanged, onClose }) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <QrScannerModal
+        visible={isScannerVisible}
+        onScanned={handleScanned}
+        onClose={() => setIsScannerVisible(false)}
+      />
 
       <ScrollView contentContainerStyle={styles.listContent}>
         {wallets.length === 0 ? (
@@ -336,6 +366,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  scanButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanButtonIcon: {
+    fontSize: 18,
   },
   addButton: {
     borderRadius: 8,
