@@ -90,7 +90,14 @@ const FAQ_ENTRIES = [
     question: 'How do search and the star filter work?',
     keywords: ['search', 'star filter', 'filter'],
     answer:
-      "The search bar at the top matches an NFT's name, your own custom nickname for it, or its ID, and narrows the list as you type. The star Rating filter lives in Filters (tap Show filters) - tap a star and every star up to it lights up, then tap Apply Filters to narrow the list to items rated EXACTLY that many stars (not 'that many or more'); tap the same star again, then Apply, to clear it. Both search and an already-applied star rating carry over as you switch between Devikins/Weapons/Equipment.",
+      "The search bar at the top matches an NFT's name, your own custom nickname for it, or its ID, and narrows the list as you type. The star Rating filter lives in Filters (tap Filters) - tap a star and every star up to it lights up, then tap Apply Filters to narrow the list to items rated EXACTLY that many stars (not 'that many or more'); tap the same star again, then Apply, to clear it. Both search and an already-applied star rating carry over as you switch between Devikins/Weapons/Equipment.",
+  },
+  {
+    id: 'sort-vs-filters',
+    question: "What's the difference between Sort and Filters?",
+    keywords: ['sort', 'sorting', 'sort vs filter', 'sort and filter', 'order', 'difference'],
+    answer:
+      "Sort picks one thing to order the whole list by - tap the sort button (e.g. ID or Rarity) and pick a field, and it applies the moment you tap it, no Apply needed. It never removes anything, just changes the order everything shows up in. Filters work differently because you're usually setting up more than one at a time (say, Rarity AND Ancestry AND a star rating together) - so picking them stays separate from actually narrowing the list, which is why Filters needs its own Apply Filters tap and Sort doesn't. Filters also remembers what you last picked, so reopening it lets you add, change, or remove any of your picks - narrowing further, loosening up, or swapping one for another - without starting over. Search, Sort, and Filters all work together at once - with a big collection, combining them (say, filter to one Rarity, sort those by Ancestry, then search by name) is usually the fastest way to find one specific NFT.",
   },
   {
     id: 'devikin-filter-groups',
