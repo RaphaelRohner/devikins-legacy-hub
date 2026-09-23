@@ -2160,16 +2160,22 @@ runs completely unchanged either way the address got into that field.
 This also means a scan stays visible and editable before anything is
 actually added.
 
-**Caveat worth testing for real:** a real Klever wallet app's own QR
-code wasn't available to check this against, so it's only assumed to
-encode the plain `klv1...` address as-is. `QrScannerModal.js`'s
-`extractAddress()` has a fallback for this - if the scanned text isn't
-just the bare address (e.g. some wallet apps wrap an address in their
-own URI scheme, like a payment-request link), it pulls a `klv1...`
-pattern back out of whatever was scanned rather than handing the raw
-wrapper text straight to the Add field. If a real scan from Klever's
-own app comes back looking different than expected once this is
-actually tried, that extraction logic is the one place to adjust.
+**Tried against a real scan (Sep 2026):** Raphael scanned his own
+Klever wallet app's actual QR code and it correctly filled in the
+right address. What wasn't confirmed is WHICH of `extractAddress()`'s
+two paths actually handled it - whether the QR just encodes the plain
+`klv1...` address as-is, or something wrapped that the regex fallback
+successfully pulled an address back out of - since the raw, pre-
+extraction scanned text was never inspected. Either way the visible
+result was correct, so this isn't blocking anything, but it does mean
+a QR format the regex fallback DOESN'T handle (no `klv1...` pattern
+anywhere in the scanned text at all) is still an open possibility with
+some other wallet app or QR source, not something actually ruled out
+by this one successful test. Filed as
+[GitHub issue #1](https://github.com/RaphaelRohner/devikins-legacy-companion/issues/1)
+to track, since it only fills the Add field rather than adding a
+wallet directly (see above), so the worst case is a scan that doesn't
+work as expected, not silent data corruption.
 
 ## App structure decisions (made while building)
 
