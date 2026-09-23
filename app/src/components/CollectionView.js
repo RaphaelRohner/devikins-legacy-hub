@@ -418,6 +418,98 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     setExpanded(false);
   }
 
+  // Declared up here, ahead of every early `return` in this component
+  // (the "no wallet yet" one right below, and the detail-view one
+  // further down) rather than down next to hasAppliedFilters, where
+  // this used to live and reads more naturally alongside it. React
+  // requires every hook in a component to run in the exact same order
+  // on every render, and an early return skips any hook declared after
+  // it - with this block after the detail-view return, the list view
+  // called one set of hooks and the detail view called fewer of them,
+  // which crashed the app the moment a Devikin was tapped open
+  // ("Rendered fewer hooks than expected"). Every hook this component
+  // owns now runs unconditionally, before anything that could return
+  // early.
+
+  // Where the floating "Filters ✕" button currently sits, as an {x, y}
+  // offset from its default top-right position (FLOATING_BUTTON_
+  // TOP_DEFAULT/RIGHT_DEFAULT above) rather than an absolute screen
+  // position - so the default spot (and the clamping below) only has
+  // to be worked out once, and "not dragged yet" is simply {x: 0, y:
+  // 0}. State drives the re-render that actually moves the button on
+  // screen; the ref alongside it holds the same value for the
+  // PanResponder callbacks below to read/write without waiting for a
+  // re-render (and without going stale inside a closure captured at
+  // the start of the gesture).
+  const [floatingOffset, setFloatingOffset] = useState({ x: 0, y: 0 });
+  const floatingOffsetRef = useRef(floatingOffset);
+  // The offset at the moment the current drag started, so each move
+  // event can compute the new position from gestureState's cumulative
+  // dx/dy (measured from the touch's start, not the previous event)
+  // without drifting.
+  const dragStartOffsetRef = useRef({ x: 0, y: 0 });
+
+  // Keeps the button from being dragged off-screen (or up under the
+  // toolbar rows, or down past the bottom edge) - clamps to
+  // FLOATING_BUTTON_EDGE_MARGIN px of breathing room on every side.
+  // windowWidth/windowHeight (not the exact height of this component's
+  // own container, which isn't directly knowable) are the best
+  // available stand-in for "the visible screen," so this is an
+  // approximation like the rest of the button's sizing/position - see
+  // the constants' own comment above. X is worked out in terms of the
+  // button's `right` distance from the screen's right edge (see the
+  // JSX below for why), not a `left` position, so FLOATING_BUTTON_
+  // WIDTH_ESTIMATE only has to be right enough to keep the button from
+  // being dragged too far left off the screen - it no longer affects
+  // where the button rests by default, which is now exact regardless
+  // of the estimate (see the "resting position" screenshot feedback
+  // that prompted this).
+  function clampFloatingOffset(offset) {
+    const minRight = FLOATING_BUTTON_EDGE_MARGIN;
+    const maxRight = windowWidth - FLOATING_BUTTON_WIDTH_ESTIMATE - FLOATING_BUTTON_EDGE_MARGIN;
+    const minX = FLOATING_BUTTON_RIGHT_DEFAULT - maxRight;
+    const maxX = FLOATING_BUTTON_RIGHT_DEFAULT - minRight;
+    const minY = FLOATING_BUTTON_EDGE_MARGIN - FLOATING_BUTTON_TOP_DEFAULT;
+    const maxY = windowHeight - FLOATING_BUTTON_EDGE_MARGIN - FLOATING_BUTTON_HEIGHT - FLOATING_BUTTON_TOP_DEFAULT;
+    return {
+      x: Math.min(Math.max(offset.x, minX), maxX),
+      y: Math.min(Math.max(offset.y, minY), maxY),
+    };
+  }
+
+  // Makes the floating button draggable without pulling in a gesture
+  // library (react-native-gesture-handler/reanimated) just for one
+  // button - PanResponder ships with React Native itself. A tap still
+  // works as a normal tap: onStartShouldSetPanResponder is false, so a
+  // touch starts out belonging to the TouchableOpacity underneath (see
+  // the JSX below) exactly as if this wrapper wasn't there at all;
+  // onMoveShouldSetPanResponder only grabs the gesture, mid-touch, once
+  // it's moved more than FLOATING_BUTTON_DRAG_THRESHOLD px - past that
+  // point it's clearly a drag, not a tap, so the TouchableOpacity never
+  // sees a move that large and won't also fire its onPress when the
+  // finger lifts. A short tap that never crosses the threshold never
+  // reaches the PanResponder at all, so it reaches the TouchableOpacity
+  // completely normally.
+  const floatingButtonPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_evt, gestureState) =>
+        Math.abs(gestureState.dx) > FLOATING_BUTTON_DRAG_THRESHOLD ||
+        Math.abs(gestureState.dy) > FLOATING_BUTTON_DRAG_THRESHOLD,
+      onPanResponderGrant: () => {
+        dragStartOffsetRef.current = floatingOffsetRef.current;
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        const nextOffset = clampFloatingOffset({
+          x: dragStartOffsetRef.current.x + gestureState.dx,
+          y: dragStartOffsetRef.current.y + gestureState.dy,
+        });
+        floatingOffsetRef.current = nextOffset;
+        setFloatingOffset(nextOffset);
+      },
+    })
+  ).current;
+
   if (!ownerAddresses || ownerAddresses.length === 0) {
     return (
       <View style={styles.emptyContainer}>
@@ -546,85 +638,6 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // (and still clears it) when a star rating is the only thing
   // currently narrowing the list.
   const hasAppliedFilters = Object.keys(appliedFilters).length > 0 || starFilter > 0;
-
-  // Where the floating "Filters ✕" button currently sits, as an {x, y}
-  // offset from its default top-right position (FLOATING_BUTTON_
-  // TOP_DEFAULT/RIGHT_DEFAULT above) rather than an absolute screen
-  // position - so the default spot (and the clamping below) only has
-  // to be worked out once, and "not dragged yet" is simply {x: 0, y:
-  // 0}. State drives the re-render that actually moves the button on
-  // screen; the ref alongside it holds the same value for the
-  // PanResponder callbacks below to read/write without waiting for a
-  // re-render (and without going stale inside a closure captured at
-  // the start of the gesture).
-  const [floatingOffset, setFloatingOffset] = useState({ x: 0, y: 0 });
-  const floatingOffsetRef = useRef(floatingOffset);
-  // The offset at the moment the current drag started, so each move
-  // event can compute the new position from gestureState's cumulative
-  // dx/dy (measured from the touch's start, not the previous event)
-  // without drifting.
-  const dragStartOffsetRef = useRef({ x: 0, y: 0 });
-
-  // Keeps the button from being dragged off-screen (or up under the
-  // toolbar rows, or down past the bottom edge) - clamps to
-  // FLOATING_BUTTON_EDGE_MARGIN px of breathing room on every side.
-  // windowWidth/windowHeight (not the exact height of this component's
-  // own container, which isn't directly knowable) are the best
-  // available stand-in for "the visible screen," so this is an
-  // approximation like the rest of the button's sizing/position - see
-  // the constants' own comment above. X is worked out in terms of the
-  // button's `right` distance from the screen's right edge (see the
-  // JSX below for why), not a `left` position, so FLOATING_BUTTON_
-  // WIDTH_ESTIMATE only has to be right enough to keep the button from
-  // being dragged too far left off the screen - it no longer affects
-  // where the button rests by default, which is now exact regardless
-  // of the estimate (see the "resting position" screenshot feedback
-  // that prompted this).
-  function clampFloatingOffset(offset) {
-    const minRight = FLOATING_BUTTON_EDGE_MARGIN;
-    const maxRight = windowWidth - FLOATING_BUTTON_WIDTH_ESTIMATE - FLOATING_BUTTON_EDGE_MARGIN;
-    const minX = FLOATING_BUTTON_RIGHT_DEFAULT - maxRight;
-    const maxX = FLOATING_BUTTON_RIGHT_DEFAULT - minRight;
-    const minY = FLOATING_BUTTON_EDGE_MARGIN - FLOATING_BUTTON_TOP_DEFAULT;
-    const maxY = windowHeight - FLOATING_BUTTON_EDGE_MARGIN - FLOATING_BUTTON_HEIGHT - FLOATING_BUTTON_TOP_DEFAULT;
-    return {
-      x: Math.min(Math.max(offset.x, minX), maxX),
-      y: Math.min(Math.max(offset.y, minY), maxY),
-    };
-  }
-
-  // Makes the floating button draggable without pulling in a gesture
-  // library (react-native-gesture-handler/reanimated) just for one
-  // button - PanResponder ships with React Native itself. A tap still
-  // works as a normal tap: onStartShouldSetPanResponder is false, so a
-  // touch starts out belonging to the TouchableOpacity underneath (see
-  // the JSX below) exactly as if this wrapper wasn't there at all;
-  // onMoveShouldSetPanResponder only grabs the gesture, mid-touch, once
-  // it's moved more than FLOATING_BUTTON_DRAG_THRESHOLD px - past that
-  // point it's clearly a drag, not a tap, so the TouchableOpacity never
-  // sees a move that large and won't also fire its onPress when the
-  // finger lifts. A short tap that never crosses the threshold never
-  // reaches the PanResponder at all, so it reaches the TouchableOpacity
-  // completely normally.
-  const floatingButtonPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_evt, gestureState) =>
-        Math.abs(gestureState.dx) > FLOATING_BUTTON_DRAG_THRESHOLD ||
-        Math.abs(gestureState.dy) > FLOATING_BUTTON_DRAG_THRESHOLD,
-      onPanResponderGrant: () => {
-        dragStartOffsetRef.current = floatingOffsetRef.current;
-      },
-      onPanResponderMove: (_evt, gestureState) => {
-        const nextOffset = clampFloatingOffset({
-          x: dragStartOffsetRef.current.x + gestureState.dx,
-          y: dragStartOffsetRef.current.y + gestureState.dy,
-        });
-        floatingOffsetRef.current = nextOffset;
-        setFloatingOffset(nextOffset);
-      },
-    })
-  ).current;
 
   // The item count and Deleted switch. Used to be shared between two
   // JSX spots (this row, or a second row below it, depending on
@@ -1092,11 +1105,20 @@ const styles = StyleSheet.create({
   // FlatList's own contentContainerStyle) only while the floating
   // "Filters ✕" button is showing, so the first row of the list
   // starts clear of it instead of sitting partly hidden underneath it.
-  // FLOATING_BUTTON_TOP_DEFAULT (68) + FLOATING_BUTTON_HEIGHT (50) is
-  // where the button's own bottom edge sits, plus a little extra
-  // breathing room below that.
+  // This is EXTRA padding on top of where the list already starts
+  // (right below the toolbar/filterBar) - a first pass added
+  // FLOATING_BUTTON_TOP_DEFAULT to this number too, which double-
+  // counted the toolbar's own height (TOP_DEFAULT is measured from the
+  // very top of the screen, the same origin the toolbar itself starts
+  // from, not from where the list already begins) and left a much
+  // bigger gap above the first row than intended - fixed per a
+  // screenshot showing that gap. FLOATING_BUTTON_HEIGHT alone,
+  // plus a little breathing room, is enough: the toolbar's own height
+  // already accounts for most of the button's vertical offset, since
+  // TOP_DEFAULT only nudges the button a few px below where the
+  // toolbar (and so the list) already ends.
   listContentClearFloatingButton: {
-    paddingTop: FLOATING_BUTTON_TOP_DEFAULT + FLOATING_BUTTON_HEIGHT + 12,
+    paddingTop: FLOATING_BUTTON_HEIGHT + 20,
   },
   // Made into a proper button (filled background, rounded corners)
   // rather than a plain text link, per feedback that it was easy to
