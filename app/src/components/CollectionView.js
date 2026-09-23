@@ -579,7 +579,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {filterableColumnNames.length > 0 && (
-        <View style={[styles.filterBar, { backgroundColor: colors.surfaceAlt }]}>
+        <View style={[styles.filterBar, { backgroundColor: colors.toolbarBackground, borderBottomColor: colors.toolbarDivider }]}>
           {/* Normally everything fits on one row: the List/Tiles
               toggle on the left, the item count centered, the Deleted
               switch on the right - there's room, since "Remove
@@ -736,10 +736,18 @@ const styles = StyleSheet.create({
   // The fixed toggle + Apply/Remove button bar - a plain sibling of the
   // FlatList below, never inside it, so it can never scroll out of view
   // no matter how many filter rows are showing. See the file comment at
-  // the top for the full reasoning.
+  // the top for the full reasoning. Also the last of the three control
+  // rows that share the app's toolbarBackground color (menuRow/
+  // searchRow in App.js are the other two) - the borderBottomWidth/
+  // Color here is what actually separates that whole three-row toolbar
+  // from the list below, per feedback wanting a visible line there,
+  // since matching colors alone (colors.background below vs
+  // colors.toolbarBackground here) wasn't guaranteed to read as a
+  // clean boundary in every theme without one.
   filterBar: {
     paddingHorizontal: 12,
     paddingTop: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   toggleRow: {
     flexDirection: 'row',

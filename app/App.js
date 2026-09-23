@@ -812,7 +812,7 @@ function AppContent() {
           toggle is NOT gated on having a wallet, unlike the search
           field below - it needs to stay reachable even on a brand-new
           install with nothing added yet. */}
-      <View style={[styles.menuRow, { backgroundColor: colors.surfaceAlt }]}>
+      <View style={[styles.menuRow, { backgroundColor: colors.toolbarBackground }]}>
         <TouchableOpacity
           style={[styles.hamburgerButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={() => setIsMenuOpen(true)}
@@ -877,7 +877,7 @@ function AppContent() {
           see FilterPanel.js. */}
       {walletAddresses.length > 0 && (
         <>
-        <View style={[styles.searchRow, { backgroundColor: colors.surfaceAlt }]}>
+        <View style={[styles.searchRow, { backgroundColor: colors.toolbarBackground }]}>
           {/* Opens SortPickerModal below. Sits leftmost in this row now
               (originally to the right of Search) per a later round of
               feedback - purely a position swap, same button, same

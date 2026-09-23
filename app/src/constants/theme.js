@@ -6,6 +6,19 @@
  * from whichever of these two objects is currently active (via
  * useTheme() in ThemeContext.js) so that toggling dark mode instantly
  * re-skins the whole app instead of requiring per-screen changes.
+ *
+ * toolbarBackground/toolbarDivider (added later, for the three control
+ * rows above every collection's list - App.js's menuRow/searchRow and
+ * CollectionView.js's filterBar) are a deliberately separate pair from
+ * surface/surfaceAlt above, not a rename of them. An earlier version of
+ * those three rows used surfaceAlt as their shared background with
+ * surface for the buttons sitting on it - per feedback that looked
+ * wrong (surface and surfaceAlt sit close together in both themes, so
+ * the buttons barely stood out). toolbarBackground is chosen to read as
+ * clearly darker than surface (which the buttons still use) in both
+ * themes, and toolbarDivider is chosen to read as clearly LIGHTER than
+ * toolbarBackground - it's the thin line under the whole three-row
+ * block, marking where the toolbar ends and the list begins.
  */
 
 export const lightColors = {
@@ -31,6 +44,8 @@ export const lightColors = {
   progressTrack: '#d8e4fb',
   cancelText: '#cc3333',
   cardShadow: '#000000',
+  toolbarBackground: '#e2e2e8',
+  toolbarDivider: '#f4f4f8',
 };
 
 export const darkColors = {
@@ -56,4 +71,6 @@ export const darkColors = {
   progressTrack: '#2c3a57',
   cancelText: '#ff8078',
   cardShadow: '#000000',
+  toolbarBackground: '#0a0a0c',
+  toolbarDivider: '#3a3a3f',
 };
