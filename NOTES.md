@@ -2080,6 +2080,57 @@ tied to opening the app - since a corrected image is a rare, low-
 urgency event, not something that needs catching up on the moment the
 screen is looked at.
 
+## Tablet support: scaling the existing layout, not a separate design
+
+First item on the V3 list: the app already technically ran on an iPad
+(`app.json` already had `ios.supportsTablet: true`), but nothing about
+the layout actually adapted to a bigger screen - the Tiles grid was
+hardcoded to exactly 3 tiles per row, and the detail view / List-mode
+rows had no width limit, so on a tablet either would end up looking
+wrong (oversized tiles stuck at 3-per-row, or a detail card/row
+stretched edge-to-edge with its labels and values spread unnaturally
+far apart across the extra width).
+
+Discussed two ways to handle this: scale the existing phone layout
+(more tiles per row, width limits on single-column content) versus a
+genuinely different tablet layout (list and detail side by side, like
+Mail/Settings on an iPad). Went with scaling the existing layout -
+Raphael's call, lower risk, and the side-by-side approach would have
+meant reworking how CollectionView.js's detail view navigates (it's
+currently just "swap the list for the detail view, tap back to swap
+back" - not built to show both at once).
+
+New `src/constants/layout.js` holds the actual logic, kept deliberately
+keyed off the measured window width (`useWindowDimensions`, which
+updates live on rotation or an iPad's split-screen resizing) rather
+than checking the OS or `Platform.isPad` - an Android tablet is just as
+wide as an iPad, so "how much width is there right now" is the
+relevant question, not which OS is running. Two things it does:
+
+- **Tiles grid**: `getTileColumns(width)` picks 3/4/5/6 tiles per row
+  depending on width (3 stays the phone value), and
+  `getTileFlexBasisPercent(columns)` reuses the exact gap ratio the
+  original hardcoded 3-column, 31%-wide design already had, just
+  generalized to any column count, so tiles keep looking the same
+  regardless of how many happen to fit in a row. `NftTile.js` now takes
+  a `columns` prop (defaulting to 3) instead of a fixed width.
+- **List rows and the detail view**: `getCenteredContentPadding(width)`
+  stays at the normal 12px padding up to 700pt wide (every phone, so
+  this is a no-op there), then grows past that so the content ends up
+  centered with a comfortable max width instead of stretching -
+  applied once, to `CollectionView.js`'s FlatList/ScrollView
+  `contentContainerStyle`, rather than editing every row/card component
+  individually (each already has its own `marginHorizontal: 12`, which
+  still applies inside that now-narrower box).
+
+Not touched: the top menuRow/searchRow bars, the filter panel's own
+dropdowns, and the various modal screens (WalletManager, Feedback,
+HelpAssistant) - their controls just end up a bit more spread out via
+their existing `space-between` layouts on a wide screen rather than
+looking actually broken, so left alone for now rather than expanding
+scope beyond what was actually asked for. Worth revisiting once this
+has been tried on a real tablet.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
