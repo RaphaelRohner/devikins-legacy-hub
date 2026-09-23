@@ -59,7 +59,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import { initDatabase, getWallets, getSetting, setSetting, countPendingRetries } from './src/db/database';
 import { fetchAllForWallets, retryPendingItemsForWallets, checkImageFreshnessForWallets } from './src/api/fetchAllForWallet';
-import { COLLECTIONS } from './src/constants/schema';
+import { COLLECTIONS, getSortableFieldNames } from './src/constants/schema';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import HamburgerMenu from './src/components/HamburgerMenu';
 import CollectionView from './src/components/CollectionView';
@@ -67,6 +67,8 @@ import ProgressBar from './src/components/ProgressBar';
 import WalletManager from './src/components/WalletManager';
 import Feedback from './src/components/Feedback';
 import HelpAssistant from './src/components/HelpAssistant';
+import SortPickerModal from './src/components/SortPickerModal';
+import { humanizeColumnName } from './src/components/FilterPanel';
 import appConfig from './app.json';
 
 // The app's version number, shown small on the loading screen - pulled
@@ -258,6 +260,61 @@ function AppContent() {
   function handleSetViewMode(nextMode) {
     setViewMode(nextMode);
     setSetting('viewMode', nextMode);
+  }
+
+  // V3: which field the current collection is sorted by, and which
+  // direction - unlike viewMode above, this is deliberately NOT one
+  // shared value across all three tabs, since most fields (a Devikin's
+  // Overall Affinity, say) only exist on one kind. It's also
+  // deliberately NOT reset back to the default on every tab switch
+  // either, the way CollectionView.js's own trait filters are (see its
+  // kind-change effect) - a few fields (`nonce`/ID, `first_seen`, and
+  // `rarity`) exist identically on all three collections, so "sort by
+  // Rarity" carrying over from Devikins to Weapons is actually useful,
+  // not stale leftover state. The clamp effect just below only steps in
+  // when the CURRENT field genuinely doesn't exist on the tab just
+  // switched to - e.g. leaving Devikins' Overall Affinity sort and
+  // landing on Weapons, which has no such field.
+  const [sortField, setSortField] = useState('nonce');
+  const [sortDirection, setSortDirection] = useState('asc');
+  const [isSortPickerVisible, setIsSortPickerVisible] = useState(false);
+
+  useEffect(() => {
+    if (!COLLECTIONS[currentScreen]) return; // not a collection tab (wallets/feedback/help) - nothing to clamp
+    if (!getSortableFieldNames(currentScreen).includes(sortField)) {
+      setSortField('nonce');
+      setSortDirection('asc');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentScreen]);
+
+  // The Sort picker's field list, scoped to whichever collection is
+  // currently showing (see getSortableFieldNames in schema.js) - 'nonce'
+  // and 'first_seen' get their own plain-English labels since they
+  // aren't real traits, everything else reuses FilterPanel.js's own
+  // humanizeColumnName so a trait reads the same way here as it does in
+  // the Filters panel.
+  const sortFieldOptions = useMemo(() => {
+    if (!COLLECTIONS[currentScreen]) return [];
+    return getSortableFieldNames(currentScreen).map((name) => ({
+      name,
+      label: name === 'nonce' ? 'ID' : name === 'first_seen' ? 'Recently Added' : humanizeColumnName(name),
+    }));
+  }, [currentScreen]);
+
+  // Tapping a field that's already the active one flips its direction
+  // instead of re-picking the same field pointlessly - tapping a
+  // different field picks it fresh, defaulting to descending (highest/
+  // "best" first reads more usefully for a stat or Rarity than
+  // alphabetical-first would) except for ID, which defaults ascending
+  // to match the app's own original, pre-Sort-feature default order.
+  function handleSelectSortField(fieldName) {
+    if (fieldName === sortField) {
+      setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(fieldName);
+      setSortDirection(fieldName === 'nonce' ? 'asc' : 'desc');
+    }
   }
 
   // Progress info from fetchAllForWallets.js's onProgress callback, and
@@ -794,6 +851,7 @@ function AppContent() {
           moved down into each collection's own Filters panel instead -
           see FilterPanel.js. */}
       {walletAddresses.length > 0 && (
+        <>
         <View style={styles.searchRow}>
           <View style={styles.searchInputWrapper}>
             <TextInput
@@ -819,6 +877,26 @@ function AppContent() {
               </TouchableOpacity>
             )}
           </View>
+
+          {/* Opens SortPickerModal below - sits between the search field
+              and the List/Tiles toggle, per feedback discussion (a new
+              menu point + subpage felt heavier than needed for what's
+              really a single small choice). Shows the active field's
+              short label plus an arrow for the current direction, so the
+              current sort is visible without opening the sheet. */}
+          <TouchableOpacity
+            style={[styles.sortButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => setIsSortPickerVisible(true)}
+          >
+            <Text
+              style={[styles.sortButtonText, { color: colors.secondaryText }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {sortDirection === 'asc' ? '↑' : '↓'} {sortFieldOptions.find((option) => option.name === sortField)?.label ?? 'ID'}
+            </Text>
+          </TouchableOpacity>
+
           <View style={styles.viewModeGroup}>
             <TouchableOpacity
               style={[
@@ -846,6 +924,16 @@ function AppContent() {
             </TouchableOpacity>
           </View>
         </View>
+
+        <SortPickerModal
+          visible={isSortPickerVisible}
+          fields={sortFieldOptions}
+          sortField={sortField}
+          sortDirection={sortDirection}
+          onSelect={(fieldName) => handleSelectSortField(fieldName)}
+          onClose={() => setIsSortPickerVisible(false)}
+        />
+        </>
       )}
 
       <HamburgerMenu
@@ -868,6 +956,8 @@ function AppContent() {
           starFilter={starFilter}
           onStarFilterChange={setStarFilter}
           viewMode={viewMode}
+          sortField={sortField}
+          sortDirection={sortDirection}
         />
       ) : (
         !isFetching && (
@@ -1011,6 +1101,21 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   viewModeButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // The Sort button - same border/radius family as viewModeButton above
+  // so it reads as one row of controls, but its own slightly tighter
+  // padding since its label (arrow + field name) tends to run longer
+  // than "List"/"Tiles".
+  sortButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: 110,
+  },
+  sortButtonText: {
     fontSize: 13,
     fontWeight: '600',
   },

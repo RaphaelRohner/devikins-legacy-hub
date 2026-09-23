@@ -19,7 +19,7 @@
  */
 
 import * as SQLite from 'expo-sqlite';
-import { TRAIT_COLUMNS } from '../constants/schema';
+import { TRAIT_COLUMNS, RARITY_ORDER } from '../constants/schema';
 
 const DATABASE_FILE_NAME = 'devikins.db';
 
@@ -131,7 +131,52 @@ export async function initDatabase() {
     // NFT that's never been rated.
     await ensureColumn(db, kind, 'custom_name', 'TEXT');
     await ensureColumn(db, kind, 'star_rating', 'INTEGER');
+
+    // V3: when this app FIRST ever saw this specific NFT - set once, at
+    // insert time, and never touched again afterward (see upsertNft's
+    // finalFirstSeen) - deliberately different from fetched_at, which
+    // updates on every single re-fetch and so can't answer "how long
+    // have I actually had this" or "what did I add most recently."
+    // Existing rows (from before this column existed) get first_seen
+    // backfilled to their current fetched_at just below, right after
+    // ensureColumn adds the column - not a perfect answer for data that
+    // predates this feature (fetched_at is the last check, not the
+    // true first one), but a reasonable one, and it means every row
+    // has a usable value immediately rather than some having none.
+    await ensureColumn(db, kind, 'first_seen', 'INTEGER');
+    await db.execAsync(`UPDATE ${kind} SET first_seen = fetched_at WHERE first_seen IS NULL`);
   }
+
+  // V3: a plain append-only log of trait changes - "this NFT's rarity
+  // was Common, is now Uncommon, as of this moment" - one row per
+  // changed field per fetch that actually found a change, across all
+  // three collections (the `kind` column tells them apart, same as the
+  // per-kind tables above). Deliberately generic/shared across every
+  // trait rather than needing a new column added here every time a new
+  // trait is added to schema.js - see upsertNft for what actually
+  // writes to this, and its own comment for exactly which changes do
+  // and don't get logged. Nothing reads from this yet - the actual
+  // history/timeline UI is a separate, later piece of work - so this is
+  // purely "start capturing the data now, so it exists whenever that UI
+  // gets built" rather than something the app currently shows anywhere.
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS nft_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      nonce INTEGER NOT NULL,
+      field_name TEXT NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      changed_at INTEGER NOT NULL
+    );
+  `);
+  // Every future read of this table is "everything for one NFT" (once
+  // the timeline UI exists) - this index makes that a fast lookup
+  // instead of a full table scan, which matters once this has been
+  // running for a long time across a lot of NFTs.
+  await db.execAsync(`
+    CREATE INDEX IF NOT EXISTS idx_nft_history_kind_nonce ON nft_history(kind, nonce);
+  `);
 
   // A tiny generic key/value table for small bits of app state that
   // isn't NFT data. These days that's nothing load-bearing any more (the
@@ -453,12 +498,21 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
   // you still hold the NFT, so it was never actually sold/given away)
   // and says explicitly not to "fix" it. Do not add deleted/comment to
   // the preserved columns below without re-reading that note first.
+  const traitColumnNames = Object.keys(traitColumns);
   const existingUserData = await db.getFirstAsync(
-    `SELECT custom_name, star_rating, local_image_path, image_etag FROM ${kind} WHERE nonce = ?`,
+    `SELECT custom_name, star_rating, local_image_path, image_etag, first_seen, ${traitColumnNames.join(', ')} FROM ${kind} WHERE nonce = ?`,
     [nonce]
   );
   const preservedCustomName = existingUserData?.custom_name ?? null;
   const preservedStarRating = existingUserData?.star_rating ?? null;
+
+  // V3: the very first time this nonce is ever seen, existingUserData is
+  // null (there's no previous row at all) - that's the one and only
+  // moment first_seen gets set, to right now. Every later call, whether
+  // it changes anything else or not, just carries the original value
+  // forward untouched - same "preserve, don't recompute" pattern as
+  // preservedCustomName/preservedStarRating above.
+  const finalFirstSeen = existingUserData?.first_seen ?? Date.now();
 
   // Same idea as custom_name/star_rating above, extended to the locally-
   // downloaded image: if THIS call didn't produce a fresh local path (or
@@ -476,10 +530,9 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
   const finalLocalImagePath = localImagePath || existingUserData?.local_image_path || null;
   const finalImageEtag = imageEtag || existingUserData?.image_etag || null;
 
-  const traitColumnNames = Object.keys(traitColumns);
   const allColumnNames = [
     'nonce', 'owner_address', 'name', 'image', 'local_image_path', 'image_etag', 'description', 'status', 'fetched_at', 'raw_json',
-    'custom_name', 'star_rating',
+    'custom_name', 'star_rating', 'first_seen',
     ...traitColumnNames,
   ];
   const placeholders = allColumnNames.map(() => '?').join(', ');
@@ -497,6 +550,7 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
     metadata ? JSON.stringify(metadata) : null,
     preservedCustomName,
     preservedStarRating,
+    finalFirstSeen,
     ...traitColumnNames.map((columnName) => traitValues[columnName]),
   ];
 
@@ -511,6 +565,50 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
     `INSERT OR REPLACE INTO ${kind} (${allColumnNames.join(', ')}) VALUES (${placeholders})`,
     params
   );
+
+  // V3: log any real trait change into nft_history (see initDatabase's
+  // own comment on that table) - deliberately conservative about what
+  // counts as "real" here, since the metadata API is already known to
+  // be flaky (see NOTES.md), and this table has no way to later tell a
+  // genuine in-game change apart from a fetch that happened to come
+  // back incomplete:
+  //   - Only ever runs for a successful fetch that actually returned
+  //     metadata (status 'ok') - a failed/skipped fetch obviously has
+  //     nothing new to compare.
+  //   - Only ever runs when there WAS a previous row (existingUserData
+  //     isn't null) - the very first time an NFT is ever fetched isn't
+  //     a "change" from anything, it's just the starting point.
+  //   - Only logs traits FilterPanel.js/getSortableFieldNames would
+  //     also treat as real (filterable !== false) - icon_image and any
+  //     future non-trait bookkeeping field stay out.
+  //   - Only logs when the NEW value is an actual, present value - if
+  //     a trait that had a real value last time comes back null/missing
+  //     this time, that's far more likely the metadata Lambda dropping
+  //     a field it shouldn't have (already a known failure mode - see
+  //     the trait_type warning further up this file) than an item
+  //     actually losing a trait in-game, so that's deliberately NOT
+  //     logged as a change - logging it would make this table's data
+  //     untrustworthy the moment the first flaky response came through.
+  if (status === 'ok' && metadata && existingUserData) {
+    const changedAt = Date.now();
+    for (const columnName of traitColumnNames) {
+      if (traitColumns[columnName].filterable === false) continue;
+      const oldValue = existingUserData[columnName];
+      const newValue = traitValues[columnName];
+      if (newValue === null || newValue === undefined) continue;
+      // Loose equality on purpose: an integer column can come back from
+      // SQLite as a JS number while the freshly-parsed JSON value is
+      // (depending on how the metadata API happened to send it) a
+      // number or a numeric string - `==` treats 5 and "5" as equal,
+      // so a same-value fetch doesn't get logged as a "change" just
+      // because of a type mismatch that isn't a real difference.
+      if (oldValue == newValue) continue;
+      await db.runAsync(
+        `INSERT INTO nft_history (kind, nonce, field_name, old_value, new_value, changed_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        [kind, nonce, columnName, oldValue === null || oldValue === undefined ? null : String(oldValue), String(newValue), changedAt]
+      );
+    }
+  }
 }
 
 /**
@@ -573,7 +671,7 @@ export async function getColumnRange(kind, columnName, ownerAddresses) {
  *     better" - per how it was designed. 0/null/undefined means "no
  *     rating filter".
  */
-export async function queryNfts(kind, ownerAddresses, filters = {}, excludeDeleted = false, searchText = '', starRating = null) {
+export async function queryNfts(kind, ownerAddresses, filters = {}, excludeDeleted = false, searchText = '', starRating = null, sortField = 'nonce', sortDirection = 'asc') {
   const db = await getDatabase();
   const traitColumns = TRAIT_COLUMNS[kind];
 
@@ -620,8 +718,62 @@ export async function queryNfts(kind, ownerAddresses, filters = {}, excludeDelet
     }
   }
 
+  // ORDER BY nonce ASC here is deliberately unconditional, regardless of
+  // what sortField/sortDirection actually asked for - it's what gives
+  // every sort below its "ID ascending" tiebreaker automatically. Array
+  // sorting in JS is guaranteed stable (equal elements keep their
+  // original relative order), so starting from a nonce-ordered array
+  // and then sorting by whatever the user actually picked means ties on
+  // that field naturally fall back to plain ID order, without writing
+  // any separate tiebreak logic - see buildSortComparator below.
   const sql = `SELECT * FROM ${kind} WHERE ${whereClauses.join(' AND ')} ORDER BY nonce ASC`;
-  return db.getAllAsync(sql, params);
+  const rows = await db.getAllAsync(sql, params);
+
+  if (sortField === 'nonce' && sortDirection === 'asc') {
+    // Already exactly the order the query above produced - nothing left
+    // to do (this is also today's original, pre-sorting-feature
+    // behavior, unchanged for anyone who's never touched Sort).
+    return rows;
+  }
+
+  return [...rows].sort(buildSortComparator(sortField, sortDirection, traitColumns));
+}
+
+// Compares two rows for queryNfts' sort - `sortField` is either 'nonce'/
+// 'first_seen' (plain numbers, not part of TRAIT_COLUMNS) or one of this
+// kind's actual trait columns. `rarity` gets its own special case since
+// "Common < Uncommon < Rare < ..." isn't alphabetical order (see
+// RARITY_ORDER's own comment in schema.js) - every other text trait
+// just sorts alphabetically, and every integer trait numerically.
+function buildSortComparator(sortField, sortDirection, traitColumns) {
+  const columnKind = traitColumns[sortField]?.kind ?? 'integer'; // nonce/first_seen are both INTEGER columns
+  const directionMultiplier = sortDirection === 'desc' ? -1 : 1;
+
+  return (rowA, rowB) => {
+    const valueA = rowA[sortField];
+    const valueB = rowB[sortField];
+    const missingA = valueA === null || valueA === undefined;
+    const missingB = valueB === null || valueB === undefined;
+
+    // An NFT that simply doesn't have this trait isn't meaningfully
+    // "highest" or "lowest" - it's just not comparable, so it always
+    // sorts to the very end, regardless of ascending/descending (i.e.
+    // NOT affected by directionMultiplier below - flipping the sort
+    // direction shouldn't move missing values to the front).
+    if (missingA && missingB) return 0;
+    if (missingA) return 1;
+    if (missingB) return -1;
+
+    let comparison;
+    if (sortField === 'rarity') {
+      comparison = RARITY_ORDER.indexOf(valueA) - RARITY_ORDER.indexOf(valueB);
+    } else if (columnKind === 'text') {
+      comparison = String(valueA).localeCompare(String(valueB));
+    } else {
+      comparison = Number(valueA) - Number(valueB);
+    }
+    return comparison * directionMultiplier;
+  };
 }
 
 /**

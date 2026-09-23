@@ -199,3 +199,24 @@ export const DEVIKIN_FILTER_GROUPS = [
 // whether the fetch worked, and the full original response as a safety
 // net). See database.js for how these are used.
 export const BASE_COLUMNS = ['nonce', 'owner_address', 'name', 'image', 'local_image_path', 'description', 'status', 'fetched_at', 'raw_json', 'deleted', 'comment'];
+
+// Which fields a collection can be sorted by (see CollectionView.js's
+// Sort button, and queryNfts in database.js which does the actual
+// sorting) - `nonce` (plain ID order, today's original/default
+// behavior) and `first_seen` (when this app first ever saw this NFT,
+// not when it was last re-fetched - see initDatabase's first_seen
+// column) are always sortable on every kind, alongside every trait this
+// kind actually has that's meant to be user-facing (the same
+// `filterable !== false` rule FilterPanel.js already uses for its own
+// field list - `icon_image` is the one exception today, a bookkeeping
+// path rather than a real trait, so it's excluded here the same way).
+// Deliberately just returns bare field names, not human-readable
+// labels or a UI component - see App.js's own humanizeColumnName usage
+// for turning these into what's actually shown in the Sort picker.
+export function getSortableFieldNames(kind) {
+  const traitColumns = TRAIT_COLUMNS[kind];
+  const traitFieldNames = Object.keys(traitColumns).filter(
+    (columnName) => traitColumns[columnName].filterable !== false
+  );
+  return ['nonce', 'first_seen', ...traitFieldNames];
+}

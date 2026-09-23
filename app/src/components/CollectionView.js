@@ -73,7 +73,7 @@ const SUMMARY_ROW_COMPONENTS = {
   equipment: EquipmentSummaryRow,
 };
 
-export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list' }) {
+export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', sortField = 'nonce', sortDirection = 'asc' }) {
   const { colors } = useTheme();
 
   // Tablet support: how many tiles fit per row, and how much extra
@@ -158,11 +158,11 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     }
 
     setIsLoading(true);
-    const result = await queryNfts(kind, ownerAddresses, filters, excludeDeleted, searchText, starFilter);
+    const result = await queryNfts(kind, ownerAddresses, filters, excludeDeleted, searchText, starFilter, sortField, sortDirection);
     setRows(result);
     setIsLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, ownerAddresses, filters, excludeDeleted, refreshKey, searchText, starFilter]);
+  }, [kind, ownerAddresses, filters, excludeDeleted, refreshKey, searchText, starFilter, sortField, sortDirection]);
 
   useEffect(() => {
     reloadRows();
