@@ -1480,11 +1480,13 @@ Native's `Linking.openURL()` - you still have to tap Send yourself once
 it opens, since this app has no backend or email-sending service of its
 own.
 
-It goes to `[old feedback address removed]` - a "+" alias of
-Raphael's own Gmail address (mail to it lands in his normal inbox, Gmail
-just treats everything before the "+" as the real address), which makes
-it easy to filter/label feedback separately without needing any new
-infrastructure. This was chosen over the original idea of routing
+It goes to a "+" alias of Raphael's own Gmail address (mail to it
+lands in his normal inbox, Gmail just treats everything before the
+"+" as the real address), which makes it easy to filter/label
+feedback separately without needing any new infrastructure. (The
+actual address isn't spelled out here since this file is in the
+public repo - see the "Feedback address changed" entry further down
+for why, and what it was replaced with.) This was chosen over the original idea of routing
 through a GitHub address after confirming (via GitHub's own docs)
 that GitHub's commit-attribution noreply addresses are outbound-only -
 they can't receive or forward inbound email from anyone, so "email
@@ -1726,8 +1728,7 @@ name/version moved back to the top of the body (it had briefly lived
 only in the subject line - now it's in both places, since the subject
 line is still handy for scanning an inbox); and the "Email:" line is
 now a new optional form field for the sender's OWN email address, not
-the fixed `[old feedback address removed]` address the draft is
-addressed to - the point of that line is giving Raphael a way to reply
+the fixed feedback address the draft is addressed to - the point of that line is giving Raphael a way to reply
 to whoever sent the feedback, which the fixed address can't do since
 it's always the same value. The draft's actual `mailto:` recipient is
 unchanged; only what appears as body text changed.
@@ -1838,8 +1839,8 @@ whole panel is hidden and re-shown.
 ## Feedback address changed - primary email dropped from the app's source
 
 The Feedback address (`FEEDBACK_EMAIL` in `Feedback.js`) was
-`[old feedback address removed]` - a "+" alias of Raphael's own
-primary Gmail address - since the feature was first built (see the
+a "+" alias of Raphael's own primary Gmail address - since the
+feature was first built (see the
 "Feedback form (V2)" section above for that original reasoning). It
 worked exactly as designed: mail addressed to that alias landed
 straight in his normal inbox, confirmed by an actual test send. But
