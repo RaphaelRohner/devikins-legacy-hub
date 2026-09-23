@@ -531,11 +531,11 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
           items excluded, regardless of the switch below.
           position: 'absolute' + left/right: 0 (countTextWrap) centers
           this purely on whichever row it's placed in, completely
-          ignoring how wide the Deleted switch (or Show filters button)
+          ignoring how wide the Deleted switch (or List/Tiles button)
           next to it is - that's what makes it land at TRUE center
           instead of drifting toward whichever side has less content.
           pointerEvents="none" is required now that this sometimes
-          shares a row with the Show filters button - since the box
+          shares a row with the List/Tiles button - since the box
           spans the row edge-to-edge (left: 0, right: 0) to center
           itself, without this it would sit on top of the button and
           absorb taps meant for it.
@@ -545,15 +545,23 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
           it in a plain View and putting pointerEvents there instead is
           the more dependable way to do this on Android. */}
       <View pointerEvents="none" style={styles.countTextWrap}>
-        <Text style={[styles.countText, { color: colors.secondaryText }]}>
-          {notDeletedCount} {COLLECTIONS[kind].label}
-        </Text>
+        <View style={[styles.countPill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.countText, { color: colors.secondaryText }]}>
+            {notDeletedCount} {COLLECTIONS[kind].label}
+          </Text>
+        </View>
       </View>
 
       {/* Off by default (deleted items stay visible, just greyed out -
           see the summary row components). Switching this on excludes
-          them from the list entirely, until switched back off again. */}
-      <View style={styles.deletedSwitchGroup}>
+          them from the list entirely, until switched back off again.
+          Given the same border/background pill treatment as the count
+          above and every other control in this row, per feedback - the
+          actual Switch stays a real native Switch rather than becoming
+          a custom tap-to-flip button, since its track color is what
+          shows the current on/off state at a glance; only the
+          surrounding box is new. */}
+      <View style={[styles.deletedSwitchGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.deletedSwitchLabel, { color: colors.text }]}>Deleted</Text>
         <Switch
           value={excludeDeleted}
@@ -785,7 +793,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    height: 40,
+    justifyContent: 'center',
   },
   anchorToggleText: {
     fontWeight: '600',
@@ -811,7 +820,7 @@ const styles = StyleSheet.create({
   },
   // Pulls the count text out of the row's normal flow entirely and
   // centers it purely against the row's own width (left: 0, right: 0,
-  // textAlign: 'center'). This is deliberately independent of whatever
+  // alignItems: 'center'). This is deliberately independent of whatever
   // else is in the row - an earlier version tried to center it with a
   // pair of equal flex: 1 spacers instead, but React Native flex items
   // don't shrink below their content size by default, so the side
@@ -820,28 +829,60 @@ const styles = StyleSheet.create({
   // such issue, since it ignores siblings altogether.
   // Wraps the count Text so pointerEvents="none" can be set on a plain
   // View (see the JSX comment above for why it's here and not directly
-  // on the Text).
+  // on the Text). alignItems: 'center' is what centers the count PILL
+  // itself within this full-width wrapper now (added once the count
+  // became a real bordered/background pill rather than bare Text - the
+  // old textAlign: 'center' on countText handled centering back when
+  // this View just stretched plain text across its full width; a pill
+  // with its own border shouldn't stretch that way, so alignItems here
+  // took over that job instead).
   countTextWrap: {
     position: 'absolute',
     left: 0,
     right: 0,
+    alignItems: 'center',
   },
+  // The count's actual visible box, per feedback wanting it (and the
+  // Deleted switch below) to look like the row's other buttons rather
+  // than bare text/controls with no border - same height as
+  // anchorToggleButton above (List/Tiles), which this and
+  // deletedSwitchGroup below are both matched to explicitly.
+  countPill: {
+    height: 40,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderRadius: 8,
+  },
+  // height/borderWidth/borderRadius/paddingHorizontal are the same
+  // button treatment as countPill above, for the same reason -
+  // flexDirection/alignItems/gap (already here beforehand) are what
+  // actually lay out the label next to the Switch inside that box.
   deletedSwitchGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    height: 40,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: 8,
   },
   deletedSwitchLabel: {
     fontSize: 13,
     fontWeight: '600',
   },
   // Same button treatment as anchorToggleButton above, for the same
-  // reason - see its comment.
+  // reason - see its comment. Also pinned to the same explicit height
+  // now, for the same reason anchorToggleButton is - it used to match
+  // that button only because both happened to share the same
+  // paddingVertical number, which would have silently drifted apart
+  // once anchorToggleButton moved to an explicit height instead.
   removeButton: {
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 10,
+    height: 40,
+    justifyContent: 'center',
   },
   removeLinkText: {
     fontWeight: '600',
