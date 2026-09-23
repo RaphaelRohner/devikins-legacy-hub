@@ -788,8 +788,21 @@ function buildSortComparator(sortField, sortDirection, traitColumns) {
  * file comment for the full research trail). He's bred roughly 2,000
  * Devikins and the two rules that matter most are: always breed the
  * exact same Rarity, and always breed the exact same Procreations
- * Left - anything else is "a waste" (his words), so this function
- * doesn't offer near-matches, only exact ones on both.
+ * Left - anything else is "a waste" (his words).
+ *
+ * Rarity is a hard, non-negotiable exact match - there's no tolerance
+ * for it, ever. Procreations Left defaults to an exact match too, but
+ * `procreationsTolerance` (0 by default) can widen that to a +/-N
+ * range - see Breeding Helper's "Allow +/-1" toggle. This is a real,
+ * sometimes-necessary exception per Raphael himself, not a mistake: a
+ * mismatched pair still breeds fine in-game, it's just priced (and its
+ * offspring's own Procreations Left is set) off whichever of the two
+ * parents has FEWER Procreations Left, not the higher one - e.g.
+ * pairing a 10-left with a 6-left charges the 6-left price and produces
+ * a 5-left offspring. BreedingHelper.js is responsible for surfacing
+ * that consequence per-candidate once a mismatched result comes back
+ * from here - this function only decides which candidates are eligible
+ * to show at all.
  *
  * Also excluded unconditionally, regardless of rarity/procreations:
  *   - the selected Devikin itself (excludeNonce)
@@ -809,9 +822,18 @@ function buildSortComparator(sortField, sortDirection, traitColumns) {
  * every known trait in schema.js) - avoiding related pairs is still
  * entirely on the user, exactly as it is in the game itself today.
  */
-export async function getBreedingCandidates(ownerAddresses, { rarity, procreationsLeft, excludeNonce }) {
+export async function getBreedingCandidates(ownerAddresses, { rarity, procreationsLeft, excludeNonce, procreationsTolerance = 0 }) {
   const db = await getDatabase();
   const { clause, params: ownerParams } = ownerAddressClause(ownerAddresses);
+  // Math.max(1, ...) on the lower bound rather than letting it go to 0
+  // or negative - a 0-or-below Procreations Left is already excluded by
+  // the "procreations_left > 0" clause below regardless, but clamping
+  // here keeps the BETWEEN bounds themselves sensible even when
+  // procreationsTolerance is large. tolerance=0 collapses this to a
+  // plain exact match (min === max === procreationsLeft), so the same
+  // query handles both the default and the widened case.
+  const minProcreations = Math.max(1, procreationsLeft - procreationsTolerance);
+  const maxProcreations = procreationsLeft + procreationsTolerance;
   const rows = await db.getAllAsync(
     `SELECT * FROM devikin
      WHERE ${clause}
@@ -819,11 +841,11 @@ export async function getBreedingCandidates(ownerAddresses, { rarity, procreatio
        AND (deleted IS NULL OR deleted = 0)
        AND rarity = ?
        AND rarity != 'Eldritch'
-       AND procreations_left = ?
+       AND procreations_left BETWEEN ? AND ?
        AND procreations_left > 0
        AND nonce != ?
      ORDER BY nonce ASC`,
-    [...ownerParams, rarity, procreationsLeft, excludeNonce]
+    [...ownerParams, rarity, minProcreations, maxProcreations, excludeNonce]
   );
   return rows;
 }

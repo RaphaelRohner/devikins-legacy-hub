@@ -19,19 +19,29 @@
  * Raphael's own breeding experience (roughly 2,000 procreations done):
  *
  *   1. Always breed the exact same Rarity - anything else is a waste.
- *   2. Always breed the exact same Procreations Left - anything else is
- *      a waste.
+ *      No exception to this one, ever.
+ *   2. Always breed the exact same Procreations Left - anything else
+ *      is a waste. There IS a real, sometimes-necessary exception here
+ *      though: a mismatched pair (say 10 left with 6 left) still
+ *      breeds fine in-game, it's just priced off whichever parent has
+ *      FEWER Procreations Left, and the offspring's own Procreations
+ *      Left is (that lower number) - 1. The "Allow +/-1 Procreations
+ *      Left" toggle below widens Step 2's matches to include partners
+ *      one off from the selected Devikin's own count, for exactly
+ *      those times - it's opt-in and off by default, since an exact
+ *      match is still the better outcome whenever one's available.
  *   3. Genes are basically random - there's no way to steer them, so
  *      this screen doesn't try to filter or score by them.
  *   4. To raise your odds of a specific Affinity in the offspring, pair
  *      two Devikins that are BOTH strong in that same Affinity (1-10,
  *      10 is best - see the "Target Affinity" control below).
- *   5. The breeding cost is exponential per procreation used, and the
- *      starting amount scales by Rarity (confirmed for Common: 100,
- *      200, 400... and Uncommon: 200, 400, 800...; Rare/Mythic's
- *      starting numbers aren't confirmed yet) - deliberately left out
- *      of this screen for now rather than showing a cost estimate that
- *      would be wrong for two of the four breedable tiers.
+ *   5. The breeding cost is exponential: it starts from a base amount
+ *      set by Rarity (Common 300, Uncommon 400, Rare 500, Mythic 600 -
+ *      all at a full 10 Procreations Left) and doubles for every
+ *      procreation already used - see src/constants/breedingRules.js
+ *      for the actual numbers and estimateBreedingCost, which Step 2
+ *      uses to show each candidate's estimated cost and the resulting
+ *      offspring's Procreations Left.
  *
  * THE ONE THING THIS SCREEN CANNOT DO, EVER: tell you whether two
  * Devikins are actually related (parent, sibling, offspring). No
@@ -61,14 +71,18 @@
  *
  *   STEP 2 - once a starting Devikin is selected, a second list shows
  *   every OTHER Devikin in your collection that shares its exact
- *   Rarity and exact Procreations Left (see getBreedingCandidates in
+ *   Rarity, and (by default) its exact Procreations Left too - or a
+ *   Procreations Left one off from it either way, if "Allow +/-1" is
+ *   toggled on (see rule 2 above and getBreedingCandidates in
  *   src/db/database.js for the actual query and the full eligibility
- *   rules). If a Target Affinity was chosen back in Step 1, matches are
- *   sorted strongest-first for that Affinity. Tapping a match expands a
- *   quick side-by-side Affinity comparison against your selected
- *   Devikin, right in place - just enough to sanity-check a pairing
- *   without leaving this screen. "Change" returns to Step 1 without
- *   losing your filter picks.
+ *   rules). Matches are sorted with the closest Procreations Left match
+ *   first (exact matches before +/-1 ones), then - if a Target Affinity
+ *   was chosen back in Step 1 - strongest-first for that Affinity.
+ *   Tapping a match expands a quick side-by-side Affinity comparison
+ *   against your selected Devikin, right in place, including the
+ *   estimated cost and the offspring's resulting Procreations Left -
+ *   just enough to sanity-check a pairing without leaving this screen.
+ *   "Change" returns to Step 1 without losing your filter picks.
  *
  * This intentionally does NOT build the separate "Compare two NFTs"
  * screen that was asked for alongside this one - that's its own,
@@ -77,11 +91,12 @@
  */
 
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, Image, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, Image, Switch, StyleSheet } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../context/ThemeContext';
 import { queryNfts, getDistinctColumnValues, getColumnRange, getBreedingCandidates } from '../db/database';
 import { RARITY_ORDER } from '../constants/schema';
+import { estimateBreedingCost } from '../constants/breedingRules';
 import { NO_FILTER } from './FilterPanel';
 
 // The six Affinity columns every Devikin has (see schema.js's
@@ -128,6 +143,13 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
   // pick since it's part of "what am I looking for", but it only ever
   // affects Step 2's ordering (see the loadMatches effect below).
   const [targetAffinity, setTargetAffinity] = useState(NO_FILTER);
+  // Off by default - Step 2 only shows partners at the selected
+  // Devikin's EXACT Procreations Left. Switching this on widens that
+  // to +/-1 either way, for the real (if less ideal) cases where an
+  // exact match just isn't available yet - see rule 2 in the file
+  // comment above for what a mismatched pair actually costs/produces,
+  // which MatchRow surfaces per-candidate once this is on.
+  const [allowProcreationsTolerance, setAllowProcreationsTolerance] = useState(false);
 
   const [pickList, setPickList] = useState([]);
   const [pickListLoading, setPickListLoading] = useState(true);
@@ -240,11 +262,15 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
 
   // Once a starting Devikin is selected, loads its matching partners -
   // see getBreedingCandidates' own comment in database.js for exactly
-  // what "matching" means (same Rarity, same Procreations Left, both
-  // eligible). If a Target Affinity was picked in Step 1, matches are
-  // re-sorted strongest-first for that one Affinity - a soft ordering
-  // preference on top of the hard match, not a filter (a lower-affinity
-  // match still shows, just further down).
+  // what "matching" means (same Rarity, same Procreations Left by
+  // default, or +/-1 if allowProcreationsTolerance is on - both
+  // eligible). Sorted with the closest Procreations Left match first
+  // (an exact match always beats a +/-1 one, per rule 2 in the file
+  // comment above - a mismatched pair is only ever a fallback, not an
+  // equal alternative), then - if a Target Affinity was picked in Step
+  // 1 - strongest-first for that one Affinity as a secondary, soft
+  // ordering preference (a lower-affinity match still shows, just
+  // further down).
   useEffect(() => {
     if (!selected) {
       setMatches([]);
@@ -258,11 +284,19 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
         rarity: selected.rarity,
         procreationsLeft: selected.procreations_left,
         excludeNonce: selected.nonce,
+        procreationsTolerance: allowProcreationsTolerance ? 1 : 0,
       });
 
-      const sorted = targetAffinity !== NO_FILTER
-        ? [...rows].sort((a, b) => (Number(b[targetAffinity]) || 0) - (Number(a[targetAffinity]) || 0))
-        : rows;
+      const selectedProcreationsLeft = Number(selected.procreations_left);
+      const sorted = [...rows].sort((a, b) => {
+        const diffA = Math.abs(Number(a.procreations_left) - selectedProcreationsLeft);
+        const diffB = Math.abs(Number(b.procreations_left) - selectedProcreationsLeft);
+        if (diffA !== diffB) return diffA - diffB;
+        if (targetAffinity !== NO_FILTER) {
+          return (Number(b[targetAffinity]) || 0) - (Number(a[targetAffinity]) || 0);
+        }
+        return 0; // Array.prototype.sort is stable - falls back to the nonce ASC order the SQL query already returned
+      });
 
       if (!cancelled) {
         setMatches(sorted);
@@ -274,7 +308,7 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [selected, targetAffinity, ownerAddresses]);
+  }, [selected, targetAffinity, allowProcreationsTolerance, ownerAddresses]);
 
   function handleAffinityRangeChange(columnName, key, text) {
     setAffinityRanges((previous) => ({
@@ -292,6 +326,31 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
     setSelected(null);
     setExpandedMatchNonce(null);
   }
+
+  // Shared between Step 1's filter panel and Step 2's header (see the
+  // listHeader definitions below) - toggling this re-queries Step 2's
+  // matches immediately (it's a dependency of the loadMatches effect
+  // above) even when it's changed from inside Step 2 itself, so a user
+  // who hits "0 eligible partners found" can turn it on right there
+  // without going back to Step 1 first.
+  const toleranceToggleRow = (
+    <View style={[styles.filterRow, styles.toggleRow]}>
+      <View style={styles.toggleTextColumn}>
+        <Text style={[styles.filterLabel, { color: colors.text }]}>Allow +/-1 Procreations Left</Text>
+        <Text style={[styles.filterHint, { color: colors.secondaryText }]}>
+          Off by default (rule 2: matching Procreations Left is the better outcome). Turning this on also shows
+          partners one Procreations Left off from your selected Devikin, for when an exact match isn't available -
+          the game charges based on whichever of the two is lower, and the offspring's Procreations Left is that
+          lower number minus one, both shown per-candidate below once this is on.
+        </Text>
+      </View>
+      <Switch
+        value={allowProcreationsTolerance}
+        onValueChange={setAllowProcreationsTolerance}
+        trackColor={{ true: colors.primary }}
+      />
+    </View>
+  );
 
   // ---- Step 1: the filter controls, rendered as the list's header ----
   const filterControls = (
@@ -356,6 +415,8 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
           </View>
         </View>
       )}
+
+      {toleranceToggleRow}
 
       <TouchableOpacity onPress={() => setAffinitiesExpanded((current) => !current)} style={styles.groupHeaderButton}>
         <Text style={[styles.groupHeaderText, { color: colors.primary }]}>
@@ -444,10 +505,12 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
         </Text>
       </View>
 
+      {toleranceToggleRow}
+
       <Text style={[styles.resultsCountLine, { color: colors.secondaryText }]}>
         {matchesLoading
           ? 'Loading matches...'
-          : `${matches.length} eligible partner${matches.length === 1 ? '' : 's'} found (same Rarity, same Procreations Left)`}
+          : `${matches.length} eligible partner${matches.length === 1 ? '' : 's'} found (same Rarity${allowProcreationsTolerance ? ', Procreations Left within 1' : ', same Procreations Left'})`}
       </Text>
     </View>
   ) : (
@@ -548,15 +611,28 @@ function PickRow({ nft, onPress, colors }) {
   );
 }
 
-// Step 2's row - Rarity/Procreations Left are always identical to the
-// selected Devikin (that's the whole point of getBreedingCandidates'
-// filter), so they're left off here to avoid repeating the same two
-// lines on every single row; Ancestry is still shown since it can
-// differ. The chosen Target Affinity (if any) gets its own highlighted
-// line so the sort order this list is already in is visible at a
-// glance, not just implied. Tapping a row expands a quick side-by-side
-// Affinity comparison against the selected Devikin, right in place.
+// Step 2's row - Rarity is always identical to the selected Devikin
+// (that's the whole point of getBreedingCandidates' filter), so it's
+// left off here to avoid repeating it on every single row; Procreations
+// Left is now shown (it can differ from the selected Devikin's own when
+// the "Allow +/-1" toggle is on - see BreedingHelper.js's own file
+// comment for rule 2) with a note when it does, plus the estimated cost
+// and the offspring's resulting Procreations Left - both computed off
+// whichever of the two parents has FEWER Procreations Left, per how the
+// game actually prices a mismatched pair (see estimateBreedingCost's own
+// comment in src/constants/breedingRules.js). Ancestry is shown too
+// since it can differ. The chosen Target Affinity (if any) gets its own
+// highlighted line so the sort order this list is already in is visible
+// at a glance, not just implied. Tapping a row expands a quick side-by-
+// side Affinity comparison against the selected Devikin, right in place.
 function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, colors }) {
+  const candidateProcreationsLeft = Number(nft.procreations_left);
+  const selectedProcreationsLeft = Number(compareWith.procreations_left);
+  const proceationsMismatch = candidateProcreationsLeft !== selectedProcreationsLeft;
+  const lowerProcreationsLeft = Math.min(candidateProcreationsLeft, selectedProcreationsLeft);
+  const estimatedCost = estimateBreedingCost(nft.rarity, lowerProcreationsLeft);
+  const offspringProcreationsLeft = lowerProcreationsLeft - 1;
+
   return (
     <TouchableOpacity
       style={[styles.row, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }]}
@@ -568,10 +644,19 @@ function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, 
         <Text style={[styles.idLine, { color: colors.secondaryText }]}>
           #{nft.nonce}{nft.custom_name ? ` · ${nft.custom_name}` : ''}
         </Text>
+        <Text style={[styles.line, { color: colors.text }]}>
+          Procreations Left: {nft.procreations_left}
+          {proceationsMismatch ? ` (yours is ${compareWith.procreations_left} - breeding uses the lower count)` : ''}
+        </Text>
         <Text style={[styles.line, { color: colors.text }]}>Ancestry: {nft.ancestry ?? '—'}</Text>
         {targetAffinity !== NO_FILTER && (
           <Text style={[styles.line, styles.highlightedLine, { color: colors.primary }]}>
             {AFFINITY_LABELS[targetAffinity]} Affinity: {nft[targetAffinity] ?? '—'}
+          </Text>
+        )}
+        {estimatedCost !== null && (
+          <Text style={[styles.line, { color: colors.secondaryText }]}>
+            Est. cost: {estimatedCost.toLocaleString()} · offspring gets {offspringProcreationsLeft} Procreations Left
           </Text>
         )}
         <Text style={[styles.tapHint, { color: colors.secondaryText }]}>
@@ -651,6 +736,18 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     marginBottom: 10,
+  },
+  // The Allow +/-1 toggle - a label/hint column next to the Switch
+  // itself, rather than stacked like the rest of filterRow's contents,
+  // since a Switch reads best sitting right next to what it controls.
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  toggleTextColumn: {
+    flex: 1,
   },
   filterLabel: {
     fontSize: 13,
