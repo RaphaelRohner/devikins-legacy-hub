@@ -179,7 +179,28 @@ export default function FilterPanel({ kind, availableOptions, pendingFilters, on
     <View style={[styles.container, { backgroundColor: colors.surfaceAlt }]}>
       <View style={[styles.filterRow, styles.starFilterRow, { borderBottomColor: colors.border }]}>
         <Text style={[styles.filterLabel, { color: colors.text }]}>Rating (exact match)</Text>
-        <StarRating value={starFilter} onChange={onStarFilterChange} size={22} />
+        <View style={styles.starFilterInputRow}>
+          <StarRating value={starFilter} onChange={onStarFilterChange} size={22} />
+          {/* Tapping the already-lit star clears it too (StarRating's
+              own built-in toggle), but that's easy to miss since
+              nothing about the row hints at it - per feedback asking
+              for an explicit, visible way to un-set it, this is the
+              same "only shown once there's something to clear" pattern
+              NftCard.js's own Clear Rating button already uses for the
+              per-item rating, just placed inline next to the stars
+              here (rather than below them) since this row has the
+              horizontal room and every other filter type already has
+              its own inline "reset to nothing" control (a dropdown's
+              "All" option, or just clearing a min/max box). */}
+          {starFilter > 0 ? (
+            <TouchableOpacity
+              style={[styles.clearStarFilterButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => onStarFilterChange(0)}
+            >
+              <Text style={[styles.clearStarFilterButtonText, { color: colors.cancelText }]}>Clear</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
       {alwaysVisibleColumnNames.map(renderFilterRow)}
@@ -221,6 +242,30 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     marginBottom: 14,
     borderBottomWidth: 1,
+  },
+  // Holds the star row and its Clear button side by side - StarRating
+  // itself only lays out its five stars (flexDirection: 'row'), so
+  // this wrapper is what puts the button next to that, rather than
+  // below it.
+  starFilterInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  // A small, quiet outlined button (not filled) - same "remove
+  // something, don't shout about it" treatment as NftCard.js's own
+  // Clear Rating button and CollectionView.js's Filters ✕ button,
+  // just sized down to sit compactly next to the stars rather than as
+  // its own full-width row.
+  clearStarFilterButton: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  clearStarFilterButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   filterLabel: {
     fontSize: 13,
