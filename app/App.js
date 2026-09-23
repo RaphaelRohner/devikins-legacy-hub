@@ -67,6 +67,7 @@ import ProgressBar from './src/components/ProgressBar';
 import WalletManager from './src/components/WalletManager';
 import Feedback from './src/components/Feedback';
 import HelpAssistant from './src/components/HelpAssistant';
+import BreedingHelper from './src/components/BreedingHelper';
 import SortPickerModal from './src/components/SortPickerModal';
 import { humanizeColumnName } from './src/components/FilterPanel';
 import appConfig from './app.json';
@@ -464,7 +465,7 @@ function AppContent() {
         setIsMenuOpen(false);
         return true; // handled - don't also exit the app
       }
-      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help') {
+      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help' || currentScreen === 'breeding') {
         goToScreen(lastCollectionScreen);
         return true; // handled - don't also exit the app
       }
@@ -805,6 +806,22 @@ function AppContent() {
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <HelpAssistant onClose={() => goToScreen(lastCollectionScreen)} />
+      </SafeAreaView>
+    );
+  }
+
+  // The Breeding Helper - the Devikins-only breeding-partner finder,
+  // opened from the hamburger menu right after Equipment (see
+  // HamburgerMenu.js's own file comment). Same full-screen-takeover
+  // pattern as every other menu screen above. Needs `walletAddresses`
+  // (same prop CollectionView.js gets) since it queries the user's own
+  // Devikins directly, same as CollectionView.js does - see
+  // BreedingHelper.js's own file comment for the full feature.
+  if (currentScreen === 'breeding') {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <BreedingHelper ownerAddresses={walletAddresses} onClose={() => goToScreen(lastCollectionScreen)} />
       </SafeAreaView>
     );
   }

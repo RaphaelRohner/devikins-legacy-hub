@@ -9,15 +9,16 @@
  * This REPLACES the old TabBar.js (Devikins/Weapons/Equipment tab row)
  * and the old Fetch/Update + Wallets buttons that used to sit above the
  * tabs - all of that is now reached from here instead, as one consistent
- * list of seven entries:
+ * list of eight entries:
  *
  *   1. Wallets (x)   - opens the Wallets management screen
  *   2. Fetch/Update  - starts a new scan (doesn't change screens)
  *   3. Devikins      - opens the Devikins overview
  *   4. Weapons       - opens the Weapons overview
  *   5. Equipment     - opens the Equipment overview
- *   6. Feedback      - opens the feedback form
- *   7. Ask Devi (Help) - opens the offline in-app FAQ helper
+ *   6. Breeding Helper - opens the Devikins breeding-partner finder
+ *   7. Feedback      - opens the feedback form
+ *   8. Ask Devi (Help) - opens the offline in-app FAQ helper
  *
  * Like every other "screen" in this app (see App.js's own file comment),
  * this isn't a real navigation library - it's a plain full-screen Modal
@@ -84,6 +85,12 @@ export default function HamburgerMenu({
       label: 'Equipment',
       screen: 'equipment',
       onPress: () => onSelectScreen('equipment'),
+    },
+    {
+      key: 'breeding',
+      label: 'Breeding Helper',
+      screen: 'breeding',
+      onPress: () => onSelectScreen('breeding'),
     },
     {
       key: 'feedback',

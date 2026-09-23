@@ -1,0 +1,810 @@
+/**
+ * BreedingHelper.js
+ *
+ * A guided, two-step screen for finding a good breeding partner among
+ * your own Devikins. This is App.js's eighth "screen" (see App.js's own
+ * file comment for the pattern - `currentScreen === 'breeding'`), opened
+ * from the hamburger menu, with the same full-screen-takeover shape and
+ * small round "‹" back button every other menu screen uses (Wallets/
+ * Feedback/Devi).
+ *
+ * WHY THIS EXISTS AND WHAT IT CAN'T DO: there's no official documentation
+ * of Devikins breeding strategy - the game's own guide pages cover
+ * eligibility (not immediate relatives, max 10 procreations per Devikin,
+ * Eldritch can't breed at all - it's one of the breeding *goals*, kept
+ * rare on purpose) and the mechanical bits (incubator type controls the
+ * offspring's Rarity cap; genes "blend" with a small mutation chance;
+ * Ancestry comes from "one of the parents") but nothing about which
+ * PAIRINGS are actually worth attempting. That part comes entirely from
+ * Raphael's own breeding experience (roughly 2,000 procreations done):
+ *
+ *   1. Always breed the exact same Rarity - anything else is a waste.
+ *   2. Always breed the exact same Procreations Left - anything else is
+ *      a waste.
+ *   3. Genes are basically random - there's no way to steer them, so
+ *      this screen doesn't try to filter or score by them.
+ *   4. To raise your odds of a specific Affinity in the offspring, pair
+ *      two Devikins that are BOTH strong in that same Affinity (1-10,
+ *      10 is best - see the "Target Affinity" control below).
+ *   5. The breeding cost is exponential per procreation used, and the
+ *      starting amount scales by Rarity (confirmed for Common: 100,
+ *      200, 400... and Uncommon: 200, 400, 800...; Rare/Mythic's
+ *      starting numbers aren't confirmed yet) - deliberately left out
+ *      of this screen for now rather than showing a cost estimate that
+ *      would be wrong for two of the four breedable tiers.
+ *
+ * THE ONE THING THIS SCREEN CANNOT DO, EVER: tell you whether two
+ * Devikins are actually related (parent, sibling, offspring). No
+ * lineage/parent data exists anywhere in this app's metadata source -
+ * confirmed against every known trait in src/constants/schema.js. That
+ * check is still entirely on you, exactly like it is in the game
+ * itself today (this is called out on-screen, prominently, in Step 2 -
+ * see the disclaimer banner below). If the game or its records ever
+ * become more open about this, this screen is exactly where that data
+ * would plug in.
+ *
+ * THE FLOW ITSELF, matching what was asked for almost exactly ("pick
+ * say common, 8 procreations left, ancestry xyz, and values for the
+ * affinities. You get a list and select one then you get a list on the
+ * other side of the screen matching."):
+ *
+ *   STEP 1 - a small, purpose-built filter panel (Rarity, Ancestry,
+ *   Procreations Left, and a collapsible Affinities section) narrows
+ *   down YOUR OWN Devikins to a pickable list. This is deliberately a
+ *   separate, simpler set of controls from FilterPanel.js/
+ *   CollectionView.js's own filters - it only ever shows breeding-
+ *   relevant columns, filters immediately as you type/pick (no Apply
+ *   button - there's no "several changes at once" reason to hold these
+ *   back the way the main list's filters do), and Eldritch is never
+ *   offered as a Rarity choice since it can't breed. Tapping a result
+ *   selects it as your starting Devikin.
+ *
+ *   STEP 2 - once a starting Devikin is selected, a second list shows
+ *   every OTHER Devikin in your collection that shares its exact
+ *   Rarity and exact Procreations Left (see getBreedingCandidates in
+ *   src/db/database.js for the actual query and the full eligibility
+ *   rules). If a Target Affinity was chosen back in Step 1, matches are
+ *   sorted strongest-first for that Affinity. Tapping a match expands a
+ *   quick side-by-side Affinity comparison against your selected
+ *   Devikin, right in place - just enough to sanity-check a pairing
+ *   without leaving this screen. "Change" returns to Step 1 without
+ *   losing your filter picks.
+ *
+ * This intentionally does NOT build the separate "Compare two NFTs"
+ * screen that was asked for alongside this one - that's its own,
+ * differently-scoped feature (general-purpose comparison, not specific
+ * to breeding) and gets its own design pass.
+ */
+
+import { useEffect, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, FlatList, Image, StyleSheet } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
+import { useTheme } from '../context/ThemeContext';
+import { queryNfts, getDistinctColumnValues, getColumnRange, getBreedingCandidates } from '../db/database';
+import { RARITY_ORDER } from '../constants/schema';
+import { NO_FILTER } from './FilterPanel';
+
+// The six Affinity columns every Devikin has (see schema.js's
+// TRAIT_COLUMNS.devikin) - Overall plus one per stat. Procreations Left
+// and Rarity get their own dedicated controls below since they're hard
+// eligibility rules (see the file comment above), not a soft preference
+// like these are.
+const AFFINITY_COLUMNS = [
+  'overall_affinity',
+  'vitality_affinity',
+  'power_affinity',
+  'fortitude_affinity',
+  'agility_affinity',
+  'sanity_affinity',
+];
+
+const AFFINITY_LABELS = {
+  overall_affinity: 'Overall',
+  vitality_affinity: 'Vitality',
+  power_affinity: 'Power',
+  fortitude_affinity: 'Fortitude',
+  agility_affinity: 'Agility',
+  sanity_affinity: 'Sanity',
+};
+
+export default function BreedingHelper({ ownerAddresses, onClose }) {
+  const { colors } = useTheme();
+
+  // ---- Step 1: filter options and picks ----
+  // availableOptions is derived from what's actually in the user's own
+  // Devikins, same reasoning as CollectionView.js's own availableOptions
+  // - no point offering an Ancestry nobody's collection has. Loaded once
+  // up front rather than re-derived on every filter change, since the
+  // set of POSSIBLE values doesn't change just because a filter narrowed
+  // the results.
+  const [availableOptions, setAvailableOptions] = useState({});
+  const [rarityFilter, setRarityFilter] = useState(NO_FILTER);
+  const [ancestryFilter, setAncestryFilter] = useState(NO_FILTER);
+  const [procreationsMin, setProcreationsMin] = useState('');
+  const [procreationsMax, setProcreationsMax] = useState('');
+  const [affinityRanges, setAffinityRanges] = useState({});
+  const [affinitiesExpanded, setAffinitiesExpanded] = useState(false);
+  // Which Affinity (if any) Step 2's matches get sorted by - a Step 1
+  // pick since it's part of "what am I looking for", but it only ever
+  // affects Step 2's ordering (see the loadMatches effect below).
+  const [targetAffinity, setTargetAffinity] = useState(NO_FILTER);
+
+  const [pickList, setPickList] = useState([]);
+  const [pickListLoading, setPickListLoading] = useState(true);
+
+  // ---- Step 2: the selected starting Devikin and its matches ----
+  const [selected, setSelected] = useState(null);
+  const [matches, setMatches] = useState([]);
+  const [matchesLoading, setMatchesLoading] = useState(false);
+  const [expandedMatchNonce, setExpandedMatchNonce] = useState(null);
+
+  // Loads the filter dropdown/range options once, from the user's own
+  // Devikins - same getDistinctColumnValues/getColumnRange functions
+  // CollectionView.js's own availableOptions effect uses, just scoped to
+  // exactly the columns this screen cares about instead of every
+  // filterable trait. Rarity deliberately drops Eldritch from the list
+  // of choices entirely (see the file comment above) and is put in
+  // breeding-ladder order the same way CollectionView.js orders it,
+  // rather than the database's default alphabetical order.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOptions() {
+      const options = {};
+
+      const rarityValues = await getDistinctColumnValues('devikin', 'rarity', ownerAddresses);
+      const breedableRarities = rarityValues
+        .filter((value) => value !== 'Eldritch')
+        .sort((a, b) => RARITY_ORDER.indexOf(a) - RARITY_ORDER.indexOf(b));
+      if (breedableRarities.length > 0) {
+        options.rarity = { kind: 'text', values: breedableRarities };
+      }
+
+      const ancestryValues = await getDistinctColumnValues('devikin', 'ancestry', ownerAddresses);
+      if (ancestryValues.length > 0) {
+        options.ancestry = { kind: 'text', values: ancestryValues };
+      }
+
+      const procreationsRange = await getColumnRange('devikin', 'procreations_left', ownerAddresses);
+      if (procreationsRange.min !== null) {
+        options.procreations_left = { kind: 'integer', ...procreationsRange };
+      }
+
+      for (const columnName of AFFINITY_COLUMNS) {
+        const range = await getColumnRange('devikin', columnName, ownerAddresses);
+        if (range.min !== null) {
+          options[columnName] = { kind: 'integer', ...range };
+        }
+      }
+
+      if (!cancelled) {
+        setAvailableOptions(options);
+      }
+    }
+
+    loadOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [ownerAddresses]);
+
+  // Re-runs the Step 1 query on every filter change - no separate Apply
+  // button here, unlike CollectionView.js's own Filters panel. That
+  // panel needs Apply because it's a large flat/grouped list where you
+  // typically set several picks together before they should take effect
+  // (see CollectionView.js's own file comment for the full reasoning).
+  // This screen's filter set is small and single-purpose (narrow down
+  // to ONE starting Devikin), so there's nothing lost by having each
+  // change reflect immediately - it reads more like a live search than
+  // a big filter form.
+  useEffect(() => {
+    if (selected) return; // Step 2 has taken over - no need to keep querying in the background
+    let cancelled = false;
+
+    async function loadPickList() {
+      setPickListLoading(true);
+      const filters = {};
+      if (rarityFilter !== NO_FILTER) filters.rarity = rarityFilter;
+      if (ancestryFilter !== NO_FILTER) filters.ancestry = ancestryFilter;
+      if (procreationsMin !== '' || procreationsMax !== '') {
+        filters.procreations_left = { min: procreationsMin, max: procreationsMax };
+      }
+      for (const columnName of AFFINITY_COLUMNS) {
+        const range = affinityRanges[columnName];
+        if (range && (range.min !== undefined && range.min !== '' || range.max !== undefined && range.max !== '')) {
+          filters[columnName] = range;
+        }
+      }
+
+      const rows = await queryNfts('devikin', ownerAddresses, filters, true, '', null, 'nonce', 'asc');
+      // Baseline breeding eligibility, enforced regardless of what the
+      // user picked above - matches getBreedingCandidates' own rules in
+      // database.js, so a Devikin that shows up here is always actually
+      // pickable as a starting point, never a dead end once you reach
+      // Step 2.
+      const eligible = rows.filter(
+        (row) => row.status === 'ok' && row.rarity !== 'Eldritch' && Number(row.procreations_left) > 0
+      );
+
+      if (!cancelled) {
+        setPickList(eligible);
+        setPickListLoading(false);
+      }
+    }
+
+    loadPickList();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, rarityFilter, ancestryFilter, procreationsMin, procreationsMax, affinityRanges, ownerAddresses]);
+
+  // Once a starting Devikin is selected, loads its matching partners -
+  // see getBreedingCandidates' own comment in database.js for exactly
+  // what "matching" means (same Rarity, same Procreations Left, both
+  // eligible). If a Target Affinity was picked in Step 1, matches are
+  // re-sorted strongest-first for that one Affinity - a soft ordering
+  // preference on top of the hard match, not a filter (a lower-affinity
+  // match still shows, just further down).
+  useEffect(() => {
+    if (!selected) {
+      setMatches([]);
+      return;
+    }
+    let cancelled = false;
+
+    async function loadMatches() {
+      setMatchesLoading(true);
+      const rows = await getBreedingCandidates(ownerAddresses, {
+        rarity: selected.rarity,
+        procreationsLeft: selected.procreations_left,
+        excludeNonce: selected.nonce,
+      });
+
+      const sorted = targetAffinity !== NO_FILTER
+        ? [...rows].sort((a, b) => (Number(b[targetAffinity]) || 0) - (Number(a[targetAffinity]) || 0))
+        : rows;
+
+      if (!cancelled) {
+        setMatches(sorted);
+        setMatchesLoading(false);
+      }
+    }
+
+    loadMatches();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, targetAffinity, ownerAddresses]);
+
+  function handleAffinityRangeChange(columnName, key, text) {
+    setAffinityRanges((previous) => ({
+      ...previous,
+      [columnName]: { ...previous[columnName], [key]: text },
+    }));
+  }
+
+  function handleSelectStarter(nft) {
+    setSelected(nft);
+    setExpandedMatchNonce(null);
+  }
+
+  function handleChangeSelection() {
+    setSelected(null);
+    setExpandedMatchNonce(null);
+  }
+
+  // ---- Step 1: the filter controls, rendered as the list's header ----
+  const filterControls = (
+    <View style={styles.filterBlock}>
+      <View style={styles.filterRow}>
+        <Text style={[styles.filterLabel, { color: colors.text }]}>Rarity</Text>
+        <View style={[styles.pickerWrapper, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Picker
+            selectedValue={rarityFilter}
+            onValueChange={setRarityFilter}
+            style={{ color: colors.text }}
+            dropdownIconColor={colors.text}
+          >
+            <Picker.Item label="All (breedable rarities)" value={NO_FILTER} />
+            {(availableOptions.rarity?.values ?? []).map((value) => (
+              <Picker.Item key={value} label={value} value={value} />
+            ))}
+          </Picker>
+        </View>
+      </View>
+
+      {availableOptions.ancestry && (
+        <View style={styles.filterRow}>
+          <Text style={[styles.filterLabel, { color: colors.text }]}>Ancestry</Text>
+          <View style={[styles.pickerWrapper, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Picker
+              selectedValue={ancestryFilter}
+              onValueChange={setAncestryFilter}
+              style={{ color: colors.text }}
+              dropdownIconColor={colors.text}
+            >
+              <Picker.Item label="All" value={NO_FILTER} />
+              {availableOptions.ancestry.values.map((value) => (
+                <Picker.Item key={value} label={String(value)} value={value} />
+              ))}
+            </Picker>
+          </View>
+        </View>
+      )}
+
+      {availableOptions.procreations_left && (
+        <View style={styles.filterRow}>
+          <Text style={[styles.filterLabel, { color: colors.text }]}>
+            Procreations Left (found: {availableOptions.procreations_left.min} to {availableOptions.procreations_left.max})
+          </Text>
+          <View style={styles.rangeRow}>
+            <TextInput
+              style={[styles.rangeInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+              placeholder="min"
+              placeholderTextColor={colors.secondaryText}
+              value={procreationsMin}
+              onChangeText={setProcreationsMin}
+            />
+            <Text style={[styles.rangeSeparator, { color: colors.secondaryText }]}>to</Text>
+            <TextInput
+              style={[styles.rangeInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+              placeholder="max"
+              placeholderTextColor={colors.secondaryText}
+              value={procreationsMax}
+              onChangeText={setProcreationsMax}
+            />
+          </View>
+        </View>
+      )}
+
+      <TouchableOpacity onPress={() => setAffinitiesExpanded((current) => !current)} style={styles.groupHeaderButton}>
+        <Text style={[styles.groupHeaderText, { color: colors.primary }]}>
+          Affinities {affinitiesExpanded ? '▲' : '▼'}
+        </Text>
+      </TouchableOpacity>
+      {affinitiesExpanded && AFFINITY_COLUMNS.map((columnName) => {
+        const option = availableOptions[columnName];
+        if (!option) return null;
+        return (
+          <View key={columnName} style={styles.filterRow}>
+            <Text style={[styles.filterLabel, { color: colors.text }]}>
+              {AFFINITY_LABELS[columnName]} Affinity (found: {option.min} to {option.max})
+            </Text>
+            <View style={styles.rangeRow}>
+              <TextInput
+                style={[styles.rangeInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                placeholder="min"
+                placeholderTextColor={colors.secondaryText}
+                value={affinityRanges[columnName]?.min ?? ''}
+                onChangeText={(text) => handleAffinityRangeChange(columnName, 'min', text)}
+              />
+              <Text style={[styles.rangeSeparator, { color: colors.secondaryText }]}>to</Text>
+              <TextInput
+                style={[styles.rangeInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                placeholder="max"
+                placeholderTextColor={colors.secondaryText}
+                value={affinityRanges[columnName]?.max ?? ''}
+                onChangeText={(text) => handleAffinityRangeChange(columnName, 'max', text)}
+              />
+            </View>
+          </View>
+        );
+      })}
+
+      <View style={styles.filterRow}>
+        <Text style={[styles.filterLabel, { color: colors.text }]}>Target Affinity for matching (optional)</Text>
+        <View style={[styles.pickerWrapper, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Picker
+            selectedValue={targetAffinity}
+            onValueChange={setTargetAffinity}
+            style={{ color: colors.text }}
+            dropdownIconColor={colors.text}
+          >
+            <Picker.Item label="None - just show all eligible partners" value={NO_FILTER} />
+            {AFFINITY_COLUMNS.map((columnName) => (
+              <Picker.Item key={columnName} label={`${AFFINITY_LABELS[columnName]} Affinity`} value={columnName} />
+            ))}
+          </Picker>
+        </View>
+        <Text style={[styles.filterHint, { color: colors.secondaryText }]}>
+          Sorts Step 2's partner list so the strongest matches for this Affinity show up first. Pairing two Devikins
+          that are both strong in the same Affinity raises your odds - it's never guaranteed.
+        </Text>
+      </View>
+    </View>
+  );
+
+  const listHeader = selected ? (
+    <View style={styles.stepHeader}>
+      <Text style={[styles.stepLabel, { color: colors.secondaryText }]}>STEP 2 OF 2 · Matching partners</Text>
+
+      <View style={[styles.selectedCard, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+        <Thumbnail nft={selected} colors={colors} />
+        <View style={styles.selectedInfoColumn}>
+          <Text style={[styles.selectedIdLine, { color: colors.secondaryText }]}>
+            #{selected.nonce}{selected.custom_name ? ` · ${selected.custom_name}` : ''}
+          </Text>
+          <Text style={[styles.selectedLine, { color: colors.text }]}>Rarity: {selected.rarity}</Text>
+          <Text style={[styles.selectedLine, { color: colors.text }]}>Procreations Left: {selected.procreations_left}</Text>
+          <Text style={[styles.selectedLine, { color: colors.text }]}>Ancestry: {selected.ancestry ?? '—'}</Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.changeButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={handleChangeSelection}
+        >
+          <Text style={[styles.changeButtonText, { color: colors.cancelText }]}>Change</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={[styles.disclaimerBanner, { backgroundColor: colors.statusFailedBackground, borderColor: colors.border }]}>
+        <Text style={[styles.disclaimerText, { color: colors.text }]}>
+          This app can't tell whether two Devikins are related (parent, sibling, or offspring) - there's no lineage
+          data available anywhere. Please double-check relatedness yourself before breeding, the same as you would
+          in the game itself.
+        </Text>
+      </View>
+
+      <Text style={[styles.resultsCountLine, { color: colors.secondaryText }]}>
+        {matchesLoading
+          ? 'Loading matches...'
+          : `${matches.length} eligible partner${matches.length === 1 ? '' : 's'} found (same Rarity, same Procreations Left)`}
+      </Text>
+    </View>
+  ) : (
+    <View style={styles.stepHeader}>
+      <Text style={[styles.stepLabel, { color: colors.secondaryText }]}>STEP 1 OF 2 · Pick a starting Devikin</Text>
+      {filterControls}
+      <Text style={[styles.resultsCountLine, { color: colors.secondaryText }]}>
+        {pickListLoading ? 'Loading...' : `${pickList.length} breedable Devikin${pickList.length === 1 ? '' : 's'} match`}
+      </Text>
+    </View>
+  );
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.primary }]} onPress={onClose}>
+        <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹</Text>
+      </TouchableOpacity>
+
+      <Text style={[styles.title, { color: colors.text }]}>Breeding Helper</Text>
+      <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
+        Pick one of your Devikins, then see which others in your collection are actually worth pairing with it.
+      </Text>
+
+      <FlatList
+        data={selected ? matches : pickList}
+        keyExtractor={(item) => String(item.nonce)}
+        ListHeaderComponent={listHeader}
+        renderItem={({ item }) =>
+          selected ? (
+            <MatchRow
+              nft={item}
+              compareWith={selected}
+              targetAffinity={targetAffinity}
+              expanded={expandedMatchNonce === item.nonce}
+              onToggleExpand={() => setExpandedMatchNonce((current) => (current === item.nonce ? null : item.nonce))}
+              colors={colors}
+            />
+          ) : (
+            <PickRow nft={item} onPress={() => handleSelectStarter(item)} colors={colors} />
+          )
+        }
+        ListEmptyComponent={
+          !pickListLoading && !matchesLoading ? (
+            <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
+              {selected
+                ? "No eligible partners found in your collection right now. Try a different starting Devikin, or breed later once you've got another one at the same Rarity and Procreations Left."
+                : 'No Devikins match these filters yet.'}
+            </Text>
+          ) : null
+        }
+        contentContainerStyle={styles.listContent}
+      />
+    </View>
+  );
+}
+
+// The thumbnail image, shared by the selected-Devikin summary card and
+// both row components below - same "prefer the locally-saved copy, fall
+// back to an 'Unavailable' placeholder box rather than a blank one" logic
+// DevikinSummaryRow.js already uses elsewhere in the app, just without
+// its own onError/imageLoadFailed state (a rare edge case - a broken
+// image here just falls back to React Native's own default broken-image
+// behavior rather than the labeled placeholder - not worth duplicating
+// that whole state machine three times over for something this minor).
+function Thumbnail({ nft, colors }) {
+  const imageSource = nft.local_image_path || nft.image;
+  if (!imageSource) {
+    return (
+      <View style={[styles.thumbnail, styles.thumbnailPlaceholder, { backgroundColor: colors.placeholderBackground }]}>
+        <Text style={[styles.thumbnailPlaceholderText, { color: colors.placeholderText }]}>Unavailable</Text>
+      </View>
+    );
+  }
+  return <Image source={{ uri: imageSource }} style={styles.thumbnail} resizeMode="contain" />;
+}
+
+// Step 1's row - deliberately shows Procreations Left alongside Rarity/
+// Ancestry (DevikinSummaryRow.js's own row shows Personality instead,
+// which doesn't matter for breeding) since it's one of the two hard
+// eligibility rules this whole screen is built around.
+function PickRow({ nft, onPress, colors }) {
+  return (
+    <TouchableOpacity
+      style={[styles.row, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Thumbnail nft={nft} colors={colors} />
+      <View style={styles.infoColumn}>
+        <Text style={[styles.idLine, { color: colors.secondaryText }]}>
+          #{nft.nonce}{nft.custom_name ? ` · ${nft.custom_name}` : ''}
+        </Text>
+        <Text style={[styles.line, { color: colors.text }]}>Rarity: {nft.rarity ?? '—'}</Text>
+        <Text style={[styles.line, { color: colors.text }]}>Procreations Left: {nft.procreations_left ?? '—'}</Text>
+        <Text style={[styles.line, { color: colors.text }]}>Ancestry: {nft.ancestry ?? '—'}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// Step 2's row - Rarity/Procreations Left are always identical to the
+// selected Devikin (that's the whole point of getBreedingCandidates'
+// filter), so they're left off here to avoid repeating the same two
+// lines on every single row; Ancestry is still shown since it can
+// differ. The chosen Target Affinity (if any) gets its own highlighted
+// line so the sort order this list is already in is visible at a
+// glance, not just implied. Tapping a row expands a quick side-by-side
+// Affinity comparison against the selected Devikin, right in place.
+function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, colors }) {
+  return (
+    <TouchableOpacity
+      style={[styles.row, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }]}
+      onPress={onToggleExpand}
+      activeOpacity={0.7}
+    >
+      <Thumbnail nft={nft} colors={colors} />
+      <View style={styles.infoColumn}>
+        <Text style={[styles.idLine, { color: colors.secondaryText }]}>
+          #{nft.nonce}{nft.custom_name ? ` · ${nft.custom_name}` : ''}
+        </Text>
+        <Text style={[styles.line, { color: colors.text }]}>Ancestry: {nft.ancestry ?? '—'}</Text>
+        {targetAffinity !== NO_FILTER && (
+          <Text style={[styles.line, styles.highlightedLine, { color: colors.primary }]}>
+            {AFFINITY_LABELS[targetAffinity]} Affinity: {nft[targetAffinity] ?? '—'}
+          </Text>
+        )}
+        <Text style={[styles.tapHint, { color: colors.secondaryText }]}>
+          {expanded ? 'Tap to hide comparison' : 'Tap to compare Affinities'}
+        </Text>
+
+        {expanded && (
+          <View style={[styles.compareBlock, { borderTopColor: colors.border }]}>
+            <View style={styles.compareColumn}>
+              <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{compareWith.nonce} (selected)</Text>
+              {AFFINITY_COLUMNS.map((columnName) => (
+                <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
+                  {AFFINITY_LABELS[columnName]}: {compareWith[columnName] ?? '—'}
+                </Text>
+              ))}
+            </View>
+            <View style={styles.compareColumn}>
+              <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{nft.nonce} (this candidate)</Text>
+              {AFFINITY_COLUMNS.map((columnName) => (
+                <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
+                  {AFFINITY_LABELS[columnName]}: {nft[columnName] ?? '—'}
+                </Text>
+              ))}
+            </View>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginHorizontal: 12,
+    marginVertical: 12,
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backButtonText: {
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 24,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '700',
+    marginHorizontal: 12,
+  },
+  subtitle: {
+    fontSize: 13,
+    marginHorizontal: 12,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  listContent: {
+    paddingBottom: 24,
+  },
+  stepHeader: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+  },
+  stepLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  filterBlock: {
+    marginBottom: 8,
+  },
+  filterRow: {
+    marginBottom: 10,
+  },
+  filterLabel: {
+    fontSize: 13,
+    marginBottom: 2,
+  },
+  filterHint: {
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  pickerWrapper: {
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  rangeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  rangeInput: {
+    flex: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderWidth: 1,
+  },
+  rangeSeparator: {
+    color: '#999',
+  },
+  groupHeaderButton: {
+    paddingVertical: 6,
+  },
+  groupHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  resultsCountLine: {
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  selectedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 10,
+    marginBottom: 10,
+  },
+  selectedInfoColumn: {
+    marginLeft: 10,
+    flex: 1,
+    gap: 3,
+  },
+  selectedIdLine: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  selectedLine: {
+    fontSize: 13,
+  },
+  changeButton: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+  },
+  changeButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  disclaimerBanner: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  disclaimerText: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    marginHorizontal: 12,
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  idLine: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  thumbnail: {
+    width: 112,
+    height: 112,
+    borderRadius: 12,
+  },
+  thumbnailPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbnailPlaceholderText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingHorizontal: 6,
+  },
+  infoColumn: {
+    marginLeft: 12,
+    flex: 1,
+    gap: 4,
+  },
+  line: {
+    fontSize: 14,
+  },
+  highlightedLine: {
+    fontWeight: '700',
+  },
+  tapHint: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  compareBlock: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    marginTop: 8,
+    paddingTop: 8,
+    gap: 16,
+  },
+  compareColumn: {
+    flex: 1,
+  },
+  compareHeader: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  compareLine: {
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  emptyText: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 24,
+    marginHorizontal: 24,
+    lineHeight: 20,
+  },
+});

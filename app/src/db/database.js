@@ -777,6 +777,58 @@ function buildSortComparator(sortField, sortDirection, traitColumns) {
 }
 
 /**
+ * Powers the Breeding Helper screen (see BreedingHelper.js) - returns
+ * every OTHER Devikin from the given wallets that's actually worth
+ * considering as a breeding partner for the Devikin identified by
+ * `excludeNonce`.
+ *
+ * "Worth considering" here isn't a scored ranking - it's a hard filter,
+ * built directly from Raphael's own breeding experience (there is no
+ * official rule book for pairing strategy - see BreedingHelper.js's own
+ * file comment for the full research trail). He's bred roughly 2,000
+ * Devikins and the two rules that matter most are: always breed the
+ * exact same Rarity, and always breed the exact same Procreations
+ * Left - anything else is "a waste" (his words), so this function
+ * doesn't offer near-matches, only exact ones on both.
+ *
+ * Also excluded unconditionally, regardless of rarity/procreations:
+ *   - the selected Devikin itself (excludeNonce)
+ *   - anything with 0 Procreations Left - it's done breeding
+ *   - Eldritch Devikins - the game keeps them rare on purpose by not
+ *     letting them procreate at all (this rules out `rarity` itself
+ *     ever being 'Eldritch', for both the selected Devikin and every
+ *     candidate)
+ *   - anything marked Deleted (see setNftDeletedState) - no longer
+ *     part of the collection the user actually cares about
+ *   - anything whose metadata never successfully fetched (status !=
+ *     'ok') - there's no real Rarity/Procreations Left to check
+ *
+ * What this CANNOT do, and never claims to: check whether two Devikins
+ * are actually related (parent, sibling, offspring). No lineage/parent
+ * data exists anywhere in this app's metadata source (confirmed against
+ * every known trait in schema.js) - avoiding related pairs is still
+ * entirely on the user, exactly as it is in the game itself today.
+ */
+export async function getBreedingCandidates(ownerAddresses, { rarity, procreationsLeft, excludeNonce }) {
+  const db = await getDatabase();
+  const { clause, params: ownerParams } = ownerAddressClause(ownerAddresses);
+  const rows = await db.getAllAsync(
+    `SELECT * FROM devikin
+     WHERE ${clause}
+       AND status = 'ok'
+       AND (deleted IS NULL OR deleted = 0)
+       AND rarity = ?
+       AND rarity != 'Eldritch'
+       AND procreations_left = ?
+       AND procreations_left > 0
+       AND nonce != ?
+     ORDER BY nonce ASC`,
+    [...ownerParams, rarity, procreationsLeft, excludeNonce]
+  );
+  return rows;
+}
+
+/**
  * Simple counts for the empty-state / tab-badge logic: how many rows
  * across the given wallets this collection has, regardless of filters.
  */
