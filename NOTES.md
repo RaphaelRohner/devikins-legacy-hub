@@ -2026,6 +2026,60 @@ before - nothing here registers a real background task
 (`expo-background-fetch`/`expo-task-manager`), which stays a separate,
 bigger feature on the V2 ideas list if it's ever wanted.
 
+## Collection name shown in the compact progress bar
+
+Small follow-up to the height-matched redesign above: the compact bar
+made the top row a consistent height, but per feedback it didn't make
+it obvious when a fetch moved from one collection to the next - it
+only ever showed a bare spinner or a percent number, with the actual
+"Devikins"/"Weapons"/"Equipment" text hidden behind a tap. `ProgressBar.js`
+now shows a short badge with the current collection's name right in
+the compact bar itself (derived from the same `label` fetchAllForWallet.js
+already sends, with any "(NFT refetch)"/"(image refetch)"/"(image
+check)" suffix stripped off since there isn't room for it here and the
+tap-to-reveal Alert already covers it). Nothing else about the compact
+design changed - still 44px tall, still one tap away from the full
+detail.
+
+## Pending-items retry also fires on app open and returning to the foreground
+
+Raphael asked whether the app should do something automatically when
+it's opened with a wallet already saved, now that the background
+retry/freshness-check timer (see above) has proven itself unobtrusive
+in testing. Discussed the options directly rather than guessing:
+running a full fetch (re-checking every NFT's changing stats) every
+single time the app opens was ruled out - unlike the pending-items
+retry or the freshness check, a full fetch re-checks EVERYTHING for
+EVERY owned NFT regardless of whether anything's actually wrong, which
+would mean hammering the already-flaky metadata Lambda every time the
+app is opened, including many times in the same day.
+
+What Raphael chose instead: keep it to the same lightweight
+"catch up on problems" pass the background timer already does
+(retrying only items that previously failed, or are missing a cached
+image - see `retryPendingItemsForWallets`) - not a full re-fetch of
+everything - but trigger that pass immediately when the app opens,
+AND every time it comes back to the foreground (e.g. switching back
+after checking something else), rather than only waiting for the
+timer's own once-a-minute/once-an-hour pace.
+
+Implementation: the pending-items retry logic (previously only living
+inside the timer's interval callback) was pulled out into its own
+`runPendingRetryPass` function inside the same `useEffect`, so the
+once-a-minute timer, an immediate call on mount, and a new
+`AppState.addEventListener('change', ...)` listener (React Native's
+own API for foreground/background transitions) all share the exact
+same logic rather than duplicating it. The check this runs
+(`countPendingRetries`) is a cheap local database read, not a network
+call, so triggering it often - including in quick succession if
+someone bounces in and out of the app - costs nothing extra when
+there's genuinely nothing to retry; it only escalates to real network
+requests once there's something actually pending. The image-freshness
+check stays exactly as it was - purely on its own hourly timer, not
+tied to opening the app - since a corrected image is a rare, low-
+urgency event, not something that needs catching up on the moment the
+screen is looked at.
+
 ## App structure decisions (made while building)
 
 - **No navigation library.** With just three tabs and no back-and-forth
