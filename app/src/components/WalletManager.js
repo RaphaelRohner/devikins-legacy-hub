@@ -42,12 +42,22 @@
  * list, this component just calls a changed-callback to get a fresh
  * copy back" pattern the `wallets` prop above already uses -
  * `onWalletSetsChanged` plays the same role `onWalletsChanged` does for
- * individual wallets, just one level up.
+ * individual wallets, just one level up. Per feedback once this was in
+ * daily use, "+ New set" sits right under the explanation text, above
+ * the list of existing sets, rather than below it - the action you'd
+ * take most often (starting a new set) shouldn't require scrolling
+ * past however many sets already exist to find it.
  *
  * When no set is active at all (the "Empty" action was used - see
  * handleEmptySet below), the Add row and wallet list are replaced with
  * a short explanation instead of rendering against data that doesn't
  * exist - see the `activeWalletSetId` check partway through this file.
+ *
+ * Danger zone (bottom of the list) sits behind its own always-visible
+ * toggle, off by default - also per feedback: a screen opened this
+ * often (Wallets) shouldn't put a destructive, whole-app-wiping button
+ * in view every single time, but it should still be easy to find on
+ * purpose rather than buried somewhere else entirely.
  */
 
 import { useState } from 'react';
@@ -61,6 +71,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Switch,
 } from 'react-native';
 import {
   addWallet,
@@ -111,6 +122,14 @@ export default function WalletManager({
   const [newSetNameInput, setNewSetNameInput] = useState('');
   const [renamingSetId, setRenamingSetId] = useState(null);
   const [renameSetInput, setRenameSetInput] = useState('');
+
+  // Whether the Danger zone's actual content (the explanation + Reset
+  // All Data button) is showing - off by default per Raphael's own
+  // request, so a screen you open often (Wallets) doesn't put a
+  // destructive, whole-app-wiping button in view every single time.
+  // The "Danger zone" label + toggle itself always stays visible so
+  // it's still easy to find on purpose.
+  const [isDangerZoneVisible, setIsDangerZoneVisible] = useState(false);
 
   async function handleAdd() {
     const trimmedAddress = newAddressInput.trim();
@@ -317,6 +336,39 @@ export default function WalletManager({
           Switch between separate, independently saved collections of wallets - useful for a second player in the household, or checking a friend's collection without touching your own.
         </Text>
 
+        {isCreatingSet ? (
+          <View style={styles.addRow}>
+            <TextInput
+              style={[styles.addInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+              placeholder="Name this set (e.g. My Wallets)"
+              placeholderTextColor={colors.secondaryText}
+              value={newSetNameInput}
+              onChangeText={setNewSetNameInput}
+              autoCapitalize="words"
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[styles.addButton, { backgroundColor: colors.primary }]}
+              onPress={handleCreateSet}
+            >
+              <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Create</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+              onPress={handleCancelCreateSet}
+            >
+              <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.newSetButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+            onPress={() => setIsCreatingSet(true)}
+          >
+            <Text style={[styles.newSetButtonText, { color: colors.text }]}>+ New set</Text>
+          </TouchableOpacity>
+        )}
+
         {walletSets.map((set) => {
           const isActive = set.id === activeWalletSetId;
           return (
@@ -390,38 +442,6 @@ export default function WalletManager({
           );
         })}
 
-        {isCreatingSet ? (
-          <View style={styles.addRow}>
-            <TextInput
-              style={[styles.addInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-              placeholder="Name this set (e.g. My Wallets)"
-              placeholderTextColor={colors.secondaryText}
-              value={newSetNameInput}
-              onChangeText={setNewSetNameInput}
-              autoCapitalize="words"
-              autoFocus
-            />
-            <TouchableOpacity
-              style={[styles.addButton, { backgroundColor: colors.primary }]}
-              onPress={handleCreateSet}
-            >
-              <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Create</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
-              onPress={handleCancelCreateSet}
-            >
-              <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={[styles.newSetButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
-            onPress={() => setIsCreatingSet(true)}
-          >
-            <Text style={[styles.newSetButtonText, { color: colors.text }]}>+ New set</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {activeWalletSetId ? (
@@ -562,16 +582,28 @@ export default function WalletManager({
             back. See handleResetAllData's own comment for why it exists
             at all. */}
         <View style={[styles.dangerZone, { borderTopColor: colors.border }]}>
-          <Text style={[styles.dangerZoneTitle, { color: colors.text }]}>Danger zone</Text>
-          <Text style={[styles.dangerZoneText, { color: colors.secondaryText }]}>
-            Wipes every wallet set, every saved wallet, and every stored NFT (and their downloaded images) - useful for testing the app again from a fresh start. Your actual NFTs on the blockchain are never affected. To clear out just one set instead, use its own Delete button above.
-          </Text>
-          <TouchableOpacity
-            style={[styles.resetButton, { backgroundColor: colors.statusFailedBackground }]}
-            onPress={handleResetAllData}
-          >
-            <Text style={[styles.resetButtonText, { color: colors.cancelText }]}>Reset All Data</Text>
-          </TouchableOpacity>
+          <View style={styles.dangerZoneHeader}>
+            <Text style={[styles.dangerZoneTitle, { color: colors.text }]}>Danger zone</Text>
+            <Switch
+              value={isDangerZoneVisible}
+              onValueChange={setIsDangerZoneVisible}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.surface}
+            />
+          </View>
+          {isDangerZoneVisible ? (
+            <>
+              <Text style={[styles.dangerZoneText, { color: colors.secondaryText }]}>
+                Wipes every wallet set, every saved wallet, and every stored NFT (and their downloaded images) - useful for testing the app again from a fresh start. Your actual NFTs on the blockchain are never affected. To clear out just one set instead, use its own Delete button above.
+              </Text>
+              <TouchableOpacity
+                style={[styles.resetButton, { backgroundColor: colors.statusFailedBackground }]}
+                onPress={handleResetAllData}
+              >
+                <Text style={[styles.resetButtonText, { color: colors.cancelText }]}>Reset All Data</Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
         </View>
       </ScrollView>
     </View>
@@ -654,7 +686,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: 'center',
     marginHorizontal: 12,
-    marginBottom: 4,
+    marginBottom: 10,
   },
   newSetButtonText: {
     fontWeight: '600',
@@ -750,13 +782,18 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     borderTopWidth: 1,
   },
+  dangerZoneHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   dangerZoneTitle: {
     fontSize: 15,
     fontWeight: '700',
-    marginBottom: 4,
   },
   dangerZoneText: {
     fontSize: 13,
+    marginTop: 8,
     marginBottom: 10,
   },
   resetButton: {

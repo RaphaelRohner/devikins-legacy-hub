@@ -2408,6 +2408,26 @@ app where switching sets mid-fetch isn't something you'd do by accident,
 so this wasn't specially engineered around - noted here in case it ever
 needs revisiting.
 
+## Wallet sets screen: two polish tweaks from real use
+
+Two small adjustments Raphael asked for after actually using the
+Wallets screen for a while - both quick, no architecture changes:
+
+- **"+ New set" moved above the list of existing sets**, right under
+  the explanation text, instead of below every set already listed.
+  Starting a new set is the action you'd reach for most often, so it
+  shouldn't require scrolling past however many sets already exist
+  first.
+- **Danger zone now sits behind its own toggle, off by default.** The
+  "Danger zone" label and a Switch are always visible (same bordered-
+  label-plus-native-Switch idea as the Deleted switch on the
+  collection screens), but the actual explanation text and the Reset
+  All Data button only show once that switch is flipped on. Wallets is
+  a screen you open often - a screen-wiping button in view every
+  single time was more prominent than it needed to be for something
+  used rarely, but it's still easy to find on purpose, not buried
+  somewhere else.
+
 ## Kleverscan tab: an in-app browser to Klever's block explorer
 
 A ninth hamburger menu entry, "Kleverscan" - opens a real embedded
