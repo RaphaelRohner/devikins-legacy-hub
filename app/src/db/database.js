@@ -393,6 +393,7 @@ export async function resetAllData() {
   // image folder sitting on the phone untouched while claiming to have
   // wiped "every saved wallet and every stored NFT" (see WalletManager.
   // js's own confirmation text, which really does mean all of it).
+  await ensureRegistryTablesExist();
   const registryDb = await getRegistryDatabase();
   const allSets = await registryDb.getAllAsync(`SELECT id FROM wallet_sets`);
 
@@ -1181,9 +1182,60 @@ async function deleteWalletSetFiles(id) {
   await deleteStoredImagesForDir(set.images_dir_name);
 }
 
+// Creates the registry's two tables if they don't already exist yet -
+// pulled out into its own memoized helper (rather than living inline
+// inside initWalletSets below) because of a real race that showed up in
+// testing: App.js's viewMode effect calls getGlobalSetting('viewMode')
+// from a completely separate useEffect that isn't sequenced after
+// initWalletSets() at all (both just fire independently on mount), and
+// on a phone that's NEVER had this registry database before (i.e.
+// everyone upgrading from v2, since this file didn't exist until wallet
+// sets did), whichever one happened to query global_settings first lost
+// the race and hit "no such table" - surfacing as an uncaught
+// "NativeDatabase.prepareAsync has been rejected" error. Rather than
+// trying to carefully order every caller relative to initWalletSets
+// (fragile, and easy to break again the next time something new touches
+// the registry), every exported function in this section calls this
+// first - CREATE TABLE IF NOT EXISTS is cheap and idempotent, and the
+// module-level promise means the actual table-creation SQL only ever
+// runs once no matter how many callers race to call this at startup.
+let registryTablesReadyPromise = null;
+
+async function ensureRegistryTablesExist() {
+  if (!registryTablesReadyPromise) {
+    registryTablesReadyPromise = (async () => {
+      const registryDb = await getRegistryDatabase();
+      await registryDb.execAsync(`
+        CREATE TABLE IF NOT EXISTS wallet_sets (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          db_file_name TEXT NOT NULL UNIQUE,
+          images_dir_name TEXT NOT NULL UNIQUE,
+          created_at INTEGER,
+          is_active INTEGER NOT NULL DEFAULT 0
+        );
+      `);
+      // A tiny key/value table for app-wide preferences that should stay
+      // the same no matter which wallet set is active (List/Tiles view
+      // mode is the one example today - see App.js) - deliberately NOT
+      // the same `settings` table initDatabase() creates per set further
+      // up, since that one gets swapped out along with everything else
+      // when you switch sets, and a display preference switching along
+      // with it would be a surprising side effect of picking a different
+      // set.
+      await registryDb.execAsync(`
+        CREATE TABLE IF NOT EXISTS global_settings (
+          key TEXT PRIMARY KEY NOT NULL,
+          value TEXT
+        );
+      `);
+    })();
+  }
+  return registryTablesReadyPromise;
+}
+
 /**
- * Creates the wallet_sets registry table (if it doesn't already exist),
- * runs the first-run "My Wallets" migration described above if the
+ * Runs the first-run "My Wallets" migration described above if the
  * registry is still completely empty, then points activeDatabaseFileName/
  * imageStorage.js at whichever set is currently marked active and runs
  * that set's own initDatabase() (its schema may be out of date if this
@@ -1197,30 +1249,8 @@ async function deleteWalletSetFiles(id) {
  * NFT data that has nowhere to come from right now.
  */
 export async function initWalletSets() {
+  await ensureRegistryTablesExist();
   const registryDb = await getRegistryDatabase();
-  await registryDb.execAsync(`
-    CREATE TABLE IF NOT EXISTS wallet_sets (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      db_file_name TEXT NOT NULL UNIQUE,
-      images_dir_name TEXT NOT NULL UNIQUE,
-      created_at INTEGER,
-      is_active INTEGER NOT NULL DEFAULT 0
-    );
-  `);
-  // A tiny key/value table for app-wide preferences that should stay
-  // the same no matter which wallet set is active (List/Tiles view mode
-  // is the one example today - see App.js) - deliberately NOT the same
-  // `settings` table initDatabase() creates per set further up, since
-  // that one gets swapped out along with everything else when you
-  // switch sets, and a display preference switching along with it would
-  // be a surprising side effect of picking a different set.
-  await registryDb.execAsync(`
-    CREATE TABLE IF NOT EXISTS global_settings (
-      key TEXT PRIMARY KEY NOT NULL,
-      value TEXT
-    );
-  `);
 
   const existingSetCount = await registryDb.getFirstAsync(`SELECT COUNT(*) AS count FROM wallet_sets`);
   if ((existingSetCount?.count ?? 0) === 0) {
@@ -1249,6 +1279,7 @@ export async function initWalletSets() {
  * created).
  */
 export async function getWalletSets() {
+  await ensureRegistryTablesExist();
   const registryDb = await getRegistryDatabase();
   return registryDb.getAllAsync(
     `SELECT id, name, db_file_name, images_dir_name, created_at, is_active FROM wallet_sets ORDER BY id ASC`
@@ -1265,6 +1296,7 @@ export async function getWalletSets() {
  * with any existing (or previously deleted) set's files.
  */
 export async function createWalletSet(name) {
+  await ensureRegistryTablesExist();
   const registryDb = await getRegistryDatabase();
   const trimmedName = (name || '').trim() || 'New Set';
   const suffix = Date.now();
@@ -1294,6 +1326,7 @@ export async function createWalletSet(name) {
 export async function renameWalletSet(id, name) {
   const trimmedName = (name || '').trim();
   if (!trimmedName) return;
+  await ensureRegistryTablesExist();
   const registryDb = await getRegistryDatabase();
   await registryDb.runAsync(`UPDATE wallet_sets SET name = ? WHERE id = ?`, [trimmedName, id]);
 }
@@ -1309,6 +1342,7 @@ export async function renameWalletSet(id, name) {
  * it somehow did).
  */
 export async function switchToWalletSet(id) {
+  await ensureRegistryTablesExist();
   const registryDb = await getRegistryDatabase();
   const targetSet = await registryDb.getFirstAsync(`SELECT * FROM wallet_sets WHERE id = ?`, [id]);
   if (!targetSet) return;
@@ -1332,6 +1366,7 @@ export async function switchToWalletSet(id) {
  * Reset All Data) is already in before its own first set is created.
  */
 export async function unloadCurrentWalletSet() {
+  await ensureRegistryTablesExist();
   const registryDb = await getRegistryDatabase();
   await closeActiveDatabase();
   await registryDb.runAsync(`UPDATE wallet_sets SET is_active = 0`);
@@ -1352,6 +1387,7 @@ export async function unloadCurrentWalletSet() {
  * Raphael goes back to Wallets to load or create a different one.
  */
 export async function deleteWalletSet(id) {
+  await ensureRegistryTablesExist();
   const registryDb = await getRegistryDatabase();
   const target = await registryDb.getFirstAsync(`SELECT * FROM wallet_sets WHERE id = ?`, [id]);
   if (!target) return;
@@ -1376,6 +1412,7 @@ export async function deleteWalletSet(id) {
  * the key has never been set.
  */
 export async function getGlobalSetting(key) {
+  await ensureRegistryTablesExist();
   const registryDb = await getRegistryDatabase();
   const row = await registryDb.getFirstAsync(`SELECT value FROM global_settings WHERE key = ?`, [key]);
   return row?.value ?? null;
@@ -1386,6 +1423,7 @@ export async function getGlobalSetting(key) {
  * that key. See getGlobalSetting above.
  */
 export async function setGlobalSetting(key, value) {
+  await ensureRegistryTablesExist();
   const registryDb = await getRegistryDatabase();
   await registryDb.runAsync(`INSERT OR REPLACE INTO global_settings (key, value) VALUES (?, ?)`, [key, value]);
 }
