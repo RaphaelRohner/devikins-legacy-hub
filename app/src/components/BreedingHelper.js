@@ -628,13 +628,20 @@ function PickRow({ nft, onPress, colors }) {
 // at a glance, not just implied.
 //
 // Tapping a row expands a quick Affinity comparison against the
-// selected Devikin, right in place - the selected Devikin's stats sit
-// under ITS thumbnail on the left (a fixed 112px-wide column), and this
-// candidate's own stats sit under its info on the right. Originally
-// both were a side-by-side pair squeezed into the right (info) column
-// alone, which left too little width for "this candidate"'s own header
-// text to fit on one line - splitting them across the row's existing
-// two columns instead gives each side the width it actually has.
+// selected Devikin, right in place, as a full-width strip BELOW the
+// thumbnail+info line (not nested inside either column) - two side-by-
+// side halves, selected Devikin on the left and this candidate on the
+// right, that start at the exact same height since they're siblings in
+// the same row rather than each being tucked under a column of
+// different height. Two earlier attempts got this wrong: nesting both
+// halves inside the (already thumbnail-narrowed) info column alone
+// left too little width for "this candidate"'s header to fit on one
+// line; and splitting them one-under-the-thumbnail/one-under-the-info
+// instead just moved the misalignment rather than fixing it, since the
+// info column has several lines of its own above the comparison and
+// the thumbnail doesn't - confirmed by Raphael happening the same way
+// even when the thumbnail image loads fine, so it was never actually
+// about the image.
 function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, colors }) {
   const candidateProcreationsLeft = Number(nft.procreations_left);
   const selectedProcreationsLeft = Number(compareWith.procreations_left);
@@ -645,14 +652,40 @@ function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, 
 
   return (
     <TouchableOpacity
-      style={[styles.row, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }]}
+      style={[styles.row, styles.matchRow, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }]}
       onPress={onToggleExpand}
       activeOpacity={0.7}
     >
-      <View style={styles.thumbnailColumn}>
+      <View style={styles.rowMainContent}>
         <Thumbnail nft={nft} colors={colors} />
-        {expanded && (
-          <View style={[styles.compareBlock, { borderTopColor: colors.border }]}>
+        <View style={styles.infoColumn}>
+          <Text style={[styles.idLine, { color: colors.secondaryText }]}>
+            #{nft.nonce}{nft.custom_name ? ` · ${nft.custom_name}` : ''}
+          </Text>
+          <Text style={[styles.line, { color: colors.text }]}>
+            Procreations Left: {nft.procreations_left}
+            {proceationsMismatch ? ` (yours is ${compareWith.procreations_left} - breeding uses the lower count)` : ''}
+          </Text>
+          <Text style={[styles.line, { color: colors.text }]}>Ancestry: {nft.ancestry ?? '—'}</Text>
+          {targetAffinity !== NO_FILTER && (
+            <Text style={[styles.line, styles.highlightedLine, { color: colors.primary }]}>
+              {AFFINITY_LABELS[targetAffinity]} Affinity: {nft[targetAffinity] ?? '—'}
+            </Text>
+          )}
+          {estimatedCost !== null && (
+            <Text style={[styles.line, { color: colors.secondaryText }]}>
+              Est. cost: {estimatedCost.toLocaleString()} · offspring gets {offspringProcreationsLeft} Procreations Left
+            </Text>
+          )}
+          <Text style={[styles.tapHint, { color: colors.secondaryText }]}>
+            {expanded ? 'Tap to hide comparison' : 'Tap to compare Affinities'}
+          </Text>
+        </View>
+      </View>
+
+      {expanded && (
+        <View style={[styles.compareBlock, { borderTopColor: colors.border }]}>
+          <View style={styles.compareColumn}>
             <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{compareWith.nonce} (selected)</Text>
             {AFFINITY_COLUMNS.map((columnName) => (
               <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
@@ -660,33 +693,7 @@ function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, 
               </Text>
             ))}
           </View>
-        )}
-      </View>
-      <View style={styles.infoColumn}>
-        <Text style={[styles.idLine, { color: colors.secondaryText }]}>
-          #{nft.nonce}{nft.custom_name ? ` · ${nft.custom_name}` : ''}
-        </Text>
-        <Text style={[styles.line, { color: colors.text }]}>
-          Procreations Left: {nft.procreations_left}
-          {proceationsMismatch ? ` (yours is ${compareWith.procreations_left} - breeding uses the lower count)` : ''}
-        </Text>
-        <Text style={[styles.line, { color: colors.text }]}>Ancestry: {nft.ancestry ?? '—'}</Text>
-        {targetAffinity !== NO_FILTER && (
-          <Text style={[styles.line, styles.highlightedLine, { color: colors.primary }]}>
-            {AFFINITY_LABELS[targetAffinity]} Affinity: {nft[targetAffinity] ?? '—'}
-          </Text>
-        )}
-        {estimatedCost !== null && (
-          <Text style={[styles.line, { color: colors.secondaryText }]}>
-            Est. cost: {estimatedCost.toLocaleString()} · offspring gets {offspringProcreationsLeft} Procreations Left
-          </Text>
-        )}
-        <Text style={[styles.tapHint, { color: colors.secondaryText }]}>
-          {expanded ? 'Tap to hide comparison' : 'Tap to compare Affinities'}
-        </Text>
-
-        {expanded && (
-          <View style={[styles.compareBlock, { borderTopColor: colors.border }]}>
+          <View style={styles.compareColumn}>
             <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{nft.nonce} (this candidate)</Text>
             {AFFINITY_COLUMNS.map((columnName) => (
               <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
@@ -694,8 +701,8 @@ function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, 
               </Text>
             ))}
           </View>
-        )}
-      </View>
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
@@ -859,15 +866,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 2,
   },
-  // Wraps the thumbnail so the expanded selected-Devikin stats (see
-  // MatchRow) can sit directly underneath it, both pinned to the same
-  // 112px width as the image itself - this is what gives "this
-  // candidate"'s own stats (in infoColumn, to the right) the rest of
-  // the row's width instead of squeezing both sides into infoColumn
-  // alone, which used to force "this candidate"'s header onto two
-  // lines.
-  thumbnailColumn: {
-    width: 112,
+  // MatchRow overrides `row`'s own flexDirection: 'row' with a plain
+  // vertical stack instead - `row` still supplies the shared padding/
+  // border/shadow every row (PickRow included) uses, this just changes
+  // the direction its children lay out in. rowMainContent below then
+  // recreates the thumbnail+info side-by-side layout PickRow gets for
+  // free from `row` itself, and the expanded comparison strip (see
+  // MatchRow's own comment above) sits below rowMainContent as a
+  // second, full-width child, rather than nested inside either column.
+  matchRow: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
+  rowMainContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   thumbnail: {
     width: 112,
@@ -900,15 +913,21 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginTop: 2,
   },
-  // A plain vertical block (header + one line per Affinity) - used
-  // twice per expanded row now, once under the thumbnail (the selected
-  // Devikin's stats) and once under infoColumn (this candidate's own),
-  // rather than as a single side-by-side pair the way it used to be -
-  // see MatchRow's own comment above for why.
+  // The expanded comparison strip - a full-width row of its own two
+  // halves (compareColumn, one per Devikin), each just a header plus
+  // one line per Affinity. Sitting below rowMainContent rather than
+  // inside either of its columns is what gives both halves the room to
+  // fit their headers on one line AND keeps them starting at the same
+  // height - see MatchRow's own comment above.
   compareBlock: {
+    flexDirection: 'row',
     borderTopWidth: 1,
     marginTop: 8,
     paddingTop: 8,
+    gap: 16,
+  },
+  compareColumn: {
+    flex: 1,
   },
   compareHeader: {
     fontSize: 11,
