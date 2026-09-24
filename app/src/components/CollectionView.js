@@ -620,8 +620,8 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // Compare mode turned on, which read as broken rather than helpful.
   // The count stays put here unconditionally now; Compare mode's own
   // progress hint moved down into this screen's own toolbar instead,
-  // right under the ⇄ button that controls it (see the JSX further
-  // down, right after deletedSwitchControl).
+  // sitting inline right next to the ⇄ button that controls it (see
+  // the JSX further down, inside viewModeButtonGroup).
   const toolbarStatusText = `${notDeletedCount} ${COLLECTIONS[kind].label}`;
 
   useEffect(() => {
@@ -878,28 +878,16 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
                   ⇄
                 </Text>
               </TouchableOpacity>
+
+              {compareMode && (
+                <Text style={[styles.compareHintText, { color: colors.secondaryText }]} numberOfLines={1}>
+                  {compareSelection.length === 0 ? 'Tap one to compare' : 'Tap one more to compare'}
+                </Text>
+              )}
             </View>
 
             {deletedSwitchControl}
           </View>
-
-          {/* Compare mode's own progress hint - used to share the
-              menuRow count's old spot up in App.js (see this file's
-              toolbarStatusText comment above for why that got
-              reverted); lives here now instead, directly under the
-              row holding the ⇄ button that turns it on/off, so it
-              stays clearly tied to that control without competing with
-              the count for room anywhere. Reuses filterHint's own
-              style rather than a new one, since it's the same kind of
-              small explanatory line FilterPanel-adjacent text already
-              uses throughout this screen. */}
-          {compareMode && (
-            <Text style={[styles.filterHint, { color: colors.secondaryText }]}>
-              {compareSelection.length === 0
-                ? 'Compare mode is on - tap an item below to start.'
-                : 'Tap one more item to compare.'}
-            </Text>
-          )}
 
           {expanded && hasPendingChanges && (
             <TouchableOpacity
@@ -1094,6 +1082,7 @@ const styles = StyleSheet.create({
   // to two whole buttons instead of a label+Switch.
   viewModeButtonGroup: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   // Turned into a real button (background, border, generous padding)
@@ -1115,6 +1104,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   anchorToggleText: {
+    fontWeight: '600',
+  },
+  // Compare mode's progress hint, sitting right next to the ⇄ button
+  // inside viewModeButtonGroup (see its own JSX comment) rather than as
+  // a bordered pill like the buttons beside it - plain text reads as a
+  // status message, not another tappable control.
+  compareHintText: {
+    fontSize: 12,
     fontWeight: '600',
   },
   // Fixed-width square, unlike anchorToggleButton's text-width pill -
