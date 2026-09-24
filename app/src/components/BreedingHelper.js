@@ -82,7 +82,7 @@
  *   against your selected Devikin, right in place, including the
  *   estimated cost and the offspring's resulting Procreations Left -
  *   just enough to sanity-check a pairing without leaving this screen.
- *   "Change" returns to Step 1 without losing your filter picks.
+ *   "‹ Step 1" returns to Step 1 without losing your filter picks.
  *
  * This intentionally does NOT build the separate "Compare two NFTs"
  * screen that was asked for alongside this one - that's its own,
@@ -99,13 +99,16 @@ import { RARITY_ORDER } from '../constants/schema';
 import { estimateBreedingCost } from '../constants/breedingRules';
 import { NO_FILTER } from './FilterPanel';
 
-// The six Affinity columns every Devikin has (see schema.js's
-// TRAIT_COLUMNS.devikin) - Overall plus one per stat. Procreations Left
-// and Rarity get their own dedicated controls below since they're hard
-// eligibility rules (see the file comment above), not a soft preference
-// like these are.
+// Five of Devikins' six Affinity columns (see schema.js's
+// TRAIT_COLUMNS.devikin) - every stat EXCEPT Overall Affinity, which
+// this screen leaves out entirely (filters, Target Affinity, and the
+// Step 2 comparison alike) per feedback: Overall is just a summary of
+// these other five, not an independent stat you can filter for or pair
+// to steer, so it isn't something a breeding decision can act on.
+// Procreations Left and Rarity get their own dedicated controls below
+// since they're hard eligibility rules (see the file comment above),
+// not a soft preference like these five are.
 const AFFINITY_COLUMNS = [
-  'overall_affinity',
   'vitality_affinity',
   'power_affinity',
   'fortitude_affinity',
@@ -114,7 +117,6 @@ const AFFINITY_COLUMNS = [
 ];
 
 const AFFINITY_LABELS = {
-  overall_affinity: 'Overall',
   vitality_affinity: 'Vitality',
   power_affinity: 'Power',
   fortitude_affinity: 'Fortitude',
@@ -493,7 +495,7 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
           style={[styles.changeButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={handleChangeSelection}
         >
-          <Text style={[styles.changeButtonText, { color: colors.cancelText }]}>Change</Text>
+          <Text style={[styles.changeButtonText, { color: colors.cancelText }]}>‹ Step 1</Text>
         </TouchableOpacity>
       </View>
 
@@ -623,8 +625,16 @@ function PickRow({ nft, onPress, colors }) {
 // comment in src/constants/breedingRules.js). Ancestry is shown too
 // since it can differ. The chosen Target Affinity (if any) gets its own
 // highlighted line so the sort order this list is already in is visible
-// at a glance, not just implied. Tapping a row expands a quick side-by-
-// side Affinity comparison against the selected Devikin, right in place.
+// at a glance, not just implied.
+//
+// Tapping a row expands a quick Affinity comparison against the
+// selected Devikin, right in place - the selected Devikin's stats sit
+// under ITS thumbnail on the left (a fixed 112px-wide column), and this
+// candidate's own stats sit under its info on the right. Originally
+// both were a side-by-side pair squeezed into the right (info) column
+// alone, which left too little width for "this candidate"'s own header
+// text to fit on one line - splitting them across the row's existing
+// two columns instead gives each side the width it actually has.
 function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, colors }) {
   const candidateProcreationsLeft = Number(nft.procreations_left);
   const selectedProcreationsLeft = Number(compareWith.procreations_left);
@@ -639,7 +649,19 @@ function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, 
       onPress={onToggleExpand}
       activeOpacity={0.7}
     >
-      <Thumbnail nft={nft} colors={colors} />
+      <View style={styles.thumbnailColumn}>
+        <Thumbnail nft={nft} colors={colors} />
+        {expanded && (
+          <View style={[styles.compareBlock, { borderTopColor: colors.border }]}>
+            <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{compareWith.nonce} (selected)</Text>
+            {AFFINITY_COLUMNS.map((columnName) => (
+              <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
+                {AFFINITY_LABELS[columnName]}: {compareWith[columnName] ?? '—'}
+              </Text>
+            ))}
+          </View>
+        )}
+      </View>
       <View style={styles.infoColumn}>
         <Text style={[styles.idLine, { color: colors.secondaryText }]}>
           #{nft.nonce}{nft.custom_name ? ` · ${nft.custom_name}` : ''}
@@ -665,22 +687,12 @@ function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, 
 
         {expanded && (
           <View style={[styles.compareBlock, { borderTopColor: colors.border }]}>
-            <View style={styles.compareColumn}>
-              <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{compareWith.nonce} (selected)</Text>
-              {AFFINITY_COLUMNS.map((columnName) => (
-                <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
-                  {AFFINITY_LABELS[columnName]}: {compareWith[columnName] ?? '—'}
-                </Text>
-              ))}
-            </View>
-            <View style={styles.compareColumn}>
-              <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{nft.nonce} (this candidate)</Text>
-              {AFFINITY_COLUMNS.map((columnName) => (
-                <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
-                  {AFFINITY_LABELS[columnName]}: {nft[columnName] ?? '—'}
-                </Text>
-              ))}
-            </View>
+            <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{nft.nonce} (this candidate)</Text>
+            {AFFINITY_COLUMNS.map((columnName) => (
+              <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
+                {AFFINITY_LABELS[columnName]}: {nft[columnName] ?? '—'}
+              </Text>
+            ))}
           </View>
         )}
       </View>
@@ -847,6 +859,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 2,
   },
+  // Wraps the thumbnail so the expanded selected-Devikin stats (see
+  // MatchRow) can sit directly underneath it, both pinned to the same
+  // 112px width as the image itself - this is what gives "this
+  // candidate"'s own stats (in infoColumn, to the right) the rest of
+  // the row's width instead of squeezing both sides into infoColumn
+  // alone, which used to force "this candidate"'s header onto two
+  // lines.
+  thumbnailColumn: {
+    width: 112,
+  },
   thumbnail: {
     width: 112,
     height: 112,
@@ -878,15 +900,15 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginTop: 2,
   },
+  // A plain vertical block (header + one line per Affinity) - used
+  // twice per expanded row now, once under the thumbnail (the selected
+  // Devikin's stats) and once under infoColumn (this candidate's own),
+  // rather than as a single side-by-side pair the way it used to be -
+  // see MatchRow's own comment above for why.
   compareBlock: {
-    flexDirection: 'row',
     borderTopWidth: 1,
     marginTop: 8,
     paddingTop: 8,
-    gap: 16,
-  },
-  compareColumn: {
-    flex: 1,
   },
   compareHeader: {
     fontSize: 11,
