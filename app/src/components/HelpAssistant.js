@@ -121,6 +121,13 @@ const FAQ_ENTRIES = [
       "Open its detail view - right above the Notes section you'll find a Name field with a Save Name button, and a row of 5 stars. Type a name and tap Save Name to save it. Tap a star to rate it - once you have, a Clear Rating button appears right below the stars to un-rate it again (tapping the same star a second time does the same thing).",
   },
   {
+    id: 'kleverscan',
+    question: 'What is the Kleverscan tab?',
+    keywords: ['kleverscan', 'explorer', 'holders', 'block explorer', 'holder', 'browser'],
+    answer:
+      "Open the ☰ menu and tap Kleverscan for a small built-in browser pointed straight at the Devikins collection's Holders list on kleverscan.org, Klever's own block explorer - no typing in a search box needed. Handy for checking who's holding what, and it's also a good way to find your own wallet address if you don't have it handy: if you know roughly how many Devikins you hold, you can browse the holder list and spot yourself.",
+  },
+  {
     id: 'feedback',
     question: 'How do I send feedback or report a bug?',
     keywords: ['feedback', 'bug', 'report', 'suggest', 'contact', 'email', 'request'],
@@ -139,14 +146,14 @@ const FAQ_ENTRIES = [
     question: 'How do I reset all my data?',
     keywords: ['reset', 'wipe', 'start over', 'fresh install'],
     answer:
-      "For everything: open Wallets from the ☰ menu, scroll to the Danger zone, and tap Reset All Data - this wipes every wallet set, every saved wallet, every stored NFT, and every downloaded image, back to exactly a fresh install. It can't be undone, though your real NFTs on the blockchain are never touched. For just one set gone wrong, its own Delete button (next to it in the wallet-set switcher, near the top of the same screen) is the gentler option - it only erases that one set, leaving the rest of your sets untouched.",
+      "For everything: open Wallets from the ☰ menu, scroll down to Danger zone, flip its toggle on to reveal Reset All Data, and tap it - this wipes every wallet set, every saved wallet, every stored NFT, and every downloaded image, back to exactly a fresh install. It can't be undone, though your real NFTs on the blockchain are never touched. For just one set gone wrong, its own Delete button (next to it in the wallet-set switcher, near the top of the same screen) is the gentler option - it only erases that one set, leaving the rest of your sets untouched.",
   },
   {
     id: 'automatic-retry',
     question: 'Does the app retry failed items automatically?',
     keywords: ['automatic', 'automatically', 'background retry', 'auto retry', 'retry'],
     answer:
-      "No - not any more. Everything only ever happens when you tap Fetch/Update yourself; there's no automatic background fetching or retrying. If something's stuck 'Fetch failed' or missing its image, just tap Fetch/Update again and it'll get another try.",
+      "Yes, while the app is open - it quietly checks for anything left over ('Fetch failed' items, or items missing a cached image) and retries just those, on its own, without you needing to tap Fetch/Update. It checks right when you open the app and whenever you come back to it, then keeps checking about once a minute for a while, backing off to about once an hour once everything's caught up. It won't run in the background once the app is fully closed, and it never fetches anything genuinely new on its own - only cleaning up items that already failed.",
   },
   {
     id: 'theme-toggle',

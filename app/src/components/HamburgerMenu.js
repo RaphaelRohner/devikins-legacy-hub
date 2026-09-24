@@ -17,9 +17,16 @@
  *   4. Weapons       - opens the Weapons overview
  *   5. Equipment     - opens the Equipment overview
  *   6. Breeding Helper - opens the Devikins breeding-partner finder
- *   7. Feedback      - opens the feedback form
- *   8. Ask Devi (Help) - opens the offline in-app FAQ helper
- *   9. Kleverscan      - opens an in-app browser tab on Kleverscan
+ *   7. Kleverscan      - opens an in-app browser tab on Kleverscan
+ *   8. Feedback      - opens the feedback form
+ *   9. Ask Devi (Help) - opens the offline in-app FAQ helper
+ *
+ * Kleverscan sits right after Breeding Helper rather than at the very
+ * end (where it first landed) per feedback once it was in daily use -
+ * everything through Breeding Helper is a tool about your own
+ * collection, and Feedback/Ask Devi are the two "about the app itself"
+ * entries; grouping Kleverscan with the collection tools instead of
+ * after the app-meta pair keeps that split clean.
  *
  * Like every other "screen" in this app (see App.js's own file comment),
  * this isn't a real navigation library - it's a plain full-screen Modal
@@ -94,6 +101,12 @@ export default function HamburgerMenu({
       onPress: () => onSelectScreen('breeding'),
     },
     {
+      key: 'kleverscan',
+      label: 'Kleverscan',
+      screen: 'kleverscan',
+      onPress: () => onSelectScreen('kleverscan'),
+    },
+    {
       key: 'feedback',
       label: 'Feedback',
       screen: 'feedback',
@@ -104,12 +117,6 @@ export default function HamburgerMenu({
       label: 'Ask Devi (Help)',
       screen: 'help',
       onPress: () => onSelectScreen('help'),
-    },
-    {
-      key: 'kleverscan',
-      label: 'Kleverscan',
-      screen: 'kleverscan',
-      onPress: () => onSelectScreen('kleverscan'),
     },
   ];
 

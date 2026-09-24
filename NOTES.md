@@ -2408,6 +2408,32 @@ app where switching sets mid-fetch isn't something you'd do by accident,
 so this wasn't specially engineered around - noted here in case it ever
 needs revisiting.
 
+## Kleverscan menu position, plus catching up Devi's FAQ
+
+Two small follow-ups once V3 was basically done and about to be built:
+
+- **Kleverscan moved up in the hamburger menu**, from last (after Ask
+  Devi) to right after Breeding Helper, before Feedback. Reasoning:
+  Wallets through Breeding Helper are all tools about your own
+  collection; Feedback and Ask Devi are the two "about the app itself"
+  entries. Kleverscan belongs with the first group, not tacked onto
+  the end after the app-meta pair.
+- **Devi's FAQ (`HelpAssistant.js`) got a pass to catch up with recent
+  changes** - asked directly whether Devi had been kept in sync, and
+  the honest answer was "partly": a new `kleverscan` entry was added
+  (it had no answer at all before), `reset-data`'s answer was updated
+  to mention flipping the Danger zone's toggle on before Reset All
+  Data is reachable (a leftover from that feature landing after this
+  answer was last written), and `automatic-retry` was fixed to
+  actually describe the current behavior - it still flatly said "No,
+  not any more, there's no automatic background retrying," which
+  stopped being true once the pending-items retry timer was reinstated
+  (see "Automatic background retry + image-freshness check,
+  reinstated" above) and nobody had gone back to update this answer
+  since. Good reminder that "Devi's FAQ is documentation too" (this
+  file's own second section) needs an occasional audit pass, not just
+  updates at the moment each feature ships.
+
 ## Wallet sets screen: two polish tweaks from real use
 
 Two small adjustments Raphael asked for after actually using the
