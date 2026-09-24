@@ -119,7 +119,7 @@ const FLOATING_BUTTON_EDGE_MARGIN = 8;
 // than a tap - see the PanResponder below.
 const FLOATING_BUTTON_DRAG_THRESHOLD = 4;
 
-export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onSetViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded, onAppliedFiltersChange = () => {} }) {
+export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onSetViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded, onAppliedFiltersChange = () => {}, onStatusTextChange = () => {} }) {
   const { colors } = useTheme();
 
   // Tablet support: how many tiles fit per row, and how much extra
@@ -608,6 +608,22 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     onAppliedFiltersChange(hasAppliedFilters);
   }, [hasAppliedFilters, onAppliedFiltersChange]);
 
+  // The text App.js now shows up in menuRow (the slot its ProgressBar
+  // already uses) in place of this screen's own item count, which used
+  // to live buried in the toolbar row below - see App.js's own
+  // collectionStatusText comment for the full reasoning. While Compare
+  // mode is on, this doubles as its progress message instead of the
+  // count, same as it did in its old spot.
+  const toolbarStatusText = compareMode
+    ? compareSelection.length === 0
+      ? 'Tap one to compare'
+      : 'Tap one more to compare'
+    : `${notDeletedCount} ${COLLECTIONS[kind].label}`;
+
+  useEffect(() => {
+    onStatusTextChange(toolbarStatusText);
+  }, [toolbarStatusText, onStatusTextChange]);
+
   if (!ownerAddresses || ownerAddresses.length === 0) {
     return (
       <View style={styles.emptyContainer}>
@@ -746,65 +762,24 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   const hasPendingChanges =
     JSON.stringify(pendingFilters) !== JSON.stringify(appliedFilters) ||
     pendingStarFilter !== starFilter;
-  // The item count and Deleted switch. Used to be shared between two
-  // JSX spots (this row, or a second row below it, depending on
-  // whether "Remove filters" needed the space) - now that button
-  // floats near the top of the screen instead of living in this row,
-  // there's only ever one spot, so nothing about this pair moves
-  // around anymore. Kept as its own variable regardless, since it's
-  // still one clearly-scoped chunk of JSX either way.
-  const countAndDeletedSwitch = (
-    <>
-      {/* "142 Devikins" - how many active (not-deleted) items this
-          wallet has in this category. See the notDeletedCount
-          state/effect above for why this always counts with deleted
-          items excluded, regardless of the switch below.
-          position: 'absolute' + left/right: 0 (countTextWrap) centers
-          this purely on whichever row it's placed in, completely
-          ignoring how wide the Deleted switch (or List/Tiles button)
-          next to it is - that's what makes it land at TRUE center
-          instead of drifting toward whichever side has less content.
-          pointerEvents="none" is required now that this sometimes
-          shares a row with the List/Tiles button - since the box
-          spans the row edge-to-edge (left: 0, right: 0) to center
-          itself, without this it would sit on top of the button and
-          absorb taps meant for it.
-          Set on a wrapping View rather than directly on the <Text>
-          below: pointerEvents="none" on a bare <Text> was unreliable on
-          Android in testing (worked sometimes, not others) - wrapping
-          it in a plain View and putting pointerEvents there instead is
-          the more dependable way to do this on Android. */}
-      <View pointerEvents="none" style={styles.countTextWrap}>
-        <View style={[styles.countPill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.countText, { color: colors.secondaryText }]}>
-            {compareMode
-              ? compareSelection.length === 0
-                ? 'Tap one to compare'
-                : 'Tap one more to compare'
-              : `${notDeletedCount} ${COLLECTIONS[kind].label}`}
-          </Text>
-        </View>
-      </View>
-
-      {/* Off by default (deleted items stay visible, just greyed out -
-          see the summary row components). Switching this on excludes
-          them from the list entirely, until switched back off again.
-          Given the same border/background pill treatment as the count
-          above and every other control in this row, per feedback - the
-          actual Switch stays a real native Switch rather than becoming
-          a custom tap-to-flip button, since its track color is what
-          shows the current on/off state at a glance; only the
-          surrounding box is new. */}
-      <View style={[styles.deletedSwitchGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.deletedSwitchLabel, { color: colors.text }]}>Deleted</Text>
-        <Switch
-          value={excludeDeleted}
-          onValueChange={setExcludeDeleted}
-          trackColor={{ false: colors.border, true: colors.primary }}
-          thumbColor={colors.surface}
-        />
-      </View>
-    </>
+  // The Deleted switch - used to share this spot with the item count
+  // too (hence the old name, countAndDeletedSwitch), until that count
+  // moved up into App.js's own menuRow per feedback (see this file's
+  // top comment, and App.js's collectionStatusText comment, for the
+  // full reasoning: it was fighting the List/Tiles/Compare buttons for
+  // room in an already-tight row, and menuRow already had a matching
+  // blank slot doing nothing outside a fetch). Kept as its own variable
+  // regardless, now just for this one control.
+  const deletedSwitchControl = (
+    <View style={[styles.deletedSwitchGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <Text style={[styles.deletedSwitchLabel, { color: colors.text }]}>Deleted</Text>
+      <Switch
+        value={excludeDeleted}
+        onValueChange={setExcludeDeleted}
+        trackColor={{ false: colors.border, true: colors.primary }}
+        thumbColor={colors.surface}
+      />
+    </View>
   );
 
   const filterableColumnNames = Object.keys(availableOptions);
@@ -901,7 +876,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
               </TouchableOpacity>
             </View>
 
-            {countAndDeletedSwitch}
+            {deletedSwitchControl}
           </View>
 
           {expanded && hasPendingChanges && (
@@ -1077,21 +1052,18 @@ const styles = StyleSheet.create({
   },
   // Used to only carry top padding, with a second row (secondaryRow,
   // removed - see below) providing the bottom padding on the (common)
-  // occasions it rendered. Now that the count/Deleted switch never
-  // move to a second row anymore (see countAndDeletedSwitch's own
-  // comment above) and "Filters ✕" floats at the bottom of the screen
-  // instead of living in this row, this is simply the row's own top
-  // AND bottom padding, always - no more conditional toggleRowLast
-  // variant needed.
+  // occasions it rendered. Now that the Deleted switch never moves to
+  // a second row anymore (see deletedSwitchControl's own comment
+  // above) and "Filters ✕" floats at the bottom of the screen instead
+  // of living in this row, this is simply the row's own top AND bottom
+  // padding, always - no more conditional toggleRowLast variant
+  // needed.
   toggleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingTop: 8,
     paddingBottom: 8,
-    // Required so the count text can center itself with position:
-    // 'absolute' against THIS row - see countTextWrap's own comment.
-    position: 'relative',
   },
   // Groups the List and Tiles buttons together with a small gap, so
   // the pair reads as one control (like Apple's segmented controls)
@@ -1135,51 +1107,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  countText: {
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  // Pulls the count text out of the row's normal flow entirely and
-  // centers it purely against the row's own width (left: 0, right: 0,
-  // alignItems: 'center'). This is deliberately independent of whatever
-  // else is in the row - an earlier version tried to center it with a
-  // pair of equal flex: 1 spacers instead, but React Native flex items
-  // don't shrink below their content size by default, so the side
-  // holding the wider Deleted switch quietly claimed more than half the
-  // row and dragged the count off-center. Absolute positioning has no
-  // such issue, since it ignores siblings altogether.
-  // Wraps the count Text so pointerEvents="none" can be set on a plain
-  // View (see the JSX comment above for why it's here and not directly
-  // on the Text). alignItems: 'center' is what centers the count PILL
-  // itself within this full-width wrapper now (added once the count
-  // became a real bordered/background pill rather than bare Text - the
-  // old textAlign: 'center' on countText handled centering back when
-  // this View just stretched plain text across its full width; a pill
-  // with its own border shouldn't stretch that way, so alignItems here
-  // took over that job instead).
-  countTextWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  // The count's actual visible box, per feedback wanting it (and the
-  // Deleted switch below) to look like the row's other buttons rather
-  // than bare text/controls with no border - same height as
-  // anchorToggleButton above (List/Tiles), which this and
-  // deletedSwitchGroup below are both matched to explicitly.
-  countPill: {
-    height: 40,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderRadius: 8,
-  },
-  // height/borderWidth/borderRadius/paddingHorizontal are the same
-  // button treatment as countPill above, for the same reason -
-  // flexDirection/alignItems/gap (already here beforehand) are what
-  // actually lay out the label next to the Switch inside that box.
+  // height/borderWidth/borderRadius/paddingHorizontal give this the
+  // same button treatment as anchorToggleButton above (List/Tiles) and
+  // compareToggleButton, per feedback wanting every control in this row
+  // to look consistent - flexDirection/alignItems/gap are what actually
+  // lay out the label next to the Switch inside that box. (This used to
+  // sit alongside a matching countPill for the item count text, before
+  // that moved up into App.js's own menuRow - see this file's top
+  // comment and deletedSwitchControl's own comment above.)
   deletedSwitchGroup: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1194,11 +1129,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // Positions the floating "Filters ✕" button with plain left/top
-  // (rather than countTextWrap's centering left/right: 0 technique),
-  // since it needs to be draggable in both directions rather than
-  // pinned to center - both are set inline per render (see the JSX),
-  // since they depend on windowWidth and the button's current drag
-  // offset.
+  // (rather than a centering left/right: 0 technique), since it needs
+  // to be draggable in both directions rather than pinned to center -
+  // both are set inline per render (see the JSX), since they depend on
+  // windowWidth and the button's current drag offset.
   floatingRemoveWrap: {
     position: 'absolute',
   },

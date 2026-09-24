@@ -287,6 +287,23 @@ function AppContent() {
   // onAppliedFiltersChange callback passed down below.
   const [isFiltersActive, setIsFiltersActive] = useState(false);
 
+  // The same "142 Devikins" text CollectionView.js used to show buried
+  // in its own toolbar (floating, absolutely centered, purely to avoid
+  // colliding with whatever buttons shared that row) - moved up here
+  // per feedback, into the same slot menuRow's ProgressBar already
+  // uses, so it fills the blank space that sits there whenever nothing
+  // is fetching, and the progress bar naturally covers it the moment a
+  // fetch starts (see the JSX below) rather than needing separate logic
+  // for "hide the count while fetching". Doubles as CollectionView's
+  // own Compare-mode progress text ("Tap one to compare" / "Tap one
+  // more to compare") while that's active, for the same reason it used
+  // to share the count's old spot - one slot, whichever one of the two
+  // is relevant right now. Bubbled up from CollectionView via
+  // onStatusTextChange, mirroring onAppliedFiltersChange just above;
+  // stays '' (renders nothing) on every other screen, since menuRow
+  // itself is only ever shown on the three collection tabs.
+  const [collectionStatusText, setCollectionStatusText] = useState('');
+
   // V3: which field the current collection is sorted by, and which
   // direction - unlike viewMode above, this is deliberately NOT one
   // shared value across all three tabs, since most fields (a Devikin's
@@ -857,16 +874,35 @@ function AppContent() {
             hamburger button and theme toggle. See ProgressBar.js's own
             container style for the small adjustment that went with this
             (it used to carry its own margin, meant for being a
-            standalone full-width block). */}
-        {(isFetching || isRetrying) && (
-          <View style={styles.inlineProgressWrapper}>
+            standalone full-width block).
+
+            Always rendered now (not just while fetching) - see
+            collectionStatusText's own comment above for why: this same
+            wrapper shows the ProgressBar while a fetch/retry is running,
+            the item count (or Compare-mode progress) the rest of the
+            time, and nothing at all before CollectionView.js has
+            reported either (e.g. no wallet added yet) - menuRow's own
+            justifyContent: 'space-between' keeps the hamburger button
+            and theme toggle pinned to the edges regardless of whether
+            this middle slot has anything in it, so there's no layout
+            change between these three states. */}
+        <View style={styles.inlineProgressWrapper}>
+          {isFetching || isRetrying ? (
             <ProgressBar
               progress={isFetching ? progress : retryProgress}
               onCancel={handleCancelPress}
               isCancelling={isCancelling}
             />
-          </View>
-        )}
+          ) : collectionStatusText ? (
+            <Text
+              style={[styles.menuRowStatusText, { color: colors.secondaryText }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {collectionStatusText}
+            </Text>
+          ) : null}
+        </View>
 
         <TouchableOpacity
           style={[styles.themeToggle, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -1033,6 +1069,7 @@ function AppContent() {
           expanded={isFiltersExpanded}
           setExpanded={setIsFiltersExpanded}
           onAppliedFiltersChange={setIsFiltersActive}
+          onStatusTextChange={setCollectionStatusText}
         />
       ) : (
         !isFetching && (
@@ -1260,6 +1297,15 @@ const styles = StyleSheet.create({
   inlineProgressWrapper: {
     flex: 1,
     marginHorizontal: 10,
+  },
+  // The relocated "142 Devikins" / Compare-progress text - see
+  // collectionStatusText's own comment above. Centered (ProgressBar
+  // itself is already a centered element in this same slot) and capped
+  // to one line, same as every other toolbar label in this app.
+  menuRowStatusText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   hamburgerButton: {
     width: 44,
