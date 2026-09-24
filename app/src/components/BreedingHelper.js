@@ -685,26 +685,28 @@ function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, 
 
       {expanded && (
         <View style={[styles.compareBlock, { borderTopColor: colors.border }]}>
-          {/* This candidate's own column comes first (left), under
-              where its own thumbnail and other stats already sit above
-              - keeping everything about the row's actual subject read
-              left-to-right consistently, top to bottom. "Selected" is
-              the fixed reference every row is compared against, not
-              something this row is otherwise "about", so it sits
-              second (right) rather than taking the primary position. */}
-          <View style={styles.compareColumn}>
-            <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{nft.nonce} (this candidate)</Text>
-            {AFFINITY_COLUMNS.map((columnName) => (
-              <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
-                {AFFINITY_LABELS[columnName]}: {nft[columnName] ?? '—'}
-              </Text>
-            ))}
-          </View>
-          <View style={styles.compareColumn}>
+          {/* Selected stays on the left (per feedback - that part was
+              already right) and this candidate on the right, but now
+              the two columns are sized to match rowMainContent's own
+              split (thumbnail width on the left, then infoColumn's
+              marginLeft on the right) instead of an even 50/50 - so
+              "this candidate"'s Affinity lines land at the exact same
+              left edge as "Procreations Left"/"Ancestry" directly
+              above them, reading as one continuous column about the
+              candidate, rather than two arbitrarily-even halves. */}
+          <View style={styles.compareColumnLeft}>
             <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{compareWith.nonce} (selected)</Text>
             {AFFINITY_COLUMNS.map((columnName) => (
               <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
                 {AFFINITY_LABELS[columnName]}: {compareWith[columnName] ?? '—'}
+              </Text>
+            ))}
+          </View>
+          <View style={styles.compareColumnRight}>
+            <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{nft.nonce} (this candidate)</Text>
+            {AFFINITY_COLUMNS.map((columnName) => (
+              <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
+                {AFFINITY_LABELS[columnName]}: {nft[columnName] ?? '—'}
               </Text>
             ))}
           </View>
@@ -921,20 +923,27 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   // The expanded comparison strip - a full-width row of its own two
-  // halves (compareColumn, one per Devikin), each just a header plus
-  // one line per Affinity. Sitting below rowMainContent rather than
-  // inside either of its columns is what gives both halves the room to
-  // fit their headers on one line AND keeps them starting at the same
-  // height - see MatchRow's own comment above.
+  // halves, each just a header plus one line per Affinity. Sitting
+  // below rowMainContent rather than inside either of its columns is
+  // what gives both halves the room to fit their headers on one line
+  // AND keeps them starting at the same height - see MatchRow's own
+  // comment above. The two halves are deliberately NOT an even 50/50
+  // split - compareColumnLeft/Right instead mirror thumbnail/
+  // infoColumn's own width and marginLeft exactly, so "this
+  // candidate"'s Affinity lines land at the same left edge as
+  // "Procreations Left"/"Ancestry" directly above them, per feedback.
   compareBlock: {
     flexDirection: 'row',
     borderTopWidth: 1,
     marginTop: 8,
     paddingTop: 8,
-    gap: 16,
   },
-  compareColumn: {
+  compareColumnLeft: {
+    width: 112,
+  },
+  compareColumnRight: {
     flex: 1,
+    marginLeft: 12,
   },
   compareHeader: {
     fontSize: 11,
