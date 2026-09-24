@@ -70,7 +70,12 @@
  *   button - there's no "several changes at once" reason to hold these
  *   back the way the main list's filters do), and Eldritch is never
  *   offered as a Rarity choice since it can't breed. Tapping a result
- *   selects it as your starting Devikin.
+ *   selects it as your starting Devikin. A "Reset all Step 1 fields"
+ *   button sits right under this screen's own top explanation,
+ *   visible only while Step 1 is showing, to clear every one of these
+ *   fields - including the Target Affinities picker and the Allow
+ *   +/-1 toggle below, since both start out as Step 1 picks too - back
+ *   to their defaults in one tap.
  *
  *   STEP 2 - once a starting Devikin is selected, a second list shows
  *   every OTHER Devikin in your collection that shares its exact
@@ -358,6 +363,24 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
     });
   }
 
+  // Clears every Step 1 field back to its default - the plain filters,
+  // the collapsible Affinities ranges, the Target Affinities picker,
+  // and the Allow +/-1 toggle - in one tap, rather than clearing each
+  // one by hand. Only ever shown in Step 1 itself (see the reset
+  // button's render below); Step 2's own state (the selected starting
+  // Devikin, its matches) is untouched, so resetting filters doesn't
+  // knock you back to Step 1's list if you weren't already there.
+  function handleResetFilters() {
+    setRarityFilter(NO_FILTER);
+    setAncestryFilter(NO_FILTER);
+    setProcreationsMin('');
+    setProcreationsMax('');
+    setAffinityRanges({});
+    setAffinitiesExpanded(false);
+    setTargetAffinities([]);
+    setAllowProcreationsTolerance(false);
+  }
+
   function handleSelectStarter(nft) {
     setSelected(nft);
     setExpandedMatchNonce(null);
@@ -584,6 +607,12 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
         Pick one of your Devikins, then see which others in your collection are actually worth pairing with it.
       </Text>
 
+      {!selected && (
+        <TouchableOpacity style={[styles.resetFiltersButton, { borderColor: colors.border }]} onPress={handleResetFilters}>
+          <Text style={[styles.resetFiltersButtonText, { color: colors.primary }]}>Reset all Step 1 fields</Text>
+        </TouchableOpacity>
+      )}
+
       <FlatList
         data={selected ? matches : pickList}
         keyExtractor={(item) => String(item.nonce)}
@@ -793,6 +822,19 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginTop: 4,
     marginBottom: 8,
+  },
+  resetFiltersButton: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginHorizontal: 12,
+    marginBottom: 10,
+    alignSelf: 'flex-start',
+  },
+  resetFiltersButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   listContent: {
     paddingBottom: 24,
