@@ -53,6 +53,21 @@
  * `pendingStarFilter` (local to this component), and it only reaches
  * the actual query (and bubbles up to App.js via onStarFilterChange)
  * once Apply Filters is pressed, same as any trait filter.
+ *
+ * A fifth thing, added later: Compare mode. The ⇄ button next to List/
+ * Tiles (see the JSX below) toggles compareMode on/off; while it's on, a
+ * row tap adds/removes that item from compareSelection (capped at two -
+ * see handleToggleCompareSelection) instead of opening its detail view,
+ * and the row/tile itself gets a colored-border highlight (the `selected`
+ * prop every summary row / NftTile now accepts). The moment a second
+ * item is picked, compareNfts takes over the render and swaps in
+ * CompareView.js - a full side-by-side listing of every stat/trait for
+ * that kind - the same way selectedRow does for the ordinary detail
+ * view. This is deliberately the lightweight version of "compare two
+ * NFTs": it reuses whatever this list is already filtered/sorted/
+ * searched to, rather than being a separate guided picker screen with
+ * its own filter panel - see CompareView.js's own file comment for the
+ * full reasoning.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -64,6 +79,7 @@ import NftTile from './NftTile';
 import DevikinSummaryRow from './DevikinSummaryRow';
 import WeaponSummaryRow from './WeaponSummaryRow';
 import EquipmentSummaryRow from './EquipmentSummaryRow';
+import CompareView from './CompareView';
 import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange } from '../db/database';
 import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER } from '../constants/schema';
 import { useTheme } from '../context/ThemeContext';
@@ -141,6 +157,16 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // Which item (by nonce) is currently open in detail view, if any. Only
   // meaningful for a kind listed in SUMMARY_ROW_COMPONENTS above.
   const [selectedNonce, setSelectedNonce] = useState(null);
+
+  // "Compare" mode - see the ⇄ toggle button in toggleRow below, and
+  // this file's own top comment. Off by default; turning it on switches
+  // row taps from opening the detail view to picking up to two NFTs to
+  // compare instead (compareSelection, capped at two - see
+  // handleToggleCompareSelection below). Once two are picked, compareNfts
+  // (derived further down, right next to selectedRow) takes over the
+  // render the same way selectedRow does for the ordinary detail view.
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareSelection, setCompareSelection] = useState([]);
 
   // List vs. Tiles - now owned by App.js and passed down as the
   // `viewMode` prop (per feedback, its own toggle moved up onto the top
@@ -246,6 +272,16 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     // itself is meant to carry over across tabs (see this file's own
     // comment at the top).
     setPendingStarFilter(starFilter);
+    // Compare mode's own selection is just as tab-specific as the
+    // filters above, for a sharper reason than "doesn't carry over
+    // meaningfully": a nonce picked while looking at Devikins is a
+    // *different NFT entirely* once kind switches to Weapons (nonces
+    // aren't unique across collections) - left in place, a stale pick
+    // from the old tab could silently pair with a freshly-picked item
+    // on the new one. Compare mode itself (compareMode) stays on across
+    // tabs, same as List/Tiles staying on - only the in-progress pick
+    // is cleared.
+    setCompareSelection([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, ownerAddresses]);
 
@@ -261,18 +297,54 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // screen - the two never conflict, since this component isn't even
   // mounted while that screen is showing.
   const isDetailViewOpen = Boolean(SUMMARY_ROW_COMPONENTS[kind]) && selectedNonce !== null;
+
+  // Same idea as isDetailViewOpen above, for the comparison screen -
+  // compareSelection reaching two is exactly the condition the render
+  // logic further down uses to show CompareView.js instead of the list
+  // (see compareNfts, right next to selectedRow below).
+  const isCompareViewOpen = compareSelection.length === 2;
+
   useEffect(() => {
     function handleBackPress() {
+      if (isCompareViewOpen) {
+        handleCloseCompare();
+        return true; // handled - don't also exit the app
+      }
       if (isDetailViewOpen) {
         setSelectedNonce(null);
         return true; // handled - don't also exit the app
       }
-      return false; // no detail view open - let Android do its normal thing
+      return false; // nothing open here - let Android do its normal thing
     }
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
     return () => subscription.remove();
-  }, [isDetailViewOpen]);
+  }, [isDetailViewOpen, isCompareViewOpen]);
+
+  // Turns Compare mode on/off (the ⇄ button in toggleRow below). Turning
+  // it off also clears any in-progress selection, so switching it back on
+  // later always starts fresh rather than remembering a stale pick.
+  function handleToggleCompareMode() {
+    setCompareMode((previous) => !previous);
+    setCompareSelection([]);
+  }
+
+  // Adds/removes one NFT from the (at most two) being compared - tapping
+  // an already-selected row deselects it, tapping a new one adds it.
+  // Once two are selected, compareNfts (below) takes over the render
+  // entirely, so there's never a third tap to handle here.
+  function handleToggleCompareSelection(nonce) {
+    setCompareSelection((previous) =>
+      previous.includes(nonce) ? previous.filter((existing) => existing !== nonce) : [...previous, nonce]
+    );
+  }
+
+  // Leaves the comparison screen back to this same (still Compare-mode)
+  // list, selection cleared - same "back to where you were, not further
+  // back" behavior as every other in-app back button/gesture.
+  function handleCloseCompare() {
+    setCompareSelection([]);
+  }
 
   // Derives the filter options from what's actually in the database for
   // this wallet (moved here from FilterPanel.js - see the file comment
@@ -558,6 +630,23 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     ? rows.find((row) => row.nonce === selectedNonce)
     : null;
 
+  // The two NFTs currently picked for comparison, looked up from this
+  // same (already filtered/sorted/searched) `rows` list - same "derive
+  // from rows, don't keep a separate copy" approach as selectedRow just
+  // above, including the same safety net: if a filter change or a
+  // background refresh makes one of the two vanish from `rows` mid-
+  // comparison (e.g. it gets marked Deleted while the Deleted switch is
+  // on), `.every(Boolean)` catches the resulting `undefined` and falls
+  // back to the list instead of handing CompareView.js a missing NFT.
+  const compareCandidates = isCompareViewOpen
+    ? compareSelection.map((nonce) => rows.find((row) => row.nonce === nonce))
+    : null;
+  const compareNfts = compareCandidates && compareCandidates.every(Boolean) ? compareCandidates : null;
+
+  if (compareNfts) {
+    return <CompareView kind={kind} nfts={compareNfts} onClose={handleCloseCompare} />;
+  }
+
   if (selectedRow) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -688,7 +777,11 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
       <View pointerEvents="none" style={styles.countTextWrap}>
         <View style={[styles.countPill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={[styles.countText, { color: colors.secondaryText }]}>
-            {notDeletedCount} {COLLECTIONS[kind].label}
+            {compareMode
+              ? compareSelection.length === 0
+                ? 'Tap one to compare'
+                : 'Tap one more to compare'
+              : `${notDeletedCount} ${COLLECTIONS[kind].label}`}
           </Text>
         </View>
       </View>
@@ -784,6 +877,28 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
                   Tiles
                 </Text>
               </TouchableOpacity>
+
+              {/* Compare - see this file's own top comment and
+                  CompareView.js. A compact square icon button (unlike
+                  List/Tiles' text pills) purely for space: this row is
+                  already tight on three sides (see the many past commits
+                  fine-tuning it), and a single glyph matches the app's
+                  own precedent for a plain icon-only control (the "‹"
+                  back button, the "✕" close button). Active-state
+                  highlight matches List/Tiles' own treatment. */}
+              <TouchableOpacity
+                style={[
+                  styles.compareToggleButton,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  compareMode && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
+                ]}
+                onPress={handleToggleCompareMode}
+                accessibilityLabel="Compare two NFTs"
+              >
+                <Text style={[styles.anchorToggleText, { color: compareMode ? colors.primary : colors.secondaryText }]}>
+                  ⇄
+                </Text>
+              </TouchableOpacity>
             </View>
 
             {countAndDeletedSwitch}
@@ -813,12 +928,21 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
         numColumns={viewMode === 'tiles' ? tileColumns : 1}
         columnWrapperStyle={viewMode === 'tiles' ? styles.tilesRow : undefined}
         renderItem={({ item }) => {
+          // While Compare mode is on, a tap selects/deselects this item
+          // instead of opening its detail view (see
+          // handleToggleCompareSelection above) - `selected` drives the
+          // colored-border highlight each row/tile component now
+          // supports for exactly this.
+          const isCompareSelected = compareMode && compareSelection.includes(item.nonce);
+          const handleRowPress = compareMode
+            ? () => handleToggleCompareSelection(item.nonce)
+            : () => setSelectedNonce(item.nonce);
           if (viewMode === 'tiles') {
-            return <NftTile nft={item} onPress={() => setSelectedNonce(item.nonce)} columns={tileColumns} />;
+            return <NftTile nft={item} onPress={handleRowPress} columns={tileColumns} selected={isCompareSelected} />;
           }
           const SummaryRow = SUMMARY_ROW_COMPONENTS[kind];
           return SummaryRow ? (
-            <SummaryRow nft={item} onPress={() => setSelectedNonce(item.nonce)} />
+            <SummaryRow nft={item} onPress={handleRowPress} selected={isCompareSelected} />
           ) : (
             <NftCard kind={kind} nft={item} onNftUpdated={reloadRows} />
           );
@@ -998,6 +1122,18 @@ const styles = StyleSheet.create({
   },
   anchorToggleText: {
     fontWeight: '600',
+  },
+  // Fixed-width square, unlike anchorToggleButton's text-width pill -
+  // the ⇄ Compare toggle is a single glyph (see its own JSX comment
+  // above for why), and this keeps its footprint as small as possible
+  // in an already-tight row.
+  compareToggleButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   countText: {
     fontSize: 13,

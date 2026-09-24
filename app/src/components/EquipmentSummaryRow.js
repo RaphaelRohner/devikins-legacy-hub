@@ -18,7 +18,7 @@ import { useEffect, useState } from 'react';
 import { Image, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
-export default function EquipmentSummaryRow({ nft, onPress }) {
+export default function EquipmentSummaryRow({ nft, onPress, selected = false }) {
   const { colors } = useTheme();
 
   // Same "prefer the locally-saved copy" logic as the other summary rows
@@ -71,9 +71,19 @@ export default function EquipmentSummaryRow({ nft, onPress }) {
     ? 'Details unavailable'
     : 'Fetch failed - will retry';
 
+  // `selected` (from CollectionView.js's own Compare mode - see its
+  // file comment) draws the same colored-border highlight every other
+  // "currently chosen" control in this app uses (HamburgerMenu's active
+  // entry, BreedingHelper's chips) - false/absent the rest of the time,
+  // so nothing changes for the normal tap-to-open-detail case.
   return (
     <TouchableOpacity
-      style={[styles.row, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }, isDeleted && styles.deletedRow]}
+      style={[
+        styles.row,
+        { backgroundColor: colors.surface, shadowColor: colors.cardShadow },
+        isDeleted && styles.deletedRow,
+        selected && { borderWidth: 3, borderColor: colors.primary },
+      ]}
       onPress={onPress}
       activeOpacity={0.7}
     >
