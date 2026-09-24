@@ -58,6 +58,18 @@
  * often (Wallets) shouldn't put a destructive, whole-app-wiping button
  * in view every single time, but it should still be easy to find on
  * purpose rather than buried somewhere else entirely.
+ *
+ * Another round of feedback once wallet sets were in daily use: it
+ * wasn't obvious that the Add row and the wallet list below the
+ * switcher belonged to whichever set was active - "+ New set", the
+ * existing sets, the Add row, and the wallet list all just ran
+ * together with nothing marking where one part ended and the next
+ * began. Fixed with two small headlines rather than restructuring the
+ * layout: the switcher section is now labeled "Wallet sets" (plural,
+ * since it's the list of sets, not the active one), and a second
+ * headline right above the Add row/wallet list reads
+ * `Wallets in "<active set name>"`, so it's clear at a glance which
+ * set everything below it belongs to.
  */
 
 import { useState } from 'react';
@@ -353,6 +365,20 @@ export default function WalletManager({
     );
   }
 
+  // The active set's own name, shown as a headline right above the Add
+  // row and wallet list below (see the JSX further down) - per
+  // Raphael's own feedback, without this it isn't obvious to a new
+  // user that the Add-a-wallet row and the list beneath it belong to
+  // whichever set is currently loaded, rather than to wallet sets in
+  // general. Falls back to an empty string rather than undefined if,
+  // for some reason, activeWalletSetId doesn't match anything in
+  // walletSets yet (a render before a state update has caught up) -
+  // this headline only ever actually shows while activeWalletSetId is
+  // set, so this is just a defensive fallback, not something that
+  // should normally happen.
+  const activeSet = walletSets.find((set) => set.id === activeWalletSetId);
+  const activeSetName = activeSet ? activeSet.name : '';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <TouchableOpacity
@@ -373,7 +399,7 @@ export default function WalletManager({
           scoped to whichever set is active here, same as this whole
           screen already worked before sets existed. */}
       <View style={styles.setSwitcherSection}>
-        <Text style={[styles.setSwitcherTitle, { color: colors.text }]}>Wallet set</Text>
+        <Text style={[styles.setSwitcherTitle, { color: colors.text }]}>Wallet sets</Text>
         <Text style={[styles.setSwitcherHint, { color: colors.secondaryText }]}>
           Switch between separate, independently saved collections of wallets - useful for a second player in the household, or checking a friend's collection without touching your own.
         </Text>
@@ -488,6 +514,9 @@ export default function WalletManager({
 
       {activeWalletSetId ? (
         <>
+          <Text style={[styles.activeSetHeadline, { color: colors.text }]}>
+            Wallets in "{activeSetName}"
+          </Text>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <View style={styles.addRow}>
               <TextInput
@@ -732,6 +761,18 @@ const styles = StyleSheet.create({
   },
   newSetButtonText: {
     fontWeight: '600',
+  },
+  // Sits right above the Add-wallet row (and, visually, the wallet list
+  // in the ScrollView just below it too) - a plain section label, same
+  // weight as setSwitcherTitle above, naming the active set by name so
+  // it's unambiguous which set the Add row and the list beneath it
+  // belong to, rather than reading as generic/unscoped.
+  activeSetHeadline: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginHorizontal: 12,
+    marginTop: 4,
+    marginBottom: 8,
   },
   addRow: {
     flexDirection: 'row',

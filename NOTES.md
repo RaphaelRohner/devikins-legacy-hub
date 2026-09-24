@@ -2505,6 +2505,39 @@ not their own wallet address, can browse the Holders list to find
 themselves - the Holders tab is the actually-useful one for that, not
 Overview.
 
+## Wallet set actions now surface real errors instead of failing silently
+
+While investigating Raphael's report that after deleting a wallet set he
+couldn't select another one, reading through the wallet-set code (and a
+standalone simulation of the same delete-then-switch sequence against a
+real SQLite database, outside the app) turned up no bug in the
+create/switch/rename/empty/delete logic itself. Rather than keep
+guessing, every wallet-set action in `WalletManager.js` (create, switch,
+rename, empty, delete, and Reset All Data) is now wrapped so a failure
+shows a real alert ("Something went wrong ... didn't complete: <the
+actual error>") and logs to the console, instead of whatever went wrong
+just silently doing nothing. Retrying afterward on a large set (lots of
+NFTs and images) didn't reproduce the original issue, so this stays in
+as a safety net for if it ever does happen again - next time, there
+should be an actual error message to go on instead of a guess.
+
+## Wallet sets screen: headlines clarify what belongs to the active set
+
+Raphael pointed out that the Wallets screen's layout - "+ New set", the
+existing sets, the Add-a-wallet row, and the wallet list - didn't make
+it obvious that the last two (Add row and wallet list) belong
+specifically to whichever set is currently active, not to wallet sets
+in general. Asked which of two fixes he meant (add headlines, or
+restructure so the Add/list only appear directly under the set you
+tap); he confirmed headlines. Two small text changes, no layout
+restructuring:
+
+- The switcher section's title changed from "Wallet set" to "Wallet
+  sets" (plural - it's the list of sets, not the active one).
+- A new headline, `Wallets in "<active set name>"`, sits right above
+  the Add row and the wallet list beneath it, naming the set they
+  belong to by its actual name rather than leaving that implicit.
+
 ## App structure decisions (made while building)
  (made while building)
 
