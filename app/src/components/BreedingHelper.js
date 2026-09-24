@@ -32,9 +32,12 @@
  *      match is still the better outcome whenever one's available.
  *   3. Genes are basically random - there's no way to steer them, so
  *      this screen doesn't try to filter or score by them.
- *   4. To raise your odds of a specific Affinity in the offspring, pair
- *      two Devikins that are BOTH strong in that same Affinity (1-10,
- *      10 is best - see the "Target Affinity" control below).
+ *   4. To raise your odds of specific Affinities in the offspring, pair
+ *      two Devikins that are BOTH strong in the same Affinity (1-10, 10
+ *      is best) - and this can be done for up to two Affinities at
+ *      once, since the real case is breeding for a specific pair
+ *      together (Agility for turn order, Power for damage, say - see
+ *      the "Target Affinities" control below, capped at two).
  *   5. The breeding cost is exponential: it starts from a base amount
  *      set by Rarity (Common 300, Uncommon 400, Rare 500, Mythic 600 -
  *      all at a full 10 Procreations Left) and doubles for every
@@ -76,8 +79,10 @@
  *   toggled on (see rule 2 above and getBreedingCandidates in
  *   src/db/database.js for the actual query and the full eligibility
  *   rules). Matches are sorted with the closest Procreations Left match
- *   first (exact matches before +/-1 ones), then - if a Target Affinity
- *   was chosen back in Step 1 - strongest-first for that Affinity.
+ *   first (exact matches before +/-1 ones), then - if one or two Target
+ *   Affinities were chosen back in Step 1 - by whichever of those is
+ *   WEAKER for that candidate, strongest-first (so a candidate has to
+ *   be strong in all of them, not just one, to rank well).
  *   Tapping a match expands a quick side-by-side Affinity comparison
  *   against your selected Devikin, right in place, including the
  *   estimated cost and the offspring's resulting Procreations Left -
@@ -101,7 +106,7 @@ import { NO_FILTER } from './FilterPanel';
 
 // Five of Devikins' six Affinity columns (see schema.js's
 // TRAIT_COLUMNS.devikin) - every stat EXCEPT Overall Affinity, which
-// this screen leaves out entirely (filters, Target Affinity, and the
+// this screen leaves out entirely (filters, Target Affinities, and the
 // Step 2 comparison alike) per feedback: Overall is just a summary of
 // these other five, not an independent stat you can filter for or pair
 // to steer, so it isn't something a breeding decision can act on.
@@ -141,10 +146,16 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
   const [procreationsMax, setProcreationsMax] = useState('');
   const [affinityRanges, setAffinityRanges] = useState({});
   const [affinitiesExpanded, setAffinitiesExpanded] = useState(false);
-  // Which Affinity (if any) Step 2's matches get sorted by - a Step 1
-  // pick since it's part of "what am I looking for", but it only ever
-  // affects Step 2's ordering (see the loadMatches effect below).
-  const [targetAffinity, setTargetAffinity] = useState(NO_FILTER);
+  // Which Affinities (zero, one, or two) Step 2's matches get sorted
+  // by - a Step 1 pick since it's part of "what am I looking for", but
+  // it only ever affects Step 2's ordering (see the loadMatches effect
+  // below). Capped at two per feedback: the real use case is breeding
+  // for a specific pair of stats together (Agility for turn order,
+  // Power for damage, say), and a candidate has to be strong in BOTH
+  // chosen Affinities to rank well - see loadMatches' own comment for
+  // exactly how that's scored. handleToggleTargetAffinity below is what
+  // enforces the cap by dropping the oldest pick once a third is tapped.
+  const [targetAffinities, setTargetAffinities] = useState([]);
   // Off by default - Step 2 only shows partners at the selected
   // Devikin's EXACT Procreations Left. Switching this on widens that
   // to +/-1 either way, for the real (if less ideal) cases where an
@@ -269,10 +280,19 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
   // eligible). Sorted with the closest Procreations Left match first
   // (an exact match always beats a +/-1 one, per rule 2 in the file
   // comment above - a mismatched pair is only ever a fallback, not an
-  // equal alternative), then - if a Target Affinity was picked in Step
-  // 1 - strongest-first for that one Affinity as a secondary, soft
-  // ordering preference (a lower-affinity match still shows, just
-  // further down).
+  // equal alternative), then - if one or two Target Affinities were
+  // picked in Step 1 - by whichever of those chosen Affinities is
+  // WEAKER for that candidate, strongest-first. Using the weaker of the
+  // two (rather than their sum or average) is deliberate: a candidate
+  // with, say, Agility 10 / Power 9 should rank above one with Agility
+  // 10 / Power 3, since the whole point is a candidate that's strong in
+  // BOTH chosen stats together (per feedback - the real case is
+  // breeding for Agility, which decides turn order, and Power, for
+  // damage, at the same time) - a sum or average could let one very
+  // high stat mask a genuinely weak one. This is a secondary, soft
+  // ordering preference on top of the Procreations Left match, not a
+  // filter - a candidate weak in the chosen Affinities still shows, just
+  // further down.
   useEffect(() => {
     if (!selected) {
       setMatches([]);
@@ -294,8 +314,10 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
         const diffA = Math.abs(Number(a.procreations_left) - selectedProcreationsLeft);
         const diffB = Math.abs(Number(b.procreations_left) - selectedProcreationsLeft);
         if (diffA !== diffB) return diffA - diffB;
-        if (targetAffinity !== NO_FILTER) {
-          return (Number(b[targetAffinity]) || 0) - (Number(a[targetAffinity]) || 0);
+        if (targetAffinities.length > 0) {
+          const weakestA = Math.min(...targetAffinities.map((columnName) => Number(a[columnName]) || 0));
+          const weakestB = Math.min(...targetAffinities.map((columnName) => Number(b[columnName]) || 0));
+          if (weakestA !== weakestB) return weakestB - weakestA;
         }
         return 0; // Array.prototype.sort is stable - falls back to the nonce ASC order the SQL query already returned
       });
@@ -310,13 +332,30 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [selected, targetAffinity, allowProcreationsTolerance, ownerAddresses]);
+  }, [selected, targetAffinities, allowProcreationsTolerance, ownerAddresses]);
 
   function handleAffinityRangeChange(columnName, key, text) {
     setAffinityRanges((previous) => ({
       ...previous,
       [columnName]: { ...previous[columnName], [key]: text },
     }));
+  }
+
+  // Toggles one Affinity chip on/off in the Target Affinities picker -
+  // tapping an already-selected one deselects it; tapping a new one
+  // adds it, UNLESS two are already chosen, in which case the oldest
+  // pick is dropped to make room (so tapping a third chip always does
+  // something visible, rather than silently refusing it).
+  function handleToggleTargetAffinity(columnName) {
+    setTargetAffinities((previous) => {
+      if (previous.includes(columnName)) {
+        return previous.filter((existing) => existing !== columnName);
+      }
+      if (previous.length >= 2) {
+        return [...previous.slice(1), columnName];
+      }
+      return [...previous, columnName];
+    });
   }
 
   function handleSelectStarter(nft) {
@@ -455,23 +494,32 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
       })}
 
       <View style={styles.filterRow}>
-        <Text style={[styles.filterLabel, { color: colors.text }]}>Target Affinity for matching (optional)</Text>
-        <View style={[styles.pickerWrapper, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Picker
-            selectedValue={targetAffinity}
-            onValueChange={setTargetAffinity}
-            style={{ color: colors.text }}
-            dropdownIconColor={colors.text}
-          >
-            <Picker.Item label="None - just show all eligible partners" value={NO_FILTER} />
-            {AFFINITY_COLUMNS.map((columnName) => (
-              <Picker.Item key={columnName} label={`${AFFINITY_LABELS[columnName]} Affinity`} value={columnName} />
-            ))}
-          </Picker>
+        <Text style={[styles.filterLabel, { color: colors.text }]}>Target Affinities for matching (optional, up to 2)</Text>
+        <View style={styles.affinityChipRow}>
+          {AFFINITY_COLUMNS.map((columnName) => {
+            const isSelected = targetAffinities.includes(columnName);
+            return (
+              <TouchableOpacity
+                key={columnName}
+                style={[
+                  styles.affinityChip,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  isSelected && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
+                ]}
+                onPress={() => handleToggleTargetAffinity(columnName)}
+              >
+                <Text style={[styles.affinityChipText, { color: isSelected ? colors.primary : colors.secondaryText }]}>
+                  {AFFINITY_LABELS[columnName]}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
         <Text style={[styles.filterHint, { color: colors.secondaryText }]}>
-          Sorts Step 2's partner list so the strongest matches for this Affinity show up first. Pairing two Devikins
-          that are both strong in the same Affinity raises your odds - it's never guaranteed.
+          Sorts Step 2's partner list so candidates strong in ALL of your chosen Affinities show up first - not just
+          the sum of them, so one high stat can't cover for a weak one. Pick up to two (say Agility for turn order
+          and Power for damage) - tapping a third swaps out whichever you picked first. Pairing two Devikins that
+          are both strong in the same Affinities raises your odds - it's never guaranteed.
         </Text>
       </View>
     </View>
@@ -545,7 +593,7 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
             <MatchRow
               nft={item}
               compareWith={selected}
-              targetAffinity={targetAffinity}
+              targetAffinities={targetAffinities}
               expanded={expandedMatchNonce === item.nonce}
               onToggleExpand={() => setExpandedMatchNonce((current) => (current === item.nonce ? null : item.nonce))}
               colors={colors}
@@ -623,9 +671,9 @@ function PickRow({ nft, onPress, colors }) {
 // whichever of the two parents has FEWER Procreations Left, per how the
 // game actually prices a mismatched pair (see estimateBreedingCost's own
 // comment in src/constants/breedingRules.js). Ancestry is shown too
-// since it can differ. The chosen Target Affinity (if any) gets its own
-// highlighted line so the sort order this list is already in is visible
-// at a glance, not just implied.
+// since it can differ. Whichever Target Affinities were chosen (if any,
+// up to two) each get their own highlighted line so the sort order this
+// list is already in is visible at a glance, not just implied.
 //
 // Tapping a row expands a quick Affinity comparison against the
 // selected Devikin, right in place, as a full-width strip BELOW the
@@ -642,7 +690,7 @@ function PickRow({ nft, onPress, colors }) {
 // the thumbnail doesn't - confirmed by Raphael happening the same way
 // even when the thumbnail image loads fine, so it was never actually
 // about the image.
-function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, colors }) {
+function MatchRow({ nft, compareWith, targetAffinities, expanded, onToggleExpand, colors }) {
   const candidateProcreationsLeft = Number(nft.procreations_left);
   const selectedProcreationsLeft = Number(compareWith.procreations_left);
   const proceationsMismatch = candidateProcreationsLeft !== selectedProcreationsLeft;
@@ -667,11 +715,11 @@ function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, 
             {proceationsMismatch ? ` (yours is ${compareWith.procreations_left} - breeding uses the lower count)` : ''}
           </Text>
           <Text style={[styles.line, { color: colors.text }]}>Ancestry: {nft.ancestry ?? '—'}</Text>
-          {targetAffinity !== NO_FILTER && (
-            <Text style={[styles.line, styles.highlightedLine, { color: colors.primary }]}>
-              {AFFINITY_LABELS[targetAffinity]} Affinity: {nft[targetAffinity] ?? '—'}
+          {targetAffinities.map((columnName) => (
+            <Text key={columnName} style={[styles.line, styles.highlightedLine, { color: colors.primary }]}>
+              {AFFINITY_LABELS[columnName]} Affinity: {nft[columnName] ?? '—'}
             </Text>
-          )}
+          ))}
           {estimatedCost !== null && (
             <Text style={[styles.line, { color: colors.secondaryText }]}>
               Est. cost: {estimatedCost.toLocaleString()} · offspring gets {offspringProcreationsLeft} Procreations Left
@@ -810,6 +858,25 @@ const styles = StyleSheet.create({
   },
   groupHeaderText: {
     fontSize: 14,
+    fontWeight: '600',
+  },
+  // The Target Affinities picker - a row of tappable chips (one per
+  // Affinity) instead of a single-select dropdown, since up to two can
+  // be chosen at once (see handleToggleTargetAffinity).
+  affinityChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  affinityChip: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  affinityChipText: {
+    fontSize: 13,
     fontWeight: '600',
   },
   resultsCountLine: {
