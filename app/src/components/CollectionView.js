@@ -339,10 +339,15 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     );
   }
 
-  // Leaves the comparison screen back to this same (still Compare-mode)
-  // list, selection cleared - same "back to where you were, not further
-  // back" behavior as every other in-app back button/gesture.
+  // Leaves the comparison screen back to the plain list, Compare mode
+  // turned off entirely (not just the selection cleared) - picked per
+  // Raphael's own call, so the button lands back on its neutral
+  // "Compare" label rather than sitting mid-flow on "Tap one to
+  // compare", ready to start completely fresh next time. Doesn't touch
+  // sorting, search or filters - those are a different concern
+  // entirely and stay exactly as they were.
   function handleCloseCompare() {
+    setCompareMode(false);
     setCompareSelection([]);
   }
 
