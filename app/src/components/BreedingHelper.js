@@ -685,19 +685,26 @@ function MatchRow({ nft, compareWith, targetAffinity, expanded, onToggleExpand, 
 
       {expanded && (
         <View style={[styles.compareBlock, { borderTopColor: colors.border }]}>
-          <View style={styles.compareColumn}>
-            <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{compareWith.nonce} (selected)</Text>
-            {AFFINITY_COLUMNS.map((columnName) => (
-              <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
-                {AFFINITY_LABELS[columnName]}: {compareWith[columnName] ?? '—'}
-              </Text>
-            ))}
-          </View>
+          {/* This candidate's own column comes first (left), under
+              where its own thumbnail and other stats already sit above
+              - keeping everything about the row's actual subject read
+              left-to-right consistently, top to bottom. "Selected" is
+              the fixed reference every row is compared against, not
+              something this row is otherwise "about", so it sits
+              second (right) rather than taking the primary position. */}
           <View style={styles.compareColumn}>
             <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{nft.nonce} (this candidate)</Text>
             {AFFINITY_COLUMNS.map((columnName) => (
               <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
                 {AFFINITY_LABELS[columnName]}: {nft[columnName] ?? '—'}
+              </Text>
+            ))}
+          </View>
+          <View style={styles.compareColumn}>
+            <Text style={[styles.compareHeader, { color: colors.secondaryText }]}>#{compareWith.nonce} (selected)</Text>
+            {AFFINITY_COLUMNS.map((columnName) => (
+              <Text key={columnName} style={[styles.compareLine, { color: colors.text }]}>
+                {AFFINITY_LABELS[columnName]}: {compareWith[columnName] ?? '—'}
               </Text>
             ))}
           </View>
