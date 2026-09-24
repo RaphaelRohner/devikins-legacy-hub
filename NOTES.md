@@ -2408,6 +2408,41 @@ app where switching sets mid-fetch isn't something you'd do by accident,
 so this wasn't specially engineered around - noted here in case it ever
 needs revisiting.
 
+## Kleverscan tab: an in-app browser to Klever's block explorer
+
+A ninth hamburger menu entry, "Kleverscan" - opens a real embedded
+browser (not a hand-off to the phone's own browser app) pointed
+straight at the Devikins collection's own asset page on
+kleverscan.org, Klever's own block explorer - holder counts, supply,
+and on-chain activity, without leaving the app or typing the asset ID
+in by hand.
+
+Built with `react-native-webview` (confirmed "Included in Expo Go" in
+Expo's own docs before adding it, and installed via `npx expo install
+react-native-webview` - no custom dev build needed, same bar every
+other native module in this app was picked against). Deliberately not
+`expo-web-browser`'s `openBrowserAsync`: that opens as a separate
+system browser sheet layered on top of the app, not a real screen -
+Raphael specifically asked for "a tab," so this instead reuses the
+exact same full-screen-takeover pattern every other menu screen here
+already uses (`KleverscanView.js`, rendered by `App.js` the same way
+as WalletManager/Feedback/HelpAssistant/BreedingHelper), with its own
+"‹" back button.
+
+The target URL is built from `COLLECTIONS.devikin.assetId` in
+`src/constants/schema.js` (the same real Klever asset ID,
+`DVKNFT-1SW5`, the app's own API calls already use) rather than a
+hand-typed string, so it can never quietly drift out of sync -
+`https://kleverscan.org/asset/DVKNFT-1SW5`.
+
+A small back/forward/reload row sits above the page itself. Without
+it, tapping any link on Kleverscan (into a wallet address, a
+transaction, the fungible DVK token, etc.) would strand you there with
+no way back except leaving the tab entirely and losing your place.
+`canGoBack`/`canGoForward` come straight from the WebView's own
+`onNavigationStateChange` callback, so the buttons disable themselves
+correctly instead of always looking tappable.
+
 ## App structure decisions (made while building)
  (made while building)
 

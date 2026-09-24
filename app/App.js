@@ -75,6 +75,7 @@ import WalletManager from './src/components/WalletManager';
 import Feedback from './src/components/Feedback';
 import HelpAssistant from './src/components/HelpAssistant';
 import BreedingHelper from './src/components/BreedingHelper';
+import KleverscanView from './src/components/KleverscanView';
 import SortPickerModal from './src/components/SortPickerModal';
 import { humanizeColumnName } from './src/components/FilterPanel';
 import appConfig from './app.json';
@@ -540,7 +541,7 @@ function AppContent() {
         setIsMenuOpen(false);
         return true; // handled - don't also exit the app
       }
-      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help' || currentScreen === 'breeding') {
+      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help' || currentScreen === 'breeding' || currentScreen === 'kleverscan') {
         goToScreen(lastCollectionScreen);
         return true; // handled - don't also exit the app
       }
@@ -900,6 +901,20 @@ function AppContent() {
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <BreedingHelper ownerAddresses={walletAddresses} onClose={() => goToScreen(lastCollectionScreen)} />
+      </SafeAreaView>
+    );
+  }
+
+  // Kleverscan - a small in-app browser tab (react-native-webview) opened
+  // straight to the Devikins collection's own asset page on Klever's
+  // block explorer, rather than a blank search box - see
+  // KleverscanView.js's own file comment for the full "why" here. Same
+  // full-screen-takeover pattern as every other menu screen above.
+  if (currentScreen === 'kleverscan') {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <KleverscanView onClose={() => goToScreen(lastCollectionScreen)} />
       </SafeAreaView>
     );
   }
