@@ -611,14 +611,18 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // The text App.js now shows up in menuRow (the slot its ProgressBar
   // already uses) in place of this screen's own item count, which used
   // to live buried in the toolbar row below - see App.js's own
-  // collectionStatusText comment for the full reasoning. While Compare
-  // mode is on, this doubles as its progress message instead of the
-  // count, same as it did in its old spot.
-  const toolbarStatusText = compareMode
-    ? compareSelection.length === 0
-      ? 'Tap one to compare'
-      : 'Tap one more to compare'
-    : `${notDeletedCount} ${COLLECTIONS[kind].label}`;
+  // collectionStatusText comment for the full reasoning.
+  //
+  // This used to also double as Compare mode's "Tap one/one more to
+  // compare" progress message while that was active, the same way it
+  // briefly shared the count's old spot in the toolbar - reverted per
+  // feedback, since that meant the count itself disappeared the moment
+  // Compare mode turned on, which read as broken rather than helpful.
+  // The count stays put here unconditionally now; Compare mode's own
+  // state is still visible via the ⇄ button's highlight and each
+  // picked row/tile's colored border, just without a text hint of its
+  // own for the moment.
+  const toolbarStatusText = `${notDeletedCount} ${COLLECTIONS[kind].label}`;
 
   useEffect(() => {
     onStatusTextChange(toolbarStatusText);

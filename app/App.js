@@ -294,14 +294,16 @@ function AppContent() {
   // uses, so it fills the blank space that sits there whenever nothing
   // is fetching, and the progress bar naturally covers it the moment a
   // fetch starts (see the JSX below) rather than needing separate logic
-  // for "hide the count while fetching". Doubles as CollectionView's
-  // own Compare-mode progress text ("Tap one to compare" / "Tap one
-  // more to compare") while that's active, for the same reason it used
-  // to share the count's old spot - one slot, whichever one of the two
-  // is relevant right now. Bubbled up from CollectionView via
-  // onStatusTextChange, mirroring onAppliedFiltersChange just above;
-  // stays '' (renders nothing) on every other screen, since menuRow
-  // itself is only ever shown on the three collection tabs.
+  // for "hide the count while fetching". Always this same count text
+  // now, regardless of Compare mode - an earlier version also swapped
+  // in Compare's own "Tap one/one more to compare" progress message
+  // here while that was active, but that meant the count itself
+  // disappeared the moment Compare mode turned on, which read as
+  // broken rather than helpful - reverted per feedback. Bubbled up
+  // from CollectionView via onStatusTextChange, mirroring
+  // onAppliedFiltersChange just above; stays '' (renders nothing) on
+  // every other screen, since menuRow itself is only ever shown on the
+  // three collection tabs.
   const [collectionStatusText, setCollectionStatusText] = useState('');
 
   // V3: which field the current collection is sorted by, and which
