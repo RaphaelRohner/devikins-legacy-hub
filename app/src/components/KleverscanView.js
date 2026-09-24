@@ -2,12 +2,21 @@
  * KleverscanView.js
  *
  * A small in-app browser tab pointed at Kleverscan (Klever's own block
- * explorer), opened straight to the Devikins collection's asset page
- * (assetId DVKNFT-1SW5, from COLLECTIONS.devikin in schema.js - the
+ * explorer), opened straight to the Devikins collection's own Holders
+ * tab (assetId DVKNFT-1SW5, from COLLECTIONS.devikin in schema.js - the
  * same id the app's own API calls already use, so this can never drift
  * out of sync with a hand-copied URL) rather than a blank search box -
- * a quick way to check holder counts, supply, and on-chain activity
- * without leaving the app or hunting down the right asset ID by hand.
+ * a quick way to check who's currently holding what without leaving
+ * the app or hunting down the right asset ID by hand.
+ *
+ * Opens on Holders specifically (`?tab=Holders`, confirmed by actually
+ * clicking that tab on kleverscan.org and reading window.location.href
+ * afterward, then double-checking that URL also lands there on a fresh
+ * page load, not just after a client-side tab click) rather than the
+ * asset's default Overview tab, per Raphael's own follow-up once he
+ * started using this: the Holders list is what's actually useful here
+ * day to day - e.g. finding your own wallet address by browsing
+ * holders when you don't have it handy - not the overview stats.
  *
  * Uses react-native-webview (confirmed "Included in Expo Go" before
  * adding it as a dependency - no custom dev build needed, same
@@ -35,7 +44,7 @@ import { WebView } from 'react-native-webview';
 import { useTheme } from '../context/ThemeContext';
 import { COLLECTIONS } from '../constants/schema';
 
-const KLEVERSCAN_URL = `https://kleverscan.org/asset/${COLLECTIONS.devikin.assetId}`;
+const KLEVERSCAN_URL = `https://kleverscan.org/asset/${COLLECTIONS.devikin.assetId}?tab=Holders`;
 
 export default function KleverscanView({ onClose }) {
   const { colors } = useTheme();

@@ -2463,6 +2463,22 @@ no way back except leaving the tab entirely and losing your place.
 `onNavigationStateChange` callback, so the buttons disable themselves
 correctly instead of always looking tappable.
 
+**Update (same week): opens on the Holders tab, not Overview.** Once
+Raphael was actually using this, the ask was to land on Kleverscan's
+Holders tab specifically - not one of the top-level asset tabs, but a
+second row of sub-tabs (Transactions/Holders) below the stats.
+Confirmed via the actual site (clicked Holders, read
+`window.location.href` afterward, then re-loaded that URL fresh to
+make sure it isn't just client-side tab state) that it's a plain query
+param: `?tab=Holders`, and that it lands there correctly on a cold
+page load too, not only after clicking the tab client-side. URL is now
+`https://kleverscan.org/asset/DVKNFT-1SW5?tab=Holders`. Matches
+something that came up organically once Raphael started using this
+for real: someone who knows roughly how many Devikins they hold, but
+not their own wallet address, can browse the Holders list to find
+themselves - the Holders tab is the actually-useful one for that, not
+Overview.
+
 ## App structure decisions (made while building)
  (made while building)
 
