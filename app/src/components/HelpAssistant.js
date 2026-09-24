@@ -65,6 +65,13 @@ const FAQ_ENTRIES = [
       "Open the ☰ menu and tap Wallets. Paste your Klever wallet address (starts with klv1...) and tap Add. You can add as many wallets as you like, and give each one a nickname from its Edit button.",
   },
   {
+    id: 'wallet-sets',
+    question: 'How do wallet sets work?',
+    keywords: ['set', 'sets', 'wallet set', 'wallet sets', 'switch', 'profile', 'profiles', 'friend', 'kid'],
+    answer:
+      "At the top of the Wallets screen, above your wallet list, is a switcher for wallet sets - completely separate, independently saved collections of wallets and their fetched NFTs. Handy if two people share the app (each gets their own set), or if you want to peek at a friend's collection without mixing it into your own. Tap + New set to start one; tap any set's name to load it. Rename any set any time, or Empty the active one to unload it without deleting anything - it stays in the list, ready to load back in. Delete removes a set for good, including its downloaded images.",
+  },
+  {
     id: 'fetch-update',
     question: 'What does Fetch/Update do?',
     keywords: ['fetch', 'update', 'scan', 'refresh', 'sync'],
@@ -132,7 +139,7 @@ const FAQ_ENTRIES = [
     question: 'How do I reset all my data?',
     keywords: ['reset', 'wipe', 'start over', 'fresh install'],
     answer:
-      "Open Wallets from the ☰ menu, scroll down to the Danger zone, and tap Reset All Data. This wipes every saved wallet, every stored NFT, and every downloaded image - back to exactly a fresh install. It can't be undone, though your real NFTs on the blockchain are never touched.",
+      "For everything: open Wallets from the ☰ menu, scroll to the Danger zone, and tap Reset All Data - this wipes every wallet set, every saved wallet, every stored NFT, and every downloaded image, back to exactly a fresh install. It can't be undone, though your real NFTs on the blockchain are never touched. For just one set gone wrong, its own Delete button (next to it in the wallet-set switcher, near the top of the same screen) is the gentler option - it only erases that one set, leaving the rest of your sets untouched.",
   },
   {
     id: 'automatic-retry',

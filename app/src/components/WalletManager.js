@@ -29,6 +29,25 @@
  * QrScannerModal.js) as an alternative to typing/pasting an address -
  * it only fills the same text field a paste would, so Add still works
  * exactly the same way either way the address got there.
+ *
+ * Later addition: wallet sets, at the very top of this screen, above
+ * the "Add a wallet" row. A wallet set is a completely separate named
+ * collection - its own wallets, its own fetched NFTs, its own
+ * downloaded images (see database.js's "Wallet sets" section for the
+ * full reasoning) - so everything below the switcher (the Add row, the
+ * wallet list, Danger Zone's per-item behavior) is always scoped to
+ * whichever set is currently active, exactly the way this whole screen
+ * already worked before sets existed, just now switchable. `walletSets`
+ * and `activeWalletSetId` follow the exact same "App.js owns the real
+ * list, this component just calls a changed-callback to get a fresh
+ * copy back" pattern the `wallets` prop above already uses -
+ * `onWalletSetsChanged` plays the same role `onWalletsChanged` does for
+ * individual wallets, just one level up.
+ *
+ * When no set is active at all (the "Empty" action was used - see
+ * handleEmptySet below), the Add row and wallet list are replaced with
+ * a short explanation instead of rendering against data that doesn't
+ * exist - see the `activeWalletSetId` check partway through this file.
  */
 
 import { useState } from 'react';
@@ -43,12 +62,28 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { addWallet, updateWalletAddress, deleteWallet, resetAllData } from '../db/database';
-import { deleteAllStoredImages } from '../api/imageStorage';
+import {
+  addWallet,
+  updateWalletAddress,
+  deleteWallet,
+  resetAllData,
+  createWalletSet,
+  renameWalletSet,
+  switchToWalletSet,
+  unloadCurrentWalletSet,
+  deleteWalletSet,
+} from '../db/database';
 import { useTheme } from '../context/ThemeContext';
 import QrScannerModal from './QrScannerModal';
 
-export default function WalletManager({ wallets, onWalletsChanged, onClose }) {
+export default function WalletManager({
+  wallets,
+  onWalletsChanged,
+  walletSets,
+  activeWalletSetId,
+  onWalletSetsChanged,
+  onClose,
+}) {
   const { colors } = useTheme();
 
   // The "Add a wallet" text field at the top.
@@ -66,6 +101,16 @@ export default function WalletManager({ wallets, onWalletsChanged, onClose }) {
   // alongside the address, and shown next to the Edit/Delete buttons
   // once saved (see the non-edit row below).
   const [editAliasInput, setEditAliasInput] = useState('');
+
+  // Wallet-set switcher state - same shape as the per-wallet edit state
+  // above, just one level up. "Creating" and "renaming" are separate
+  // flags (rather than reusing editingId) since renaming an existing
+  // set and typing a brand new set's name are two different rows in the
+  // UI below, not the same row toggling modes.
+  const [isCreatingSet, setIsCreatingSet] = useState(false);
+  const [newSetNameInput, setNewSetNameInput] = useState('');
+  const [renamingSetId, setRenamingSetId] = useState(null);
+  const [renameSetInput, setRenameSetInput] = useState('');
 
   async function handleAdd() {
     const trimmedAddress = newAddressInput.trim();
@@ -137,18 +182,102 @@ export default function WalletManager({ wallets, onWalletsChanged, onClose }) {
     onWalletsChanged();
   }
 
-  // Wipes every wallet and every saved NFT, back to exactly what a
-  // brand-new install looks like - mainly a testing convenience (so the
+  // Creates a brand-new, empty wallet set and switches straight into
+  // it - naming and starting to use it are the same action here (see
+  // createWalletSet's own comment in database.js for why). A blank name
+  // isn't an error - database.js falls back to "New Set" on its own,
+  // same as leaving a wallet's alias blank just means "no name" rather
+  // than being rejected.
+  async function handleCreateSet() {
+    await createWalletSet(newSetNameInput);
+    setNewSetNameInput('');
+    setIsCreatingSet(false);
+    onWalletSetsChanged();
+  }
+
+  function handleCancelCreateSet() {
+    setNewSetNameInput('');
+    setIsCreatingSet(false);
+  }
+
+  // Switching to the set you're already on would just be a no-op
+  // database round-trip for nothing, so this skips it entirely rather
+  // than calling switchToWalletSet unnecessarily.
+  async function handleSwitchSet(id) {
+    if (id === activeWalletSetId) return;
+    await switchToWalletSet(id);
+    onWalletSetsChanged();
+  }
+
+  function handleStartRenameSet(set) {
+    setRenamingSetId(set.id);
+    setRenameSetInput(set.name);
+  }
+
+  function handleCancelRenameSet() {
+    setRenamingSetId(null);
+    setRenameSetInput('');
+  }
+
+  async function handleSaveRenameSet(id) {
+    const trimmedName = renameSetInput.trim();
+    if (!trimmedName) return;
+    await renameWalletSet(id, trimmedName);
+    setRenamingSetId(null);
+    setRenameSetInput('');
+    onWalletSetsChanged();
+  }
+
+  // Unloads the currently active set without touching any of its data -
+  // Raphael's own "Empty" action (see unloadCurrentWalletSet's own
+  // comment in database.js). No confirmation dialog, same reasoning as
+  // handleDelete above for a single wallet: nothing is actually erased,
+  // so there's nothing risky to confirm - the set stays in the switcher
+  // list below, ready to load back in any time.
+  async function handleEmptySet() {
+    await unloadCurrentWalletSet();
+    onWalletSetsChanged();
+  }
+
+  // Permanently deletes one wallet set - its wallets, its NFTs, and its
+  // downloaded images, gone for good (see deleteWalletSet's own comment
+  // in database.js). Works on any set in the list, not just the active
+  // one, so a set that turned out to be a mistake (e.g. the wrong
+  // address pulled in a huge pile of broken entries) can be cleared out
+  // without first switching into it. Gets the same style of destructive
+  // confirmation as Reset All Data below, just scoped to one set.
+  function handleDeleteSet(set) {
+    Alert.alert(
+      `Delete "${set.name}"?`,
+      'This permanently deletes every wallet, NFT, and downloaded image saved under this set. This cannot be undone - your actual NFTs are safe on the blockchain either way.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Set',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteWalletSet(set.id);
+            onWalletSetsChanged();
+          },
+        },
+      ]
+    );
+  }
+
+  // Wipes every wallet set entirely - every wallet, every saved NFT,
+  // and every downloaded image, across ALL sets, not just the active
+  // one - back to exactly what a brand-new install looks like (a single
+  // fresh "My Wallets" set, empty). Mainly a testing convenience (so the
   // whole app can be exercised again "from scratch" without uninstalling
   // Expo Go, which would wipe every OTHER Expo Go project on this phone
-  // too, not just this one). Unlike deleting a single wallet above, this
-  // DOES permanently erase NFT data (and every downloaded image), so it
-  // gets an actual confirmation prompt first, matching how destructive an
-  // action it really is.
+  // too, not just this one). This DOES permanently erase everything, so
+  // it gets an actual confirmation prompt first, matching how
+  // destructive an action it really is - the one button on this whole
+  // screen bigger than a single set's own Delete above.
   function handleResetAllData() {
     Alert.alert(
       'Reset all data?',
-      'This deletes every saved wallet and every Devikin, Weapon, and Equipment NFT stored on this phone, along with their downloaded images. This cannot be undone - your actual NFTs are safe on the blockchain either way, but you will need to re-add your wallet(s) and fetch again from scratch.',
+      'This deletes every wallet set, every saved wallet, and every Devikin, Weapon, and Equipment NFT stored on this phone, along with their downloaded images. This cannot be undone - your actual NFTs are safe on the blockchain either way, but you will need to re-add your wallet(s) and fetch again from scratch.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -156,8 +285,7 @@ export default function WalletManager({ wallets, onWalletsChanged, onClose }) {
           style: 'destructive',
           onPress: async () => {
             await resetAllData();
-            await deleteAllStoredImages();
-            onWalletsChanged();
+            onWalletSetsChanged();
           },
         },
       ]
@@ -178,45 +306,171 @@ export default function WalletManager({ wallets, onWalletsChanged, onClose }) {
         Fetch/Update pulls Devikins, Weapons, and Equipment from every wallet address listed here.
       </Text>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={styles.addRow}>
-          <TextInput
-            style={[styles.addInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-            placeholder="Paste a Klever wallet address (klv1...)"
-            placeholderTextColor={colors.secondaryText}
-            value={newAddressInput}
-            onChangeText={setNewAddressInput}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TouchableOpacity
-            style={[styles.scanButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
-            onPress={() => setIsScannerVisible(true)}
-          >
-            <Text style={styles.scanButtonIcon}>📷</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.addButton,
-              { backgroundColor: colors.primary },
-              newAddressInput.trim().length === 0 && { backgroundColor: colors.primaryDisabled },
-            ]}
-            onPress={handleAdd}
-            disabled={newAddressInput.trim().length === 0}
-          >
-            <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Add</Text>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+      {/* Wallet set switcher - see this file's own header comment for
+          the full reasoning. Everything below this section (the Add
+          row, the wallet list, and every per-wallet action) is always
+          scoped to whichever set is active here, same as this whole
+          screen already worked before sets existed. */}
+      <View style={styles.setSwitcherSection}>
+        <Text style={[styles.setSwitcherTitle, { color: colors.text }]}>Wallet set</Text>
+        <Text style={[styles.setSwitcherHint, { color: colors.secondaryText }]}>
+          Switch between separate, independently saved collections of wallets - useful for a second player in the household, or checking a friend's collection without touching your own.
+        </Text>
 
-      <QrScannerModal
-        visible={isScannerVisible}
-        onScanned={handleScanned}
-        onClose={() => setIsScannerVisible(false)}
-      />
+        {walletSets.map((set) => {
+          const isActive = set.id === activeWalletSetId;
+          return (
+            <View
+              key={set.id}
+              style={[styles.setRow, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }]}
+            >
+              {renamingSetId === set.id ? (
+                <>
+                  <TextInput
+                    style={[styles.editInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
+                    value={renameSetInput}
+                    onChangeText={setRenameSetInput}
+                    autoCapitalize="words"
+                  />
+                  <View style={styles.walletRowButtons}>
+                    <TouchableOpacity
+                      style={[
+                        styles.rowButton,
+                        { backgroundColor: colors.primary },
+                        renameSetInput.trim().length === 0 && { backgroundColor: colors.primaryDisabled },
+                      ]}
+                      onPress={() => handleSaveRenameSet(set.id)}
+                      disabled={renameSetInput.trim().length === 0}
+                    >
+                      <Text style={[styles.rowButtonText, { color: colors.primaryText }]}>Save</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+                      onPress={handleCancelRenameSet}
+                    >
+                      <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity style={styles.setNameButton} onPress={() => handleSwitchSet(set.id)}>
+                    <Text style={[styles.setNameText, { color: colors.text }]} numberOfLines={1}>
+                      {set.name}
+                    </Text>
+                    <Text style={[styles.setActiveBadge, { color: isActive ? colors.primary : colors.secondaryText }]}>
+                      {isActive ? 'Active - loaded now' : 'Tap to load'}
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={styles.walletRowButtons}>
+                    <TouchableOpacity
+                      style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+                      onPress={() => handleStartRenameSet(set)}
+                    >
+                      <Text style={[styles.rowButtonText, { color: colors.text }]}>Rename</Text>
+                    </TouchableOpacity>
+                    {isActive ? (
+                      <TouchableOpacity
+                        style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+                        onPress={handleEmptySet}
+                      >
+                        <Text style={[styles.rowButtonText, { color: colors.text }]}>Empty</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }]}
+                      onPress={() => handleDeleteSet(set)}
+                    >
+                      <Text style={[styles.rowButtonText, { color: colors.cancelText }]}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          );
+        })}
+
+        {isCreatingSet ? (
+          <View style={styles.addRow}>
+            <TextInput
+              style={[styles.addInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+              placeholder="Name this set (e.g. My Wallets)"
+              placeholderTextColor={colors.secondaryText}
+              value={newSetNameInput}
+              onChangeText={setNewSetNameInput}
+              autoCapitalize="words"
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[styles.addButton, { backgroundColor: colors.primary }]}
+              onPress={handleCreateSet}
+            >
+              <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Create</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+              onPress={handleCancelCreateSet}
+            >
+              <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.newSetButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+            onPress={() => setIsCreatingSet(true)}
+          >
+            <Text style={[styles.newSetButtonText, { color: colors.text }]}>+ New set</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {activeWalletSetId ? (
+        <>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={styles.addRow}>
+              <TextInput
+                style={[styles.addInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                placeholder="Paste a Klever wallet address (klv1...)"
+                placeholderTextColor={colors.secondaryText}
+                value={newAddressInput}
+                onChangeText={setNewAddressInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <TouchableOpacity
+                style={[styles.scanButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+                onPress={() => setIsScannerVisible(true)}
+              >
+                <Text style={styles.scanButtonIcon}>📷</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.addButton,
+                  { backgroundColor: colors.primary },
+                  newAddressInput.trim().length === 0 && { backgroundColor: colors.primaryDisabled },
+                ]}
+                onPress={handleAdd}
+                disabled={newAddressInput.trim().length === 0}
+              >
+                <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Add</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+
+          <QrScannerModal
+            visible={isScannerVisible}
+            onScanned={handleScanned}
+            onClose={() => setIsScannerVisible(false)}
+          />
+        </>
+      ) : null}
 
       <ScrollView contentContainerStyle={styles.listContent}>
-        {wallets.length === 0 ? (
+        {!activeWalletSetId ? (
+          <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
+            No wallet set is loaded right now - load one above, or create a new one to start adding wallet addresses.
+          </Text>
+        ) : wallets.length === 0 ? (
           <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
             No wallets added yet - paste an address above and tap Add.
           </Text>
@@ -310,7 +564,7 @@ export default function WalletManager({ wallets, onWalletsChanged, onClose }) {
         <View style={[styles.dangerZone, { borderTopColor: colors.border }]}>
           <Text style={[styles.dangerZoneTitle, { color: colors.text }]}>Danger zone</Text>
           <Text style={[styles.dangerZoneText, { color: colors.secondaryText }]}>
-            Wipes every saved wallet and every stored NFT (and their downloaded images) - useful for testing the app again from a fresh start. Your actual NFTs on the blockchain are never affected.
+            Wipes every wallet set, every saved wallet, and every stored NFT (and their downloaded images) - useful for testing the app again from a fresh start. Your actual NFTs on the blockchain are never affected. To clear out just one set instead, use its own Delete button above.
           </Text>
           <TouchableOpacity
             style={[styles.resetButton, { backgroundColor: colors.statusFailedBackground }]}
@@ -353,6 +607,57 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginTop: 4,
     marginBottom: 16,
+  },
+  setSwitcherSection: {
+    marginBottom: 8,
+  },
+  setSwitcherTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginHorizontal: 12,
+    marginBottom: 4,
+  },
+  setSwitcherHint: {
+    fontSize: 13,
+    marginHorizontal: 12,
+    marginBottom: 10,
+  },
+  setRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 10,
+    padding: 12,
+    marginHorizontal: 12,
+    marginBottom: 8,
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+    gap: 8,
+  },
+  setNameButton: {
+    flex: 1,
+  },
+  setNameText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  setActiveBadge: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  newSetButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginHorizontal: 12,
+    marginBottom: 4,
+  },
+  newSetButtonText: {
+    fontWeight: '600',
   },
   addRow: {
     flexDirection: 'row',

@@ -2302,6 +2302,112 @@ change and change back between two fetches with nothing logged, and
 anything before this feature's first commit is invisible); and it's
 necessarily per-NFT, not some global game timeline.
 
+## Wallet sets: separate, named, switchable collections
+
+The last piece before calling this version 3.0.0. Came out of a design
+discussion about two candidate features - an undo for Reset All Data,
+and named "wallet sets" - where the second turned out to make the first
+unnecessary (if you can just create a fresh set and switch back to the
+old one any time, there's nothing left for a reset-undo to do that sets
+don't already cover), so only this one got built.
+
+A wallet set is a completely independent copy of everything the app
+tracks - its own wallets, its own fetched Devikin/Weapon/Equipment rows,
+its own downloaded images - identified by a name (e.g. "My Wallets",
+"Kiddo's account", "Friend's collection"). The point: a second player in
+the household, or checking a friend's collection, or a wallet that
+turned out to belong to a big contract and flooded the database with
+broken entries, can each get their own space without mixing into - or
+requiring a wipe of - anything else, and switching between them never
+re-fetches anything, since nothing is actually shared or merged.
+
+**Architecture: one database FILE per set, not one shared database with
+a "which set" column on every row.** `database.js`'s `getDatabase()`
+used to always open the same hardcoded `devikins.db` file; it now opens
+whichever file `activeDatabaseFileName` currently names, and switching
+sets is nothing more than closing that connection
+(`closeActiveDatabase`) and opening a different one. Every existing
+query function in that file - every filter, every sort, the breeding
+helper, the compare view, all of it - keeps working completely
+unchanged, since they all just call `getDatabase()` internally and have
+no idea a "set" concept even exists. `imageStorage.js` got the same
+treatment for its own image folder (`setActiveImagesDirName`). This was
+chosen over tagging every row with a set id and filtering everywhere,
+both because it's a much smaller change (nothing outside `database.js`
+and `imageStorage.js` needed to know sets exist at all) and because it
+fully isolates the data - if the same physical NFT nonce ever showed up
+in two different sets (a trade or gift between the two wallets), keeping
+them in genuinely separate files guarantees one set's notes/deleted-
+flag/star-rating on that nonce can never bleed into the other's.
+
+A second, always-open, never-swapped database (`wallet-sets-registry.db`,
+via `getRegistryDatabase()`) tracks which sets exist and which one is
+active - it has to live outside the per-set database, since that's
+exactly the thing getting closed and reopened on every switch. It also
+holds a small `global_settings` table for the one preference that should
+survive a set switch instead of resetting with everything else -
+List/Tiles view mode, moved here from the old per-set `settings` table
+(via new `getGlobalSetting`/`setGlobalSetting`, App.js) specifically so
+picking a different set doesn't also silently flip your view mode.
+
+**Migration:** the very first time this runs on a phone that already had
+data (i.e. everyone upgrading from v2), `initWalletSets()` finds the
+registry empty and registers a set called "My Wallets" pointing at the
+exact same filenames the app always used (`devikins.db` /
+`nft-images/`) - zero data actually moved, copied, or renamed anywhere.
+Same shape as the wallets-table migration this codebase already did
+once before (see the multi-wallet section further up).
+
+**The five actions Raphael asked for**, all in `WalletManager.js`'s new
+switcher section at the top of the Wallets screen, above the existing
+per-wallet Add/Edit/Delete list (which is always scoped to whichever set
+is active):
+
+- **Create** - names and immediately switches into a brand-new empty
+  set. No separate "save" step; per Raphael's own call, creating +
+  naming + fetching into it IS what keeps it saved, the same way adding
+  a wallet doesn't need a separate save tap either.
+- **Load** - tapping any set's name in the list switches to it.
+- **Rename** - available on any set, the default "My Wallets" included,
+  since (Raphael's own words) "it might not be his wallets he wants to
+  check."
+- **Empty** - unloads the active set without touching its data at all.
+  Leaves the app with nothing active until Wallets is visited again to
+  load or create one - a state the app already had to handle anyway
+  (zero wallets/zero NFTs is exactly what a fresh install or a Reset
+  already looks like), so no forced blocking screen was needed; Raphael
+  explicitly confirmed an "empty app" is fine to allow.
+- **Delete** - permanent, with the same style of destructive
+  confirmation dialog Reset All Data already used. Works on any set in
+  the list, not just the active one, so a set that turned out to be a
+  mistake (Raphael's own example: loading a big contract address by
+  accident and getting a pile of broken entries) can be cleared without
+  first switching into it.
+
+**Reset All Data got a quiet but important fix alongside this**: it used
+to only ever touch whichever database happened to be open. With sets
+now able to exist, that would have silently left every OTHER set's
+database file and image folder sitting on the phone while claiming to
+have wiped "every saved wallet and every stored NFT." It now loops over
+every registered set, deletes each one's files, wipes the registry, and
+recreates a single fresh "My Wallets" set - genuinely back to a
+brand-new install, not just a reset of whichever set you happened to be
+on.
+
+Devi's (`HelpAssistant.js`) FAQ list got a new entry for how sets work,
+and the existing "how do I reset all my data" entry now also mentions
+each set's own Delete button as the gentler, narrower alternative.
+
+Known, accepted edge case: switching/creating/deleting a set while a
+fetch is actively in progress isn't specially guarded against. Worst
+case, an in-flight fetch's next database write fails against a
+connection that just got closed out from under it (a failed-fetch error,
+not data corruption - SQLite commits each write as it happens, so
+nothing already written is lost or mixed up). Low risk for a single-user
+app where switching sets mid-fetch isn't something you'd do by accident,
+so this wasn't specially engineered around - noted here in case it ever
+needs revisiting.
+
 ## App structure decisions (made while building)
  (made while building)
 

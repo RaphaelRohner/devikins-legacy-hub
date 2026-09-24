@@ -57,7 +57,14 @@ import {
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
-import { initDatabase, getWallets, getSetting, setSetting, countPendingRetries } from './src/db/database';
+import {
+  initWalletSets,
+  getWallets,
+  getWalletSets,
+  getGlobalSetting,
+  setGlobalSetting,
+  countPendingRetries,
+} from './src/db/database';
 import { fetchAllForWallets, retryPendingItemsForWallets, checkImageFreshnessForWallets } from './src/api/fetchAllForWallet';
 import { COLLECTIONS, getSortableFieldNames } from './src/constants/schema';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -160,6 +167,21 @@ function AppContent() {
   // `walletAddresses` is just the plain address strings, which is all
   // CollectionView/the fetch functions actually need.
   const [wallets, setWallets] = useState([]);
+
+  // Wallet sets: each one is a completely separate, named copy of
+  // "everything" (its own wallets, its own fetched NFTs, its own
+  // downloaded images - see database.js's own "Wallet sets" section for
+  // the full reasoning). `walletSets` is every set that exists, for the
+  // switcher in WalletManager.js; `activeWalletSetId` is whichever one
+  // is currently loaded, or null if none is (the "Empty" action was
+  // used). Nothing in this file queries the database for NFT data while
+  // wallets is empty - and wallets is always set to [] the moment no
+  // set is active (see refreshWalletSetsState below) - so a null
+  // activeWalletSetId doesn't need its own separate guard everywhere;
+  // it's really only used to decide what to show on the Wallets screen
+  // and to land there automatically on startup when nothing's active.
+  const [walletSets, setWalletSets] = useState([]);
+  const [activeWalletSetId, setActiveWalletSetId] = useState(null);
   // Memoized so this array only gets a new identity when `wallets`
   // itself actually changes (add/edit/delete a wallet) - NOT on every
   // render of App.js. That matters a lot during a fetch: `setProgress`
@@ -247,7 +269,7 @@ function AppContent() {
   useEffect(() => {
     let cancelled = false;
     async function loadViewMode() {
-      const saved = await getSetting('viewMode');
+      const saved = await getGlobalSetting('viewMode');
       if (!cancelled && (saved === 'list' || saved === 'tiles')) {
         setViewMode(saved);
       }
@@ -260,7 +282,7 @@ function AppContent() {
 
   function handleSetViewMode(nextMode) {
     setViewMode(nextMode);
-    setSetting('viewMode', nextMode);
+    setGlobalSetting('viewMode', nextMode);
   }
 
   // Whether CollectionView's filter panel is expanded. Used to live as
@@ -432,6 +454,26 @@ function AppContent() {
     setWallets(rows);
   }, []);
 
+  // Re-reads the wallet-sets registry (which sets exist, which one's
+  // active) and, if one is active, the active set's own wallet list -
+  // or clears `wallets` straight to [] if none is, rather than trying
+  // to query a database that doesn't exist right now. Called after
+  // every set-level action (switch/create/rename/empty/delete - see the
+  // callbacks passed to WalletManager below), the same role loadWallets
+  // already plays for individual wallet add/edit/delete.
+  const refreshWalletSetsState = useCallback(async () => {
+    const sets = await getWalletSets();
+    setWalletSets(sets);
+    const active = sets.find((set) => set.is_active);
+    if (active) {
+      setActiveWalletSetId(active.id);
+      await loadWallets();
+    } else {
+      setActiveWalletSetId(null);
+      setWallets([]);
+    }
+  }, [loadWallets]);
+
   useEffect(() => {
     // Run the real database setup and a plain timer side by side, and
     // wait for BOTH to finish before dismissing the loading screen -
@@ -443,14 +485,28 @@ function AppContent() {
     // setup short.)
     const minSplashDelay = new Promise((resolve) => setTimeout(resolve, MIN_SPLASH_DURATION_MS));
 
-    Promise.all([initDatabase(), minSplashDelay]).then(async () => {
-      // Load whatever wallets are already saved (including the one
-      // automatically carried over from before this multi-wallet feature
-      // existed - see initDatabase's migration in database.js) and show
-      // their already-saved NFTs right away - no need to wait on the
-      // network just to see data we already have. Tapping Fetch/Update
-      // still checks for anything new/changed, same as always.
-      await loadWallets();
+    Promise.all([initWalletSets(), minSplashDelay]).then(async ([activeSetId]) => {
+      setActiveWalletSetId(activeSetId);
+      const sets = await getWalletSets();
+      setWalletSets(sets);
+
+      if (activeSetId) {
+        // Load whatever wallets are already saved for this set
+        // (including the one automatically carried over from before
+        // either the multi-wallet or wallet-sets features existed - see
+        // initWalletSets'/initDatabase's own migrations in database.js)
+        // and show their already-saved NFTs right away - no need to
+        // wait on the network just to see data we already have. Tapping
+        // Fetch/Update still checks for anything new/changed, same as
+        // always.
+        await loadWallets();
+      } else {
+        // Nothing's active (the "Empty" action was used on a previous
+        // run) - land straight on Wallets rather than an empty
+        // Devikins tab with no obvious way to tell why, so loading or
+        // creating a set is the very next thing in front of the user.
+        setCurrentScreen('wallets');
+      }
       setIsDatabaseReady(true);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -761,7 +817,7 @@ function AppContent() {
   // since that was about visual spacing, not safe-area correctness.
   // A simple splash/loading screen, shown only for the brief moment while
   // the local database is doing its one-time setup when the app first
-  // opens (see the useEffect above that calls initDatabase()). "Devikins"
+  // opens (see the useEffect above that calls initWalletSets()). "Devikins"
   // and "Legacy" are two separate Text elements (not one string with a
   // line break in it) so each line can be styled and centered the same
   // way regardless of screen width. "Companion" sits underneath as a
@@ -798,6 +854,9 @@ function AppContent() {
         <WalletManager
           wallets={wallets}
           onWalletsChanged={loadWallets}
+          walletSets={walletSets}
+          activeWalletSetId={activeWalletSetId}
+          onWalletSetsChanged={refreshWalletSetsState}
           onClose={() => goToScreen(lastCollectionScreen)}
         />
       </SafeAreaView>

@@ -16,23 +16,81 @@
  *     special characters breaking the query.
  *   - getAllAsync(sql, params) runs a SELECT and gives back every matching
  *     row as a plain JavaScript array of objects.
+ *
+ * Wallet sets (added later - see the "Wallet sets" section near the
+ * bottom of this file): everything above this point - the devikin/
+ * weapon/equipment/settings/wallets tables, and every query function
+ * that touches them - belongs to whichever ONE wallet set is currently
+ * active, not the app as a whole. Each named set Raphael creates (e.g.
+ * "My Wallets", "Kiddo's account", "Friend's collection") is its own
+ * completely separate database FILE, so switching sets is just a matter
+ * of closing this connection and opening a different file - every
+ * function below keeps working completely unchanged, they just end up
+ * reading/writing whichever file is currently open. A small second
+ * database (see getRegistryDatabase) - never closed, never swapped -
+ * keeps track of which sets exist and which one is active right now.
  */
 
 import * as SQLite from 'expo-sqlite';
 import { TRAIT_COLUMNS, RARITY_ORDER } from '../constants/schema';
+import { setActiveImagesDirName, deleteStoredImagesForDir } from '../api/imageStorage';
 
-const DATABASE_FILE_NAME = 'devikins.db';
+// Which wallet set's own database FILE is currently active - see the
+// "Wallet sets" section near the bottom of this file. Starts out
+// pointing at the original single-set filename this app always used
+// before wallet sets existed, so a fresh app start behaves exactly like
+// before until initWalletSets() (called once from App.js's startup
+// effect) has had a chance to check the registry and possibly point
+// this somewhere else. null means no set is currently active at all
+// (the "Empty" action was used) - getDatabase() is never called in that
+// state (App.js doesn't query for NFTs/wallets without an active set),
+// but see closeActiveDatabase below for how the actual swap happens.
+let activeDatabaseFileName = 'devikins.db';
 
 // We only want to open the database once and reuse the same connection
 // everywhere, rather than re-opening it every time some part of the app
-// wants to read or write. This variable caches that one open connection.
+// wants to read or write. This variable caches that one open connection
+// - for whichever file activeDatabaseFileName currently names.
 let databaseConnectionPromise = null;
 
 function getDatabase() {
   if (!databaseConnectionPromise) {
-    databaseConnectionPromise = SQLite.openDatabaseAsync(DATABASE_FILE_NAME);
+    databaseConnectionPromise = SQLite.openDatabaseAsync(activeDatabaseFileName);
   }
   return databaseConnectionPromise;
+}
+
+// Closes whatever per-set database connection is currently open (if
+// any) and forgets it, so the next getDatabase() call opens a fresh
+// connection against whatever activeDatabaseFileName has just been
+// pointed at. Used by every wallet-set switch below (create/switch/
+// unload/delete) - always call this BEFORE changing
+// activeDatabaseFileName, never after, so nothing in between can read
+// through a connection to a file that's about to stop being "the"
+// active one.
+async function closeActiveDatabase() {
+  if (databaseConnectionPromise) {
+    const db = await databaseConnectionPromise;
+    await db.closeAsync();
+    databaseConnectionPromise = null;
+  }
+}
+
+// A second, completely separate database - never closed, never
+// swapped, always the same physical file - that just keeps track of
+// which wallet sets exist and which one is active. Deliberately its own
+// database rather than a table inside the per-set one above: the
+// per-set database is exactly the thing that gets closed and swapped
+// out when you switch sets, so the registry of "what sets even exist"
+// has to live somewhere that isn't affected by that swap.
+const REGISTRY_DATABASE_FILE_NAME = 'wallet-sets-registry.db';
+let registryConnectionPromise = null;
+
+function getRegistryDatabase() {
+  if (!registryConnectionPromise) {
+    registryConnectionPromise = SQLite.openDatabaseAsync(REGISTRY_DATABASE_FILE_NAME);
+  }
+  return registryConnectionPromise;
 }
 
 // Turns { rarity: { kind: 'text' }, scaling: { kind: 'integer' }, ... }
@@ -328,11 +386,42 @@ export async function deleteWallet(id) {
  * migration attempt to run again pointlessly.
  */
 export async function resetAllData() {
-  const db = await getDatabase();
-  await db.runAsync(`DELETE FROM devikin`);
-  await db.runAsync(`DELETE FROM weapon`);
-  await db.runAsync(`DELETE FROM equipment`);
-  await db.runAsync(`DELETE FROM wallets`);
+  // Wallet sets exist now (see the "Wallet sets" section near the
+  // bottom of this file) - "reset EVERYTHING" has to mean every set,
+  // not just whichever one happens to be active right now, otherwise a
+  // Reset would silently leave every OTHER set's database file and
+  // image folder sitting on the phone untouched while claiming to have
+  // wiped "every saved wallet and every stored NFT" (see WalletManager.
+  // js's own confirmation text, which really does mean all of it).
+  const registryDb = await getRegistryDatabase();
+  const allSets = await registryDb.getAllAsync(`SELECT id FROM wallet_sets`);
+
+  // Whichever set is currently active almost certainly has its database
+  // file open right now - deleteDatabaseAsync on an open file can fail
+  // (or silently do nothing) rather than actually removing it, and
+  // since the freshly-recreated default set below reuses that exact
+  // same filename, a failed delete here would mean the "reset" set
+  // isn't actually empty. Close it first, same as every other
+  // set-switching function in this section already does before
+  // touching files.
+  await closeActiveDatabase();
+
+  for (const set of allSets) {
+    await deleteWalletSetFiles(set.id);
+  }
+  await registryDb.runAsync(`DELETE FROM wallet_sets`);
+  activeDatabaseFileName = null;
+  setActiveImagesDirName(null);
+
+  // Recreate the single starting set, exactly what a brand-new install
+  // gets from initWalletSets' own first-run migration below - Reset All
+  // Data should leave the app in that same "just installed" state, not
+  // in the newer, arguably more confusing "no set active at all" state.
+  await insertDefaultWalletSet(registryDb);
+  const freshRow = await registryDb.getFirstAsync(`SELECT * FROM wallet_sets WHERE is_active = 1`);
+  activeDatabaseFileName = freshRow.db_file_name;
+  setActiveImagesDirName(freshRow.images_dir_name);
+  await initDatabase();
 }
 
 /**
@@ -1023,4 +1112,280 @@ export async function countPendingRetries(ownerAddresses) {
     missingImageCount,
     total: failedCount + missingImageCount,
   };
+}
+
+
+// ===========================================================================
+// Wallet sets
+// ===========================================================================
+//
+// A "wallet set" is a completely independent copy of everything above
+// this comment - its own wallets table, its own devikin/weapon/
+// equipment tables, its own settings table, and its own downloaded
+// images folder (see imageStorage.js) - identified by a name Raphael
+// picks (e.g. "My Wallets", "Kiddo's account", "Friend's collection").
+// The point: switching between them is instant and never re-fetches
+// anything, because nothing is actually being merged/filtered from one
+// shared pool - each set is just a different pair of files
+// (database + images folder) on the phone, and "switching" is nothing
+// more than closing the current database connection and opening a
+// different one (see closeActiveDatabase/getDatabase above), plus
+// pointing imageStorage.js at a different folder name
+// (setActiveImagesDirName). Every query function ABOVE this comment
+// keeps working completely unchanged either way.
+//
+// The registry of which sets exist - just their names and which two
+// filenames belong to them - lives in its own small, always-open
+// database (getRegistryDatabase above) that's never itself part of a
+// swap, since it has to survive being able to describe every set,
+// including ones that aren't currently open.
+//
+// First-run migration: initWalletSets() (called once from App.js's
+// startup effect, before initDatabase()) checks whether the registry
+// has any sets in it at all. The very first time this code runs on a
+// phone that's already been using the app (back when there was no such
+// thing as multiple sets), it hasn't - so it registers a set called
+// "My Wallets" that points at the exact same filenames the app already
+// used (devikins.db / nft-images), with zero data actually moved or
+// copied anywhere. Every wallet, NFT, and image that already existed
+// keeps working exactly as before, just now described as belonging to
+// this one named set. The exact same migration-on-first-run shape
+// initDatabase() already uses for the wallets table (see its own
+// comment further up) - a pattern this codebase has done before.
+
+// Shared by initWalletSets' first-run migration and resetAllData's
+// "start over from nothing" recreation - both want the exact same
+// starting set, just at different moments.
+async function insertDefaultWalletSet(registryDb) {
+  await registryDb.runAsync(
+    `INSERT INTO wallet_sets (name, db_file_name, images_dir_name, created_at, is_active)
+     VALUES (?, ?, ?, ?, 1)`,
+    ['My Wallets', 'devikins.db', 'nft-images', Date.now()]
+  );
+}
+
+// Deletes one set's own database file and image folder, by id, WITHOUT
+// touching the registry row itself - shared by deleteWalletSet (which
+// also removes the row afterward) and resetAllData (which wipes every
+// row at once in a single DELETE, rather than one at a time). Safe to
+// call on a set that was created but never actually fetched into (its
+// database file may not exist as an actual file yet - deleteDatabaseAsync
+// on a name that was never opened is a harmless no-op, same idea as
+// deleteStoredImagesForDir already being safe on a folder that was
+// never created).
+async function deleteWalletSetFiles(id) {
+  const registryDb = await getRegistryDatabase();
+  const set = await registryDb.getFirstAsync(`SELECT * FROM wallet_sets WHERE id = ?`, [id]);
+  if (!set) return;
+  await SQLite.deleteDatabaseAsync(set.db_file_name).catch(() => {});
+  await deleteStoredImagesForDir(set.images_dir_name);
+}
+
+/**
+ * Creates the wallet_sets registry table (if it doesn't already exist),
+ * runs the first-run "My Wallets" migration described above if the
+ * registry is still completely empty, then points activeDatabaseFileName/
+ * imageStorage.js at whichever set is currently marked active and runs
+ * that set's own initDatabase() (its schema may be out of date if this
+ * set hasn't been opened since an app update added a new column/table).
+ *
+ * Called once from App.js's startup effect, BEFORE initDatabase() -
+ * App.js only goes on to call initDatabase()/loadWallets() itself if
+ * this returns a real id; a null return means no set is currently
+ * active (the "Empty" action was used), and App.js shows the Wallets
+ * screen so Raphael can load or create one instead of trying to query
+ * NFT data that has nowhere to come from right now.
+ */
+export async function initWalletSets() {
+  const registryDb = await getRegistryDatabase();
+  await registryDb.execAsync(`
+    CREATE TABLE IF NOT EXISTS wallet_sets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      db_file_name TEXT NOT NULL UNIQUE,
+      images_dir_name TEXT NOT NULL UNIQUE,
+      created_at INTEGER,
+      is_active INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  // A tiny key/value table for app-wide preferences that should stay
+  // the same no matter which wallet set is active (List/Tiles view mode
+  // is the one example today - see App.js) - deliberately NOT the same
+  // `settings` table initDatabase() creates per set further up, since
+  // that one gets swapped out along with everything else when you
+  // switch sets, and a display preference switching along with it would
+  // be a surprising side effect of picking a different set.
+  await registryDb.execAsync(`
+    CREATE TABLE IF NOT EXISTS global_settings (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT
+    );
+  `);
+
+  const existingSetCount = await registryDb.getFirstAsync(`SELECT COUNT(*) AS count FROM wallet_sets`);
+  if ((existingSetCount?.count ?? 0) === 0) {
+    await insertDefaultWalletSet(registryDb);
+  }
+
+  const activeRow = await registryDb.getFirstAsync(`SELECT * FROM wallet_sets WHERE is_active = 1`);
+  if (!activeRow) {
+    // Nothing active - the "Empty" action was used on a previous run.
+    // Leave activeDatabaseFileName/imageStorage.js pointing at nothing
+    // rather than guessing; App.js handles this state explicitly.
+    activeDatabaseFileName = null;
+    setActiveImagesDirName(null);
+    return null;
+  }
+
+  activeDatabaseFileName = activeRow.db_file_name;
+  setActiveImagesDirName(activeRow.images_dir_name);
+  await initDatabase();
+  return activeRow.id;
+}
+
+/**
+ * Every wallet set that exists, oldest first - powers the switcher list
+ * in WalletManager.js (name, which one's currently active, when it was
+ * created).
+ */
+export async function getWalletSets() {
+  const registryDb = await getRegistryDatabase();
+  return registryDb.getAllAsync(
+    `SELECT id, name, db_file_name, images_dir_name, created_at, is_active FROM wallet_sets ORDER BY id ASC`
+  );
+}
+
+/**
+ * Creates a brand-new, empty wallet set and immediately makes it the
+ * active one - "create" and "start using it" are the same action here,
+ * same as adding a wallet doesn't need a separate "save" step (see
+ * Raphael's own call on this during the design discussion). The new
+ * set's database/images filenames are derived from the current
+ * timestamp, which is all that's needed to guarantee they don't collide
+ * with any existing (or previously deleted) set's files.
+ */
+export async function createWalletSet(name) {
+  const registryDb = await getRegistryDatabase();
+  const trimmedName = (name || '').trim() || 'New Set';
+  const suffix = Date.now();
+  const dbFileName = `devikins-set-${suffix}.db`;
+  const imagesDirName = `nft-images-set-${suffix}`;
+
+  await closeActiveDatabase();
+  await registryDb.runAsync(`UPDATE wallet_sets SET is_active = 0`);
+  const result = await registryDb.runAsync(
+    `INSERT INTO wallet_sets (name, db_file_name, images_dir_name, created_at, is_active)
+     VALUES (?, ?, ?, ?, 1)`,
+    [trimmedName, dbFileName, imagesDirName, suffix]
+  );
+
+  activeDatabaseFileName = dbFileName;
+  setActiveImagesDirName(imagesDirName);
+  await initDatabase();
+  return result.lastInsertRowId;
+}
+
+/**
+ * Renames an existing set - the "My Wallets" default included, since
+ * that name is just a starting guess about whose collection it is, not
+ * a fixed label (Raphael's own call: it might not be his own wallets he
+ * wants to check first).
+ */
+export async function renameWalletSet(id, name) {
+  const trimmedName = (name || '').trim();
+  if (!trimmedName) return;
+  const registryDb = await getRegistryDatabase();
+  await registryDb.runAsync(`UPDATE wallet_sets SET name = ? WHERE id = ?`, [trimmedName, id]);
+}
+
+/**
+ * Makes an existing set the active one - closes whatever set is
+ * currently open, points activeDatabaseFileName/imageStorage.js at the
+ * target set's own files, and runs that set's initDatabase() (in case
+ * its schema hasn't been touched since an app update added a column).
+ * A no-op if the requested id doesn't exist (shouldn't happen from the
+ * UI, which only ever offers ids from getWalletSets' own list, but this
+ * stays safe rather than leaving the app with no active set at all if
+ * it somehow did).
+ */
+export async function switchToWalletSet(id) {
+  const registryDb = await getRegistryDatabase();
+  const targetSet = await registryDb.getFirstAsync(`SELECT * FROM wallet_sets WHERE id = ?`, [id]);
+  if (!targetSet) return;
+
+  await closeActiveDatabase();
+  await registryDb.runAsync(`UPDATE wallet_sets SET is_active = 0`);
+  await registryDb.runAsync(`UPDATE wallet_sets SET is_active = 1 WHERE id = ?`, [id]);
+
+  activeDatabaseFileName = targetSet.db_file_name;
+  setActiveImagesDirName(targetSet.images_dir_name);
+  await initDatabase();
+}
+
+/**
+ * Closes out the currently active set WITHOUT deleting any of its data
+ * - Raphael's own "Empty" action: leaves the app with nothing active at
+ * all until Wallets is used again to load a different set or create a
+ * new one. Every already-saved wallet/NFT/image for this set stays
+ * exactly where it is on the phone, untouched - "Empty" only clears
+ * which one is marked active, the same state a brand-new install (or a
+ * Reset All Data) is already in before its own first set is created.
+ */
+export async function unloadCurrentWalletSet() {
+  const registryDb = await getRegistryDatabase();
+  await closeActiveDatabase();
+  await registryDb.runAsync(`UPDATE wallet_sets SET is_active = 0`);
+  activeDatabaseFileName = null;
+  setActiveImagesDirName(null);
+}
+
+/**
+ * Permanently deletes one wallet set - its database file, its image
+ * folder, and its row in the registry - with no way to get it back
+ * (WalletManager.js gets a real confirmation prompt in front of this,
+ * matching Reset All Data's own). Works on ANY set, not just the
+ * currently active one, so a set that turned out to be a mistake (e.g.
+ * pointed at the wrong address and pulled in a huge pile of broken
+ * entries) can be removed without first having to switch into it. If
+ * the set being deleted happens to be the active one, the app is left
+ * with nothing active afterward, same as unloadCurrentWalletSet above -
+ * Raphael goes back to Wallets to load or create a different one.
+ */
+export async function deleteWalletSet(id) {
+  const registryDb = await getRegistryDatabase();
+  const target = await registryDb.getFirstAsync(`SELECT * FROM wallet_sets WHERE id = ?`, [id]);
+  if (!target) return;
+
+  const wasActive = !!target.is_active;
+  if (wasActive) {
+    await closeActiveDatabase();
+  }
+  await deleteWalletSetFiles(id);
+  await registryDb.runAsync(`DELETE FROM wallet_sets WHERE id = ?`, [id]);
+
+  if (wasActive) {
+    activeDatabaseFileName = null;
+    setActiveImagesDirName(null);
+  }
+}
+
+/**
+ * Reads one app-wide preference that should stay the same regardless of
+ * which wallet set is active (see global_settings' own comment in
+ * initWalletSets above) - List/Tiles view mode today. Returns null if
+ * the key has never been set.
+ */
+export async function getGlobalSetting(key) {
+  const registryDb = await getRegistryDatabase();
+  const row = await registryDb.getFirstAsync(`SELECT value FROM global_settings WHERE key = ?`, [key]);
+  return row?.value ?? null;
+}
+
+/**
+ * Saves one app-wide preference, overwriting any previous value for
+ * that key. See getGlobalSetting above.
+ */
+export async function setGlobalSetting(key, value) {
+  const registryDb = await getRegistryDatabase();
+  await registryDb.runAsync(`INSERT OR REPLACE INTO global_settings (key, value) VALUES (?, ?)`, [key, value]);
 }

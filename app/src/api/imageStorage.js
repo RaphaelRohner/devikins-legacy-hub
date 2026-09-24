@@ -56,21 +56,56 @@
  * compares the image host's current ETag - a content fingerprint the
  * server sends back - against whatever was saved at download time, and
  * forces storeImage() to actually re-download when they differ.
+ *
+ * Later addition: wallet sets. Each named wallet set (see database.js's
+ * own wallet-sets section) gets its own images folder, so a friend's
+ * collection's pictures can never end up mixed in with your own, and
+ * switching sets never needs to re-download anything already saved. See
+ * setActiveImagesDirName() below for how database.js points this file
+ * at whichever folder is active right now.
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
 
-const IMAGE_STORAGE_DIR = `${FileSystem.documentDirectory}nft-images/`;
+// Which wallet set's own image folder is currently active - swapped by
+// setActiveImagesDirName() below whenever the active set changes (see
+// database.js's switchToWalletSet/createWalletSet/unloadCurrentWalletSet,
+// part of the wallet-sets feature). Starts out pointing at the original
+// single-set folder name, matching database.js's own default active
+// database file, so images work correctly before the wallet-sets
+// registry has had a chance to run its own startup check. null means no
+// set is currently active at all (the "Empty" action was used, or the
+// app is still starting up) - every function below treats that as a
+// safe no-op rather than trying to touch a directory that doesn't mean
+// anything right now.
+let activeImagesDirName = 'nft-images';
+
+function currentImageStorageDir() {
+  if (!activeImagesDirName) return null;
+  return `${FileSystem.documentDirectory}${activeImagesDirName}/`;
+}
+
+/**
+ * Points image storage at a different wallet set's own folder - called
+ * by database.js whenever the active set changes, so this file never
+ * needs to know about wallet sets itself, just "which folder name is
+ * active right now." Pass null for "no set is active" (see the
+ * activeImagesDirName comment above).
+ */
+export function setActiveImagesDirName(dirName) {
+  activeImagesDirName = dirName;
+}
+
 const DOWNLOAD_TIMEOUT_MS = 15000;
 // A real NFT thumbnail is essentially never this small - anything under
 // this is almost certainly an error page or an empty response, not a
 // picture, so we treat it as a failed download rather than saving it.
 const MIN_VALID_IMAGE_BYTES = 200;
 
-async function ensureStorageDirExists() {
-  const dirInfo = await FileSystem.getInfoAsync(IMAGE_STORAGE_DIR);
+async function ensureStorageDirExists(storageDir) {
+  const dirInfo = await FileSystem.getInfoAsync(storageDir);
   if (!dirInfo.exists) {
-    await FileSystem.makeDirectoryAsync(IMAGE_STORAGE_DIR, { intermediates: true });
+    await FileSystem.makeDirectoryAsync(storageDir, { intermediates: true });
   }
 }
 
@@ -132,10 +167,16 @@ function getHeaderCaseInsensitive(headers, name) {
 export async function storeImage(kind, nonce, remoteUrl, { forceRedownload = false } = {}) {
   if (!remoteUrl) return { localImagePath: null, etag: null };
 
-  const localPath = `${IMAGE_STORAGE_DIR}${kind}-${nonce}.${extensionFromUrl(remoteUrl)}`;
+  // No wallet set is active right now (see activeImagesDirName's own
+  // comment above) - nothing sensible to save into, so this behaves
+  // exactly like a failed download rather than guessing a location.
+  const storageDir = currentImageStorageDir();
+  if (!storageDir) return { localImagePath: null, etag: null };
+
+  const localPath = `${storageDir}${kind}-${nonce}.${extensionFromUrl(remoteUrl)}`;
 
   try {
-    await ensureStorageDirExists();
+    await ensureStorageDirExists(storageDir);
 
     if (!forceRedownload) {
       const existingFile = await FileSystem.getInfoAsync(localPath);
@@ -203,17 +244,24 @@ export async function fetchImageEtag(remoteUrl) {
 }
 
 /**
- * Deletes every image this app has ever downloaded and saved locally -
- * used by the "Reset All Data" button in WalletManager.js, alongside
- * resetAllData() in database.js, so a reset genuinely starts from
- * nothing rather than leaving a folder of orphaned pictures behind for
- * NFTs that no longer have a database row pointing at them. Safe to
- * call even if the folder was never created yet (a brand-new install
- * that's never fetched anything).
+ * Deletes every image saved under one specific wallet set's folder, by
+ * name - used when deleting a set (database.js's deleteWalletSet) or
+ * wiping every set at once (resetAllData). Takes an explicit folder
+ * name, rather than always operating on whichever set is currently
+ * active, because both of those callers may be reaching into a set
+ * that ISN'T the active one (Delete works on any set in the switcher
+ * list, not just the loaded one - see deleteWalletSet's own comment in
+ * database.js). Note "Empty" (unloadCurrentWalletSet in database.js)
+ * deliberately never calls this at all - unloading a set doesn't touch
+ * its data, images included, that's the whole point of it being
+ * non-destructive. Safe to call even if the folder was never created
+ * (a set that was made but never actually fetched into).
  */
-export async function deleteAllStoredImages() {
-  const dirInfo = await FileSystem.getInfoAsync(IMAGE_STORAGE_DIR);
+export async function deleteStoredImagesForDir(dirName) {
+  if (!dirName) return;
+  const dir = `${FileSystem.documentDirectory}${dirName}/`;
+  const dirInfo = await FileSystem.getInfoAsync(dir);
   if (dirInfo.exists) {
-    await FileSystem.deleteAsync(IMAGE_STORAGE_DIR, { idempotent: true });
+    await FileSystem.deleteAsync(dir, { idempotent: true });
   }
 }
