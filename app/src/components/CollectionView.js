@@ -620,8 +620,8 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // Compare mode turned on, which read as broken rather than helpful.
   // The count stays put here unconditionally now; Compare mode's own
   // progress hint moved down into this screen's own toolbar instead,
-  // sitting inline right next to the Compare button that controls it (see
-  // the JSX further down, inside viewModeButtonGroup).
+  // living inside the Compare button that controls it (see the JSX
+  // further down, inside viewModeButtonGroup).
   const toolbarStatusText = `${notDeletedCount} ${COLLECTIONS[kind].label}`;
 
   useEffect(() => {
@@ -786,11 +786,12 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     </View>
   );
 
-  // The status text next to the Compare button (see its own JSX
-  // comment above) - a running "what happens if I tap now" hint, not
-  // just an on/off label. compareSelection can only ever be 0 or 1 long
-  // here, since reaching 2 swaps this whole screen for CompareView.js
-  // instead (see compareNfts/isCompareViewOpen above).
+  // The status text shown inside the Compare button, next to its
+  // glyph (see the JSX comment above) - a running "what happens if I
+  // tap now" hint, not just an on/off label. compareSelection can only
+  // ever be 0 or 1 long here, since reaching 2 swaps this whole screen
+  // for CompareView.js instead (see compareNfts/isCompareViewOpen
+  // above).
   const compareStatusText = !compareMode
     ? 'Compare'
     : compareSelection.length === 0
@@ -869,18 +870,21 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
               </TouchableOpacity>
 
               {/* Compare - see this file's own top comment and
-                  CompareView.js. A compact icon-only button (a single
-                  "⇄" glyph, matching the app's own "‹"/"✕" precedent for
-                  plain-icon controls), purely for space - the label
-                  that makes it clear what it does lives in the status
-                  text right next to it instead (see compareStatusText
-                  below), like a text field's own default/placeholder
-                  value: "Compare" when nothing's happened yet, "Tap one
-                  to compare" once the button's tapped, "Tap one more to
-                  compare" once the first item's picked. */}
+                  CompareView.js. One button now (glyph + status text
+                  together, per feedback that the two needed to visibly
+                  belong to each other rather than sit as separate
+                  elements next to each other) - the "⇄" glyph stays a
+                  fixed icon, matching the app's own "‹"/"✕" precedent
+                  for plain-icon controls, while compareStatusText (see
+                  its own comment above) does the actual explaining,
+                  like a text field's own default/placeholder value:
+                  "Compare" untouched, "Tap one to compare" once tapped,
+                  "Tap one more to compare" once the first item's
+                  picked. Auto-width (compareButton, not a fixed
+                  square) since that status text's length changes. */}
               <TouchableOpacity
                 style={[
-                  styles.compareToggleButton,
+                  styles.compareButton,
                   { backgroundColor: colors.surface, borderColor: colors.border },
                   compareMode && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
                 ]}
@@ -890,11 +894,13 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
                 <Text style={[styles.anchorToggleText, { color: compareMode ? colors.primary : colors.secondaryText }]}>
                   ⇄
                 </Text>
+                <Text
+                  style={[styles.compareHintText, { color: compareMode ? colors.primary : colors.secondaryText }]}
+                  numberOfLines={1}
+                >
+                  {compareStatusText}
+                </Text>
               </TouchableOpacity>
-
-              <Text style={[styles.compareHintText, { color: colors.secondaryText }]} numberOfLines={1}>
-                {compareStatusText}
-              </Text>
             </View>
 
             {deletedSwitchControl}
@@ -1117,32 +1123,35 @@ const styles = StyleSheet.create({
   anchorToggleText: {
     fontWeight: '600',
   },
-  // compareStatusText's own display, sitting right next to the
-  // Compare button inside viewModeButtonGroup (see its own JSX comment
-  // above, and compareStatusText's) rather than as a bordered pill
-  // like the buttons beside it - plain text, since it's a running
-  // status/placeholder rather than another tappable control.
+  // compareStatusText's own display, INSIDE the Compare button now
+  // (see its own JSX comment above) rather than a plain sibling next
+  // to it, per feedback that the two needed to visibly read as one
+  // control - smaller than anchorToggleText's default size (the glyph
+  // beside it uses that default), so the status text reads as a
+  // caption to the glyph rather than competing with it for attention.
   compareHintText: {
     fontSize: 12,
     fontWeight: '600',
   },
-  // Fixed-width square, unlike anchorToggleButton's text-width pill -
-  // the Compare button is a single glyph (see its own JSX comment
-  // above for why), and this keeps its footprint as small as possible
-  // in an already-tight row, now that the label describing what it
-  // does lives in compareHintText next to it instead.
-  compareToggleButton: {
+  // Auto-width (unlike a fixed square) since compareStatusText's
+  // length changes as you interact - row layout puts the "⇄" glyph
+  // and that status text side by side inside one button, with a small
+  // gap between them, everything else (border/height/paddingHorizontal)
+  // matching anchorToggleButton's own treatment so it reads as the same
+  // kind of control as List/Tiles beside it.
+  compareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     borderWidth: 1,
     borderRadius: 8,
-    width: 40,
+    paddingHorizontal: 12,
     height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   // height/borderWidth/borderRadius/paddingHorizontal give this the
   // same button treatment as anchorToggleButton above (List/Tiles) and
-  // compareToggleButton, per feedback wanting every control in this row
-  // to look consistent - flexDirection/alignItems/gap are what actually
+  // compareButton, per feedback wanting every control in this row to
+  // look consistent - flexDirection/alignItems/gap are what actually
   // lay out the label next to the Switch inside that box. (This used to
   // sit alongside a matching countPill for the item count text, before
   // that moved up into App.js's own menuRow - see this file's top
