@@ -131,6 +131,24 @@ export default function WalletManager({
   // it's still easy to find on purpose.
   const [isDangerZoneVisible, setIsDangerZoneVisible] = useState(false);
 
+  // Every wallet-set action below (create/switch/rename/empty/delete)
+  // used to let a failed database call disappear silently - nothing
+  // thrown ever reached the screen, so a broken switch just looked like
+  // "nothing happened" with no way to tell what actually went wrong.
+  // Raphael ran into exactly that after deleting the active set and
+  // then being unable to select a different one. Wrapping each action
+  // below in try/catch and surfacing whatever error comes back through
+  // a plain Alert means a future failure is at least visible and
+  // debuggable instead of invisible, regardless of what's actually
+  // causing it.
+  function reportSetActionError(err, actionLabel) {
+    console.error(`Wallet set action failed (${actionLabel}):`, err);
+    Alert.alert(
+      'Something went wrong',
+      `${actionLabel} didn't complete: ${err?.message || String(err)}`
+    );
+  }
+
   async function handleAdd() {
     const trimmedAddress = newAddressInput.trim();
     if (!trimmedAddress) return;
@@ -208,10 +226,14 @@ export default function WalletManager({
   // same as leaving a wallet's alias blank just means "no name" rather
   // than being rejected.
   async function handleCreateSet() {
-    await createWalletSet(newSetNameInput);
-    setNewSetNameInput('');
-    setIsCreatingSet(false);
-    onWalletSetsChanged();
+    try {
+      await createWalletSet(newSetNameInput);
+      setNewSetNameInput('');
+      setIsCreatingSet(false);
+      onWalletSetsChanged();
+    } catch (err) {
+      reportSetActionError(err, 'Creating the set');
+    }
   }
 
   function handleCancelCreateSet() {
@@ -224,8 +246,12 @@ export default function WalletManager({
   // than calling switchToWalletSet unnecessarily.
   async function handleSwitchSet(id) {
     if (id === activeWalletSetId) return;
-    await switchToWalletSet(id);
-    onWalletSetsChanged();
+    try {
+      await switchToWalletSet(id);
+      onWalletSetsChanged();
+    } catch (err) {
+      reportSetActionError(err, 'Loading that set');
+    }
   }
 
   function handleStartRenameSet(set) {
@@ -241,10 +267,14 @@ export default function WalletManager({
   async function handleSaveRenameSet(id) {
     const trimmedName = renameSetInput.trim();
     if (!trimmedName) return;
-    await renameWalletSet(id, trimmedName);
-    setRenamingSetId(null);
-    setRenameSetInput('');
-    onWalletSetsChanged();
+    try {
+      await renameWalletSet(id, trimmedName);
+      setRenamingSetId(null);
+      setRenameSetInput('');
+      onWalletSetsChanged();
+    } catch (err) {
+      reportSetActionError(err, 'Renaming that set');
+    }
   }
 
   // Unloads the currently active set without touching any of its data -
@@ -254,8 +284,12 @@ export default function WalletManager({
   // so there's nothing risky to confirm - the set stays in the switcher
   // list below, ready to load back in any time.
   async function handleEmptySet() {
-    await unloadCurrentWalletSet();
-    onWalletSetsChanged();
+    try {
+      await unloadCurrentWalletSet();
+      onWalletSetsChanged();
+    } catch (err) {
+      reportSetActionError(err, 'Emptying that set');
+    }
   }
 
   // Permanently deletes one wallet set - its wallets, its NFTs, and its
@@ -275,8 +309,12 @@ export default function WalletManager({
           text: 'Delete Set',
           style: 'destructive',
           onPress: async () => {
-            await deleteWalletSet(set.id);
-            onWalletSetsChanged();
+            try {
+              await deleteWalletSet(set.id);
+              onWalletSetsChanged();
+            } catch (err) {
+              reportSetActionError(err, 'Deleting that set');
+            }
           },
         },
       ]
@@ -303,8 +341,12 @@ export default function WalletManager({
           text: 'Reset Everything',
           style: 'destructive',
           onPress: async () => {
-            await resetAllData();
-            onWalletSetsChanged();
+            try {
+              await resetAllData();
+              onWalletSetsChanged();
+            } catch (err) {
+              reportSetActionError(err, 'Resetting all data');
+            }
           },
         },
       ]
