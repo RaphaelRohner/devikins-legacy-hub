@@ -786,6 +786,17 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     </View>
   );
 
+  // The status text next to the Compare button (see its own JSX
+  // comment above) - a running "what happens if I tap now" hint, not
+  // just an on/off label. compareSelection can only ever be 0 or 1 long
+  // here, since reaching 2 swaps this whole screen for CompareView.js
+  // instead (see compareNfts/isCompareViewOpen above).
+  const compareStatusText = !compareMode
+    ? 'Compare'
+    : compareSelection.length === 0
+      ? 'Tap one to compare'
+      : 'Tap one more to compare';
+
   const filterableColumnNames = Object.keys(availableOptions);
 
   // The filter panel used to sit above the list as a separate, non-
@@ -858,15 +869,18 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
               </TouchableOpacity>
 
               {/* Compare - see this file's own top comment and
-                  CompareView.js. Started as a compact icon-only button
-                  (a single "⇄" glyph, matching the app's own "‹"/"✕"
-                  precedent for plain-icon controls) purely to save space
-                  in an already-tight row - switched to a labeled pill
-                  per feedback wanting it clearer at a glance what it
-                  does, same treatment as List/Tiles right next to it. */}
+                  CompareView.js. A compact icon-only button (a single
+                  "⇄" glyph, matching the app's own "‹"/"✕" precedent for
+                  plain-icon controls), purely for space - the label
+                  that makes it clear what it does lives in the status
+                  text right next to it instead (see compareStatusText
+                  below), like a text field's own default/placeholder
+                  value: "Compare" when nothing's happened yet, "Tap one
+                  to compare" once the button's tapped, "Tap one more to
+                  compare" once the first item's picked. */}
               <TouchableOpacity
                 style={[
-                  styles.anchorToggleButton,
+                  styles.compareToggleButton,
                   { backgroundColor: colors.surface, borderColor: colors.border },
                   compareMode && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
                 ]}
@@ -874,15 +888,13 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
                 accessibilityLabel="Compare two NFTs"
               >
                 <Text style={[styles.anchorToggleText, { color: compareMode ? colors.primary : colors.secondaryText }]}>
-                  Compare
+                  ⇄
                 </Text>
               </TouchableOpacity>
 
-              {compareMode && (
-                <Text style={[styles.compareHintText, { color: colors.secondaryText }]} numberOfLines={1}>
-                  {compareSelection.length === 0 ? 'Tap one to compare' : 'Tap one more to compare'}
-                </Text>
-              )}
+              <Text style={[styles.compareHintText, { color: colors.secondaryText }]} numberOfLines={1}>
+                {compareStatusText}
+              </Text>
             </View>
 
             {deletedSwitchControl}
@@ -1105,19 +1117,33 @@ const styles = StyleSheet.create({
   anchorToggleText: {
     fontWeight: '600',
   },
-  // Compare mode's progress hint, sitting right next to the Compare
-  // button inside viewModeButtonGroup (see its own JSX comment) rather
-  // than as a bordered pill like the buttons beside it - plain text
-  // reads as a status message, not another tappable control.
+  // compareStatusText's own display, sitting right next to the
+  // Compare button inside viewModeButtonGroup (see its own JSX comment
+  // above, and compareStatusText's) rather than as a bordered pill
+  // like the buttons beside it - plain text, since it's a running
+  // status/placeholder rather than another tappable control.
   compareHintText: {
     fontSize: 12,
     fontWeight: '600',
   },
+  // Fixed-width square, unlike anchorToggleButton's text-width pill -
+  // the Compare button is a single glyph (see its own JSX comment
+  // above for why), and this keeps its footprint as small as possible
+  // in an already-tight row, now that the label describing what it
+  // does lives in compareHintText next to it instead.
+  compareToggleButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   // height/borderWidth/borderRadius/paddingHorizontal give this the
-  // same button treatment as anchorToggleButton above (List/Tiles/
-  // Compare), per feedback wanting every control in this row to look
-  // consistent - flexDirection/alignItems/gap are what actually lay
-  // out the label next to the Switch inside that box. (This used to
+  // same button treatment as anchorToggleButton above (List/Tiles) and
+  // compareToggleButton, per feedback wanting every control in this row
+  // to look consistent - flexDirection/alignItems/gap are what actually
+  // lay out the label next to the Switch inside that box. (This used to
   // sit alongside a matching countPill for the item count text, before
   // that moved up into App.js's own menuRow - see this file's top
   // comment and deletedSwitchControl's own comment above.)
