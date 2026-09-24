@@ -54,8 +54,8 @@
  * the actual query (and bubbles up to App.js via onStarFilterChange)
  * once Apply Filters is pressed, same as any trait filter.
  *
- * A fifth thing, added later: Compare mode. The ⇄ button next to List/
- * Tiles (see the JSX below) toggles compareMode on/off; while it's on, a
+ * A fifth thing, added later: Compare mode. The Compare button next to
+ * List/Tiles (see the JSX below) toggles compareMode on/off; while it's on, a
  * row tap adds/removes that item from compareSelection (capped at two -
  * see handleToggleCompareSelection) instead of opening its detail view,
  * and the row/tile itself gets a colored-border highlight (the `selected`
@@ -158,7 +158,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // meaningful for a kind listed in SUMMARY_ROW_COMPONENTS above.
   const [selectedNonce, setSelectedNonce] = useState(null);
 
-  // "Compare" mode - see the ⇄ toggle button in toggleRow below, and
+  // "Compare" mode - see the Compare toggle button in toggleRow below, and
   // this file's own top comment. Off by default; turning it on switches
   // row taps from opening the detail view to picking up to two NFTs to
   // compare instead (compareSelection, capped at two - see
@@ -321,7 +321,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     return () => subscription.remove();
   }, [isDetailViewOpen, isCompareViewOpen]);
 
-  // Turns Compare mode on/off (the ⇄ button in toggleRow below). Turning
+  // Turns Compare mode on/off (the Compare button in toggleRow below). Turning
   // it off also clears any in-progress selection, so switching it back on
   // later always starts fresh rather than remembering a stale pick.
   function handleToggleCompareMode() {
@@ -620,7 +620,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // Compare mode turned on, which read as broken rather than helpful.
   // The count stays put here unconditionally now; Compare mode's own
   // progress hint moved down into this screen's own toolbar instead,
-  // sitting inline right next to the ⇄ button that controls it (see
+  // sitting inline right next to the Compare button that controls it (see
   // the JSX further down, inside viewModeButtonGroup).
   const toolbarStatusText = `${notDeletedCount} ${COLLECTIONS[kind].label}`;
 
@@ -858,16 +858,15 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
               </TouchableOpacity>
 
               {/* Compare - see this file's own top comment and
-                  CompareView.js. A compact square icon button (unlike
-                  List/Tiles' text pills) purely for space: this row is
-                  already tight on three sides (see the many past commits
-                  fine-tuning it), and a single glyph matches the app's
-                  own precedent for a plain icon-only control (the "‹"
-                  back button, the "✕" close button). Active-state
-                  highlight matches List/Tiles' own treatment. */}
+                  CompareView.js. Started as a compact icon-only button
+                  (a single "⇄" glyph, matching the app's own "‹"/"✕"
+                  precedent for plain-icon controls) purely to save space
+                  in an already-tight row - switched to a labeled pill
+                  per feedback wanting it clearer at a glance what it
+                  does, same treatment as List/Tiles right next to it. */}
               <TouchableOpacity
                 style={[
-                  styles.compareToggleButton,
+                  styles.anchorToggleButton,
                   { backgroundColor: colors.surface, borderColor: colors.border },
                   compareMode && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
                 ]}
@@ -875,7 +874,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
                 accessibilityLabel="Compare two NFTs"
               >
                 <Text style={[styles.anchorToggleText, { color: compareMode ? colors.primary : colors.secondaryText }]}>
-                  ⇄
+                  Compare
                 </Text>
               </TouchableOpacity>
 
@@ -1106,31 +1105,19 @@ const styles = StyleSheet.create({
   anchorToggleText: {
     fontWeight: '600',
   },
-  // Compare mode's progress hint, sitting right next to the ⇄ button
-  // inside viewModeButtonGroup (see its own JSX comment) rather than as
-  // a bordered pill like the buttons beside it - plain text reads as a
-  // status message, not another tappable control.
+  // Compare mode's progress hint, sitting right next to the Compare
+  // button inside viewModeButtonGroup (see its own JSX comment) rather
+  // than as a bordered pill like the buttons beside it - plain text
+  // reads as a status message, not another tappable control.
   compareHintText: {
     fontSize: 12,
     fontWeight: '600',
   },
-  // Fixed-width square, unlike anchorToggleButton's text-width pill -
-  // the ⇄ Compare toggle is a single glyph (see its own JSX comment
-  // above for why), and this keeps its footprint as small as possible
-  // in an already-tight row.
-  compareToggleButton: {
-    borderWidth: 1,
-    borderRadius: 8,
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   // height/borderWidth/borderRadius/paddingHorizontal give this the
-  // same button treatment as anchorToggleButton above (List/Tiles) and
-  // compareToggleButton, per feedback wanting every control in this row
-  // to look consistent - flexDirection/alignItems/gap are what actually
-  // lay out the label next to the Switch inside that box. (This used to
+  // same button treatment as anchorToggleButton above (List/Tiles/
+  // Compare), per feedback wanting every control in this row to look
+  // consistent - flexDirection/alignItems/gap are what actually lay
+  // out the label next to the Switch inside that box. (This used to
   // sit alongside a matching countPill for the item count text, before
   // that moved up into App.js's own menuRow - see this file's top
   // comment and deletedSwitchControl's own comment above.)
