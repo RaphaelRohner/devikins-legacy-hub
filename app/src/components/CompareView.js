@@ -20,12 +20,24 @@
  * that same list with the selection cleared, ready to pick two
  * different items (see CollectionView.js's handleCloseCompare).
  *
- * Every stat is shown, not a hand-picked subset, per Raphael's own call
- * on this - may well grow into something more curated later once this
- * has been used for a while.
+ * Every stat is shown by default, not a hand-picked subset, per
+ * Raphael's own call on this - may well grow into something more
+ * curated later once this has been used for a while. The one exception
+ * is the "Show differences only" toggle next to the title: switching
+ * it on hides any stat both NFTs agree on, since those aren't useful
+ * when the whole point is deciding which one to keep. A stat where
+ * BOTH sides are blank (null/undefined) counts as "agreeing" too, same
+ * as any other matching value, per Raphael's own call - only one side
+ * being blank is treated as a real difference. If every stat happens
+ * to match, a plain message says so instead of leaving the screen
+ * looking broken/empty. The toggle itself matches CollectionView.js's
+ * own Deleted switch (deletedSwitchGroup/deletedSwitchLabel) - same
+ * bordered-pill-with-label-and-native-Switch look, just relocated
+ * here.
  */
 
-import { Image, ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { Image, ScrollView, Switch, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { TRAIT_COLUMNS } from '../constants/schema';
 import { humanizeColumnName } from './FilterPanel';
 import { useTheme } from '../context/ThemeContext';
@@ -74,6 +86,7 @@ function CompareColumn({ nft, colors, traitColumns }) {
 export default function CompareView({ kind, nfts, onClose }) {
   const { colors } = useTheme();
   const [nftA, nftB] = nfts;
+  const [showDifferencesOnly, setShowDifferencesOnly] = useState(false);
 
   // Every trait this kind has that's meant to be user-facing - the same
   // `filterable !== false` rule NftCard.js's own full detail view and
@@ -85,18 +98,45 @@ export default function CompareView({ kind, nfts, onClose }) {
     (columnName) => TRAIT_COLUMNS[kind][columnName].filterable !== false
   );
 
+  // With the toggle on, drop any column both sides agree on - null and
+  // undefined are normalized to the same value first, so two blanks
+  // count as "agreeing" (nothing to compare there) rather than showing
+  // up as a difference just because one side is stored as null and the
+  // other undefined.
+  const displayedTraitColumns = showDifferencesOnly
+    ? traitColumns.filter((columnName) => (nftA[columnName] ?? null) !== (nftB[columnName] ?? null))
+    : traitColumns;
+  const noDifferences = showDifferencesOnly && displayedTraitColumns.length === 0;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.primary }]} onPress={onClose}>
         <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹</Text>
       </TouchableOpacity>
-      <Text style={[styles.title, { color: colors.text }]}>Compare</Text>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.compareRow}>
-          <CompareColumn nft={nftA} colors={colors} traitColumns={traitColumns} />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <CompareColumn nft={nftB} colors={colors} traitColumns={traitColumns} />
+      <View style={styles.titleRow}>
+        <Text style={[styles.title, { color: colors.text }]}>Compare</Text>
+        <View style={[styles.differencesSwitchGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.differencesSwitchLabel, { color: colors.text }]}>Show differences only</Text>
+          <Switch
+            value={showDifferencesOnly}
+            onValueChange={setShowDifferencesOnly}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.surface}
+          />
         </View>
+      </View>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {noDifferences ? (
+          <Text style={[styles.noDifferencesText, { color: colors.secondaryText }]}>
+            No differences - every stat matches on both sides.
+          </Text>
+        ) : (
+          <View style={styles.compareRow}>
+            <CompareColumn nft={nftA} colors={colors} traitColumns={displayedTraitColumns} />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <CompareColumn nft={nftB} colors={colors} traitColumns={displayedTraitColumns} />
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -121,11 +161,41 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 24,
   },
+  // Title and the new "Show differences only" toggle share one row -
+  // title on the left, toggle on the right (space-between), same
+  // horizontal margin the title used to carry on its own.
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginHorizontal: 12,
+    marginBottom: 8,
+  },
   title: {
     fontSize: 22,
     fontWeight: '700',
-    marginHorizontal: 12,
-    marginBottom: 8,
+  },
+  // Same shape as CollectionView.js's deletedSwitchGroup/
+  // deletedSwitchLabel (bordered pill, label + native Switch) - kept
+  // as its own local copy rather than imported since React Native
+  // styles aren't shared across component files in this codebase.
+  differencesSwitchGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 40,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: 8,
+  },
+  differencesSwitchLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  noDifferencesText: {
+    fontSize: 14,
+    marginTop: 24,
+    textAlign: 'center',
   },
   scrollContent: {
     paddingHorizontal: 12,
