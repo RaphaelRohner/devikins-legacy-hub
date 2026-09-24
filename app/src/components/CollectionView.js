@@ -619,9 +619,9 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // feedback, since that meant the count itself disappeared the moment
   // Compare mode turned on, which read as broken rather than helpful.
   // The count stays put here unconditionally now; Compare mode's own
-  // state is still visible via the ⇄ button's highlight and each
-  // picked row/tile's colored border, just without a text hint of its
-  // own for the moment.
+  // progress hint moved down into this screen's own toolbar instead,
+  // right under the ⇄ button that controls it (see the JSX further
+  // down, right after deletedSwitchControl).
   const toolbarStatusText = `${notDeletedCount} ${COLLECTIONS[kind].label}`;
 
   useEffect(() => {
@@ -882,6 +882,24 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
 
             {deletedSwitchControl}
           </View>
+
+          {/* Compare mode's own progress hint - used to share the
+              menuRow count's old spot up in App.js (see this file's
+              toolbarStatusText comment above for why that got
+              reverted); lives here now instead, directly under the
+              row holding the ⇄ button that turns it on/off, so it
+              stays clearly tied to that control without competing with
+              the count for room anywhere. Reuses filterHint's own
+              style rather than a new one, since it's the same kind of
+              small explanatory line FilterPanel-adjacent text already
+              uses throughout this screen. */}
+          {compareMode && (
+            <Text style={[styles.filterHint, { color: colors.secondaryText }]}>
+              {compareSelection.length === 0
+                ? 'Compare mode is on - tap an item below to start.'
+                : 'Tap one more item to compare.'}
+            </Text>
+          )}
 
           {expanded && hasPendingChanges && (
             <TouchableOpacity
