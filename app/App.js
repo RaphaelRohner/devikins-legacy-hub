@@ -53,6 +53,7 @@ import {
   Platform,
   ToastAndroid,
   AppState,
+  Alert,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -65,7 +66,13 @@ import {
   setGlobalSetting,
   countPendingRetries,
 } from './src/db/database';
-import { fetchAllForWallets, retryPendingItemsForWallets, checkImageFreshnessForWallets } from './src/api/fetchAllForWallet';
+import {
+  fetchAllForWallets,
+  retryPendingItemsForWallets,
+  checkImageFreshnessForWallets,
+  estimateNewNftCountForWallets,
+} from './src/api/fetchAllForWallet';
+import { AVERAGE_BYTES_PER_NFT, STORAGE_WARNING_THRESHOLD_BYTES, formatBytes } from './src/api/storageStats';
 import { COLLECTIONS, getSortableFieldNames } from './src/constants/schema';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import HamburgerMenu from './src/components/HamburgerMenu';
@@ -593,9 +600,52 @@ function AppContent() {
     retryRoundRef.current = 0;
     nextRetryAtRef.current = 0;
     setIsFetching(true);
-    setProgress({ phase: 'listing', label: 'your wallet' });
 
     try {
+      // Before actually fetching anything, get a rough sense of how big
+      // this scan is about to be (see estimateNewNftCountForWallets' own
+      // comment in fetchAllForWallet.js for exactly what it counts and
+      // why this extra round trip is worth it). Raphael's own worry,
+      // after testing with ~3,000 NFTs across several wallet sets: it'd
+      // be easy to point the app at an address holding far more than
+      // that - the game's main contract address (per
+      // klever-api-endpoints.md) holds roughly 94% of the entire
+      // characters collection - without realizing how much phone
+      // storage that'd use before it's too late to back out.
+      //
+      // Only interrupts once the projection actually crosses
+      // STORAGE_WARNING_THRESHOLD_BYTES (storageStats.js) - anything
+      // smaller proceeds exactly as it always has, no extra step in the
+      // way. A genuinely large scan just needs one tap on Continue.
+      setProgress({ phase: 'summary', label: 'Checking scan size...' });
+      const newNftCount = await estimateNewNftCountForWallets(walletAddresses, {
+        shouldCancel: () => cancelRequestedRef.current,
+      });
+
+      if (cancelRequestedRef.current) {
+        return;
+      }
+
+      const projectedBytes = newNftCount * AVERAGE_BYTES_PER_NFT;
+      if (projectedBytes > STORAGE_WARNING_THRESHOLD_BYTES) {
+        const shouldContinue = await new Promise((resolve) => {
+          Alert.alert(
+            'Large scan ahead',
+            `This could add roughly ${formatBytes(projectedBytes)} to your phone's storage (about ${newNftCount.toLocaleString()} new NFTs). Continue?`,
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Continue', onPress: () => resolve(true) },
+            ],
+            { cancelable: true, onDismiss: () => resolve(false) }
+          );
+        });
+
+        if (!shouldContinue || cancelRequestedRef.current) {
+          return;
+        }
+      }
+
+      setProgress({ phase: 'listing', label: 'your wallet' });
       await fetchAllForWallets(walletAddresses, {
         onProgress: (nextProgress) => {
           setProgress(nextProgress);

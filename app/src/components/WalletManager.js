@@ -72,7 +72,7 @@
  * set everything below it belongs to.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -98,6 +98,7 @@ import {
 } from '../db/database';
 import { useTheme } from '../context/ThemeContext';
 import QrScannerModal from './QrScannerModal';
+import { getStorageBytesForSets, formatBytes } from '../api/storageStats';
 
 export default function WalletManager({
   wallets,
@@ -142,6 +143,51 @@ export default function WalletManager({
   // The "Danger zone" label + toggle itself always stays visible so
   // it's still easy to find on purpose.
   const [isDangerZoneVisible, setIsDangerZoneVisible] = useState(false);
+
+  // Real, measured on-disk storage per wallet set (database file +
+  // images folder - see storageStats.js), plus a grand total across all
+  // of them. Raphael's own worry after testing with ~3,000 NFTs across
+  // several sets: it's easy to lose track of how much phone storage
+  // several sets add up to, especially the ones built for quick testing
+  // rather than kept around. Computed fresh every time this screen
+  // mounts (it's fully unmounted/remounted on navigating away - see
+  // App.js's own currentScreen === 'wallets' check - so this always
+  // reflects whatever's on disk as of the moment Wallets was opened,
+  // including anything a Fetch/Update on the home screen added since
+  // the last visit). Keyed by set id rather than a plain array so each
+  // row below can look its own number up directly.
+  const [storageBytesById, setStorageBytesById] = useState({});
+  const [totalStorageBytes, setTotalStorageBytes] = useState(null);
+  const [isCalculatingStorage, setIsCalculatingStorage] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsCalculatingStorage(true);
+
+    getStorageBytesForSets(walletSets)
+      .then(({ perSet, grandTotalBytes }) => {
+        if (cancelled) return;
+        const byId = {};
+        for (const set of perSet) byId[set.id] = set.totalBytes;
+        setStorageBytesById(byId);
+        setTotalStorageBytes(grandTotalBytes);
+      })
+      .catch((err) => {
+        // Storage display is a nice-to-have, not core functionality -
+        // if this fails for some reason (a locked file, an odd
+        // permissions state), just leave the numbers blank rather than
+        // interrupting the whole screen with an error over something
+        // this non-essential.
+        console.log('[WalletManager] Storage calculation failed:', err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setIsCalculatingStorage(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [walletSets]);
 
   // Every wallet-set action below (create/switch/rename/empty/delete)
   // used to let a failed database call disappear silently - nothing
@@ -404,6 +450,12 @@ export default function WalletManager({
           Switch between separate, independently saved collections of wallets - useful for a second player in the household, or checking a friend's collection without touching your own.
         </Text>
 
+        <Text style={[styles.setSwitcherStorageTotal, { color: colors.secondaryText }]}>
+          {isCalculatingStorage
+            ? 'Calculating storage used...'
+            : `Total storage used: ${formatBytes(totalStorageBytes ?? 0)} across ${walletSets.length} set${walletSets.length === 1 ? '' : 's'}`}
+        </Text>
+
         {isCreatingSet ? (
           <View style={styles.addRow}>
             <TextInput
@@ -480,6 +532,9 @@ export default function WalletManager({
                     </Text>
                     <Text style={[styles.setActiveBadge, { color: isActive ? colors.primary : colors.secondaryText }]}>
                       {isActive ? 'Active - loaded now' : 'Tap to load'}
+                    </Text>
+                    <Text style={[styles.setStorageText, { color: colors.secondaryText }]}>
+                      {isCalculatingStorage ? '...' : formatBytes(storageBytesById[set.id] ?? 0)}
                     </Text>
                   </TouchableOpacity>
                   <View style={styles.walletRowButtons}>
@@ -750,6 +805,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
+  },
+  setStorageText: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  setSwitcherStorageTotal: {
+    fontSize: 12,
+    marginHorizontal: 12,
+    marginBottom: 10,
   },
   newSetButton: {
     borderWidth: 1,

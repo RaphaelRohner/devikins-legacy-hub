@@ -344,6 +344,71 @@ export async function fetchAllForWallets(walletAddresses, { onProgress, shouldCa
 }
 
 /**
+ * A lightweight "how big would this scan be" pass - used by App.js's
+ * handleFetchPress to warn before a manual Fetch/Update that's likely
+ * to add a lot of storage (see storageStats.js's
+ * STORAGE_WARNING_THRESHOLD_BYTES/AVERAGE_BYTES_PER_NFT for how the
+ * count this returns gets turned into a projected byte size and a
+ * decision to actually warn). The main contract address is the obvious
+ * way this could happen by accident - it holds roughly 94% of the
+ * entire characters collection (see klever-api-endpoints.md's wallets
+ * section) - but any address holding a lot of NFTs the app hasn't seen
+ * yet would trigger the same warning.
+ *
+ * Reuses the exact same "what does this wallet hold" + "what do we
+ * already have" logic fetchAllForWallet's own listing phase uses, just
+ * without ever going on to actually download anything - cheap compared
+ * to a real fetch (no metadata lookups, no image downloads), but NOT
+ * free: it still has to ask the blockchain for every nonce each wallet
+ * holds, the same call the real fetch makes right after it. For a
+ * wallet holding tens of thousands of NFTs, that alone can take a
+ * little while - deliberately accepted, since finding that out before
+ * committing to the real fetch (and its storage) is the whole point.
+ *
+ * Returns the number of nonces, across every wallet and collection,
+ * that don't already have a locally-saved 'ok' row - i.e. ones the real
+ * fetch is actually likely to download a fresh image for. Already-'ok'
+ * nonces are excluded because storeImage's own "already have a good
+ * copy" fast path (see imageStorage.js) means re-fetching them normally
+ * won't trigger a new download; already-'unavailable' ones are excluded
+ * because the real fetch skips them entirely too (see
+ * fetchAllForWallet's own noncesToFetch filter above). Not meant to be
+ * exact down to the NFT - just close enough to reliably catch "this
+ * scan is about to add a lot of storage" before it happens.
+ */
+export async function estimateNewNftCountForWallets(walletAddresses, { shouldCancel } = {}) {
+  let newCount = 0;
+
+  for (const walletAddress of walletAddresses) {
+    for (const kind of Object.keys(COLLECTIONS)) {
+      if (shouldCancel && shouldCancel()) return newCount;
+
+      const { assetId } = COLLECTIONS[kind];
+
+      let nonces;
+      try {
+        nonces = await fetchWalletNonces(walletAddress, assetId);
+      } catch (err) {
+        // Same spirit as fetchAllForWallet's own listing phase: one
+        // collection failing to list shouldn't block the estimate for
+        // everything else - it just can't count what it couldn't see,
+        // so this likely undercounts slightly rather than overcounting.
+        continue;
+      }
+
+      const existingStatuses = await getExistingStatuses(kind, nonces);
+      for (const nonce of nonces) {
+        const status = existingStatuses[nonce];
+        if (status === 'unavailable') continue;
+        if (status !== 'ok') newCount += 1;
+      }
+    }
+  }
+
+  return newCount;
+}
+
+/**
  * The multi-wallet version of retryPendingItems above - same idea as
  * fetchAllForWallets: loop over every saved wallet, sequentially, tagging
  * each progress update with which wallet it's for.

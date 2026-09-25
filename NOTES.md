@@ -2741,6 +2741,64 @@ themselves (not asked to reorder those relative to each other).
 Equipment's order is still untouched, pending Raphael's own review of
 that list.
 
+## Storage: a real per-set/total display, and a warning before a huge scan
+
+Grew out of Raphael's own testing report (~3,000 NFTs across several
+wallet sets built from random Kleverscan holder addresses, ~600MB
+total) and the "how does Android handle app storage" conversation that
+followed it. Two pieces, both new `src/api/storageStats.js`:
+
+**1. A real, measured storage display on the Wallets screen.** Every
+wallet set is exactly two things on disk - its own SQLite database file
+and its own images folder (see database.js's "Wallet sets" section) -
+so "how much space does this set use" is just those two file sizes
+added together, no estimation needed. `getWalletSetStorageBytes` reads
+the database file's size directly and sums every file in the images
+folder (with a small concurrency pool, same idea as
+`fetchAllForWallet.js`'s own worker pool, since a big set can have
+thousands of image files and stat-ing them one at a time would make
+this screen slow to open); `getStorageBytesForSets` does that across
+every set and adds up a grand total. `WalletManager.js` now shows a
+"Total storage used: X across N sets" line under the Wallet sets
+switcher's hint text, plus each set's own size under its "Active/Tap to
+load" badge - recomputed fresh every time the Wallets screen is opened
+(it fully unmounts/remounts on navigating away, so this never goes
+stale for more than one visit).
+
+**2. A warning before a scan that's about to use a lot of storage.**
+Raphael's own worry: it'd be easy to point the app at an address
+holding far more than a typical personal wallet - the game's main
+contract address holds roughly 94% of the entire characters collection
+(see klever-api-endpoints.md) - without realizing how much phone
+storage that'd use before it's too late to back out. Per his own
+suggestion, this is "passive/active" rather than a hard block: a new
+`estimateNewNftCountForWallets` (`fetchAllForWallet.js`) always runs
+first, silently, whenever Fetch/Update is tapped - it reuses the exact
+same "what does this wallet hold" + "what do we already have" listing
+logic the real fetch uses, just without ever downloading anything, so
+it's cheap compared to a real fetch but not free (still one blockchain
+round trip per wallet per collection). Only once the projected size
+crosses 1GB (`STORAGE_WARNING_THRESHOLD_BYTES`) does App.js's
+`handleFetchPress` actually interrupt, with a plain "This could add
+roughly X to your phone's storage (about N new NFTs). Continue?" -
+Cancel backs out entirely, Continue proceeds exactly as before. Below
+that line, nothing changes at all - no extra step, no extra delay
+beyond the one cheap listing pass.
+
+The projection itself uses a fixed average bytes-per-NFT
+(`AVERAGE_BYTES_PER_NFT`), deliberately grounded in Raphael's own real
+number (600MB / ~3,000 NFTs, a bit under 200KB each - almost entirely
+the downloaded image, each NFT's own database row is negligible next to
+it) rather than a guess. Not meant to be exact - it only has to be
+close enough to reliably catch "this is about to add a lot of storage"
+before it happens, and a real measured number beats a made-up one for
+that. Could be refined later to use a live-measured average from
+Raphael's own existing sets instead of this fixed constant, if the
+fixed number turns out to drift from reality as his usage patterns
+change - not done now since it would mean summing every existing set's
+real bytes and counts just to derive a multiplier, extra cost for
+marginal accuracy over a number already grounded in his own testing.
+
 ## App structure decisions (made while building)
  (made while building)
 
