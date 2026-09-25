@@ -2574,6 +2574,20 @@ day-to-day use of V3.0.0:
   still searches every entry regardless of topic, so this doesn't change
   what typing a question finds, only how the always-visible list reads.
 
+## Devi: added Breeding Helper and Compare mode answers
+
+Both shipped back in V3.0.0 (as part of the big toolbar-redesign/
+Breeding Helper/Compare mode batch - see the "V3 backlog - Kleverscan
+tab" and preceding sections) but never got a Devi FAQ entry, so Devi's
+FAQ upkeep rule (see this file's very first section) had quietly lapsed
+for these two. Added under the "Other tools" topic, alongside
+Kleverscan: `breeding-helper` explains the two-step Rarity/Procreations
+Left/Affinities flow and its one hard limit (no parent/lineage data
+exists anywhere, so relatedness is still on the player); `compare-mode`
+explains the ⇄ button, the two-item selection, and the "Show
+differences only" toggle. Both keyword-matchable the same as every
+other entry, in addition to showing in the always-visible grouped list.
+
 ## App structure decisions (made while building)
  (made while building)
 

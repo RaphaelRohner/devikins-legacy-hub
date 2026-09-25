@@ -64,7 +64,7 @@ import { useTheme } from '../context/ThemeContext';
 
 // The topics FAQ_ENTRIES below are grouped into for display (see the
 // "topic" field on each entry, and the grouped render further down) -
-// per feedback that one long flat list of 17 questions read as
+// per feedback that one long flat list of questions read as
 // unstructured, with no way to tell at a glance what's covered. Order
 // here is the display order: roughly the order a new user would
 // actually need these things, from getting wallets set up through to
@@ -169,6 +169,22 @@ const FAQ_ENTRIES = [
     keywords: ['kleverscan', 'explorer', 'holders', 'block explorer', 'holder', 'browser'],
     answer:
       "Open the ☰ menu and tap Kleverscan for a small built-in browser pointed straight at the Devikins collection's Holders list on kleverscan.org, Klever's own block explorer - no typing in a search box needed. Handy for checking who's holding what, and it's also a good way to find your own wallet address if you don't have it handy: if you know roughly how many Devikins you hold, you can browse the holder list and spot yourself.",
+  },
+  {
+    id: 'breeding-helper',
+    topic: 'tools',
+    question: 'What does Breeding Helper do?',
+    keywords: ['breeding', 'breed', 'breeding helper', 'procreation', 'procreate', 'partner', 'pairing'],
+    answer:
+      "Open the ☰ menu and tap Breeding Helper for a two-step finder for breeding partners among your own Devikins. Step 1 narrows your collection by Rarity, Ancestry, Procreations Left, and optionally up to two Target Affinities - tap a result to pick it as your starting Devikin. Step 2 then lists every other Devikin that's actually a match: same Rarity always, and by default the same Procreations Left too (turn on \"Allow +/-1\" if you need a bit more room there), ranked by how well they match your chosen Affinities, with an estimated breeding cost and the offspring's resulting Procreations Left. One thing it can't do: tell you whether two Devikins are actually related - there's no parent/lineage data anywhere in the game's own data, so that check is still on you, same as in the game itself.",
+  },
+  {
+    id: 'compare-mode',
+    topic: 'tools',
+    question: 'How does Compare mode work?',
+    keywords: ['compare', 'compare mode', 'side by side', 'compare two'],
+    answer:
+      "Tap the ⇄ Compare button next to List/Tiles on any collection tab. While it's on, tapping an item selects it (up to two, highlighted with a colored border) instead of opening its detail view - pick a second item of the same kind and it opens straight into a full side-by-side listing of every one of its stats. \"Show differences only\" hides anything the two agree on, handy when you're just deciding which one to keep. It compares whatever you've already got filtered/sorted/searched in that list - tap ‹ to go back and pick two different items.",
   },
   {
     id: 'feedback',
