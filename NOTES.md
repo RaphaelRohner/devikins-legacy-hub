@@ -2692,6 +2692,41 @@ content - and its height now matches the back button's own 40px
 exactly, rather than the bigger 50px a truly standalone floating
 button needed.
 
+## Changelog: cleaned up stale Durability rows, added a per-kind field order
+
+Two more pieces of feedback from the same weapon #1450 test as the
+header-row move above.
+
+**Durability was still showing up.** The exclusion added when the
+Changelog viewer first shipped (see "NFT history gets a viewer" above)
+only stops NEW Durability rows from being written - it did nothing
+about rows already sitting in `nft_history` from before that exclusion
+existed, back when the table was being filled passively with nothing
+reading it yet. Weapon #1450 (and presumably others, fetched regularly
+during that earlier period) had already picked up a pile of them.
+Added an unconditional `DELETE FROM nft_history WHERE field_name =
+'durability'` to `initDatabase` - safe to run on every launch, a no-op
+once nothing matches, no bookkeeping needed. Base Durability is
+untouched on purpose: per Raphael's own game knowledge it only moves
+when a weapon is actually upgraded, so - unlike Durability, which just
+tracks current in-play wear from fighting - it's real, relevant
+history worth keeping.
+
+**Field display order, for weapons specifically.** Raphael asked for
+Rarity on top, Slot next, Improvement Level at the bottom, everything
+else unchanged. Worth naming plainly: the order fields showed in
+before this was never an intentional design choice - it was just the
+incidental reverse of `upsertNft`'s own trait-column iteration order
+(the query's `id DESC` tiebreaker). `NftHistoryModal.js` now takes a
+`kind` prop and sorts each group's fields through `getFieldOrder(kind)`
+- a small `FIELD_ORDER_FRONT`/`FIELD_ORDER_BACK` override for weapons,
+falling back to each trait's own natural position in `TRAIT_COLUMNS`
+(`schema.js`) for everything not explicitly pinned - the same order
+Filters and everything else already reads that table in. An override
+only has to name what's actually moving, not re-list every trait, so
+this is easy to extend to Devikins/Equipment later if Raphael wants a
+similar tweak there.
+
 ## App structure decisions (made while building)
  (made while building)
 
