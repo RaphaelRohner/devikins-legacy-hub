@@ -381,25 +381,46 @@ export async function fetchAllForWallets(walletAddresses, { onProgress, shouldCa
  * little while - deliberately accepted, since finding that out before
  * committing to the real fetch (and its storage) is the whole point.
  *
- * Returns the number of nonces, across every wallet and collection,
- * that don't already have a locally-saved 'ok' row - i.e. ones the real
- * fetch is actually likely to download a fresh image for. Already-'ok'
- * nonces are excluded because storeImage's own "already have a good
- * copy" fast path (see imageStorage.js) means re-fetching them normally
- * won't trigger a new download; already-'unavailable' ones are excluded
- * because the real fetch skips them entirely too (see
- * fetchAllForWallet's own noncesToFetch filter above). Not meant to be
- * exact down to the NFT - just close enough to reliably catch "this
- * scan is about to add a lot of storage" before it happens.
+ * Returns `{ newCount, incomplete, incompleteNotices }`:
+ *   - `newCount` - the number of nonces, across every wallet and
+ *     collection, that don't already have a locally-saved 'ok' row -
+ *     i.e. ones the real fetch is actually likely to download a fresh
+ *     image for. Already-'ok' nonces are excluded because storeImage's
+ *     own "already have a good copy" fast path (see imageStorage.js)
+ *     means re-fetching them normally won't trigger a new download;
+ *     already-'unavailable' ones are excluded because the real fetch
+ *     skips them entirely too (see fetchAllForWallet's own
+ *     noncesToFetch filter above). Not meant to be exact down to the
+ *     NFT - just close enough to reliably catch "this scan is about to
+ *     add a lot of storage" before it happens.
+ *   - `incomplete` - true if ANY collection's nonce listing didn't
+ *     finish cleanly (hit Klever's 10,000-item ceiling, or a real
+ *     network error - see fetchWalletNonces' own `.truncated` in
+ *     kleverApi.js). This matters because `newCount` can ONLY be an
+ *     undercount when this happens, never an overcount - a listing
+ *     that stopped early can't have counted nonces it never saw. A
+ *     caller that only checks `newCount` against a threshold would
+ *     silently treat "we don't actually know" the same as "this is
+ *     genuinely small," which defeats the whole point of a size
+ *     warning. See App.js's handleFetchPress for how this is meant to
+ *     be used: when `incomplete` is true, warn regardless of what
+ *     `newCount` came out to, rather than trusting a number that might
+ *     be missing thousands of nonces.
+ *   - `incompleteNotices` - a plain-English reason per incomplete
+ *     collection (e.g. "Devikins - Klever API returned HTTP 503..."),
+ *     for a message that says WHY the estimate couldn't be trusted
+ *     rather than just that it couldn't.
  */
 export async function estimateNewNftCountForWallets(walletAddresses, { shouldCancel } = {}) {
   let newCount = 0;
+  let incomplete = false;
+  const incompleteNotices = [];
 
   for (const walletAddress of walletAddresses) {
     for (const kind of Object.keys(COLLECTIONS)) {
-      if (shouldCancel && shouldCancel()) return newCount;
+      if (shouldCancel && shouldCancel()) return { newCount, incomplete, incompleteNotices };
 
-      const { assetId } = COLLECTIONS[kind];
+      const { assetId, label } = COLLECTIONS[kind];
 
       let nonces;
       try {
@@ -408,13 +429,24 @@ export async function estimateNewNftCountForWallets(walletAddresses, { shouldCan
         // fetchWalletNonces shouldn't throw any more (see its own
         // comment in kleverApi.js) - this is purely a defensive
         // catch-all so one collection's bug can't sink the whole
-        // estimate. When it DOES hit trouble partway through (a real
-        // error, or Klever's own 10,000-item pagination ceiling), it
-        // returns whatever nonces it already gathered instead, which is
-        // exactly what gets counted below - the right number to
-        // project from, since that's genuinely all the real fetch will
-        // be able to reach either.
+        // estimate. Treated as incomplete rather than silently skipped
+        // (see this function's own comment on `incomplete` above) -
+        // whatever this collection would have added to the count is
+        // simply unknown now, not zero.
+        incomplete = true;
+        incompleteNotices.push(`${label} - ${err.message}`);
         continue;
+      }
+
+      if (nonces.truncated) {
+        // Same situation as fetchAllForWallet's own listing phase
+        // hitting a truncated result (kleverApi.js) - `nonces` still
+        // holds everything gathered before whatever went wrong, so
+        // it's still counted below (a real, if partial, signal), but
+        // this collection's true count could be far higher, so the
+        // caller needs to know not to trust newCount alone.
+        incomplete = true;
+        incompleteNotices.push(`${label} - ${nonces.truncationReason}`);
       }
 
       const existingStatuses = await getExistingStatuses(kind, nonces);
@@ -426,7 +458,7 @@ export async function estimateNewNftCountForWallets(walletAddresses, { shouldCan
     }
   }
 
-  return newCount;
+  return { newCount, incomplete, incompleteNotices };
 }
 
 /**

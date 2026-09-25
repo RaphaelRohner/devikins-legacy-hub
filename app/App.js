@@ -628,20 +628,40 @@ function AppContent() {
       // smaller proceeds exactly as it always has, no extra step in the
       // way. A genuinely large scan just needs one tap on Continue.
       setProgress({ phase: 'summary', label: 'Checking scan size...' });
-      const newNftCount = await estimateNewNftCountForWallets(walletAddresses, {
-        shouldCancel: () => cancelRequestedRef.current,
-      });
+      const { newCount: newNftCount, incomplete: estimateIncomplete, incompleteNotices: estimateIncompleteNotices } =
+        await estimateNewNftCountForWallets(walletAddresses, {
+          shouldCancel: () => cancelRequestedRef.current,
+        });
 
       if (cancelRequestedRef.current) {
         return;
       }
 
       const projectedBytes = newNftCount * AVERAGE_BYTES_PER_NFT;
-      if (projectedBytes > STORAGE_WARNING_THRESHOLD_BYTES) {
+
+      // estimateIncomplete means at least one collection's nonce listing
+      // didn't finish cleanly during the estimate itself (see
+      // estimateNewNftCountForWallets' own comment in
+      // fetchAllForWallet.js) - newNftCount can only be an UNDERcount in
+      // that case, never an overcount, so trusting it against the byte
+      // threshold below would risk silently skipping the warning for a
+      // scan that's actually large. Ask every time this happens,
+      // regardless of what newNftCount came out to, rather than trusting
+      // a number that might be missing thousands of nonces.
+      if (estimateIncomplete || projectedBytes > STORAGE_WARNING_THRESHOLD_BYTES) {
+        const title = estimateIncomplete ? "Couldn't fully check scan size" : 'Large scan ahead';
+        const message = estimateIncomplete
+          ? `This could add roughly ${formatBytes(projectedBytes)} to your phone's storage (at least ${newNftCount.toLocaleString()} new NFTs) - but part of the check itself didn't finish, so the real number could be higher:
+
+${estimateIncompleteNotices.join('\n')}
+
+Continue anyway?`
+          : `This could add roughly ${formatBytes(projectedBytes)} to your phone's storage (about ${newNftCount.toLocaleString()} new NFTs). Continue?`;
+
         const shouldContinue = await new Promise((resolve) => {
           Alert.alert(
-            'Large scan ahead',
-            `This could add roughly ${formatBytes(projectedBytes)} to your phone's storage (about ${newNftCount.toLocaleString()} new NFTs). Continue?`,
+            title,
+            message,
             [
               { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
               { text: 'Continue', onPress: () => resolve(true) },

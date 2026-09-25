@@ -2862,6 +2862,51 @@ correctly fetches and shows the first 10,000, with a clear one-time
 Alert explaining that the wallet holds more than that and only the
 first 10,000 could be reached - instead of silently ending up at 0.
 
+## Fixed: the size-warning could silently skip itself on a second scan
+
+Found right after the section above shipped, while Raphael was actually
+testing it: he triggered the "Large scan ahead" warning on a wallet set
+(the 2nd and 3rd biggest DVKNFT holder addresses) and cancelled it, then
+tapped Fetch/Update again on the same set moments later - and this time
+it fetched straight away, no warning at all. Exactly the failure mode
+the whole feature exists to prevent, so treated as high priority.
+
+Confirmed the cause by reading `estimateNewNftCountForWallets` closely
+rather than guessing: it counts however many nonces `fetchWalletNonces`
+managed to list for each collection, but if a listing gets cut short
+partway through - Klever's own 10,000-item pagination ceiling (see the
+section above this one), or a real network hiccup - it just counts
+whatever partial list came back, with no way for the caller to tell "this
+is the true count" apart from "this is a fragment of it, we don't know
+the real number." A cut-short listing can only ever UNDERcount, never
+overcount, so silently trusting it against the 1GB threshold means a
+scan that's actually huge can slip through showing a small, confident-
+looking number - precisely the scenario above with two large holder
+wallets and three collections' worth of network calls per wallet (up to
+several hundred sequential requests for the estimate alone), a lot of
+surface area for one listing to hit trouble.
+
+**Fixed:** `estimateNewNftCountForWallets` (`fetchAllForWallet.js`) now
+returns `{ newCount, incomplete, incompleteNotices }` instead of a bare
+number - `incomplete` is true if ANY collection's listing during the
+estimate itself hit the 10k ceiling, a network error, or anything else
+`fetchWalletNonces` marks `.truncated` for. `App.js`'s `handleFetchPress`
+now shows a confirmation any time `incomplete` is true, regardless of
+what the (necessarily-partial) byte projection came out to - worded
+honestly as "Couldn't fully check scan size... the real number could be
+higher," listing which collection(s) had trouble and why, rather than
+pretending to a precision the estimate doesn't actually have. The
+existing "Large scan ahead" wording and behavior is unchanged for the
+normal case (a clean, complete estimate that's genuinely over 1GB).
+
+Verified 60 sequential live requests against the game's own main
+contract address (klv1a35...) all returned cleanly from this network
+path, so the network itself isn't inherently flaky - this is a genuine
+gap in how an incomplete estimate was handled, not a workaround for an
+unreliable API. Raphael has since knowingly kicked off the real ~8k-NFT
+fetch on that wallet set to test with; storage numbers to be compared
+before/after once he's back to check.
+
 ## App structure decisions (made while building)
  (made while building)
 
