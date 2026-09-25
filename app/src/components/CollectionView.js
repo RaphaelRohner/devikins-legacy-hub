@@ -714,45 +714,47 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   if (selectedRow) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: colors.primary }]}
-          onPress={() => setSelectedNonce(null)}
-        >
-          <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹</Text>
-        </TouchableOpacity>
+        {/* Back button and "Changelog" share one header row - moved up
+            here from an earlier floating-pill spot at the bottom-right
+            of the screen, per Raphael's own feedback after his first
+            real test that the floating version was easy to miss down
+            there. Same row pattern KleverscanView.js already uses for
+            "back button plus more controls, same line" (its own topRow
+            style), rather than inventing a new layout - the row's own
+            justifyContent: 'space-between' is what keeps the back
+            button pinned left and Changelog pinned right, and still
+            looks correct with just the back button alone (no second
+            child) on any item with no history to show yet. */}
+        <View style={styles.detailHeaderRow}>
+          <TouchableOpacity
+            style={[styles.backButton, { backgroundColor: colors.primary }]}
+            onPress={() => setSelectedNonce(null)}
+          >
+            <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹</Text>
+          </TouchableOpacity>
+
+          {/* Only appears once there's actually something logged for
+              this item (see the effect above that loads nftHistory),
+              so an NFT with no history doesn't show a button leading
+              to an empty sheet. */}
+          {nftHistory.length > 0 && (
+            <TouchableOpacity
+              style={[
+                styles.historyButton,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+              onPress={() => setIsHistoryModalVisible(true)}
+            >
+              <Text style={[styles.historyButtonText, { color: colors.text }]}>Changelog</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
         <ScrollView
-          contentContainerStyle={[
-            styles.detailScrollContent,
-            { paddingHorizontal: centeredContentPadding },
-            nftHistory.length > 0 && styles.detailScrollContentClearFloatingButton,
-          ]}
+          contentContainerStyle={[styles.detailScrollContent, { paddingHorizontal: centeredContentPadding }]}
         >
           <NftCard kind={kind} nft={selectedRow} onNftUpdated={reloadRows} />
         </ScrollView>
-
-        {/* Floating "Changelog" button - only appears once there's
-            actually something logged for this item (see the effect
-            above that loads nftHistory), so an NFT with no history
-            doesn't show a button leading to an empty sheet. Pinned in
-            place (unlike the list screen's own floating "Filters ✕"
-            button, which is draggable) - there's nothing on this
-            screen it would ever need to dodge, so dragging would just
-            be complexity with no purpose here. Same floating-pill look
-            (border/shadow/elevation) as that button, for the same
-            "clearly floating above the content, not part of the
-            normal scroll flow" reason - reachable without scrolling
-            all the way down through however many stats this item has. */}
-        {nftHistory.length > 0 && (
-          <TouchableOpacity
-            style={[
-              styles.historyButton,
-              { backgroundColor: colors.surface, borderColor: colors.border, shadowColor: colors.cardShadow },
-            ]}
-            onPress={() => setIsHistoryModalVisible(true)}
-          >
-            <Text style={[styles.historyButtonText, { color: colors.text }]}>Changelog</Text>
-          </TouchableOpacity>
-        )}
 
         <NftHistoryModal
           visible={isHistoryModalVisible}
@@ -1287,34 +1289,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 17,
   },
-  // The detail view's floating "Changelog" button (see the JSX in the
-  // `if (selectedRow)` block above) - same border/shadow/elevation
-  // recipe as floatingRemoveButton just above, since it's the same
-  // "clearly floating above the content" look, but pinned to the
-  // bottom-right corner with plain right/bottom (not draggable like
-  // that one - there's nothing on this screen it would ever need to
-  // dodge). FLOATING_BUTTON_EDGE_MARGIN is the same edge-margin
-  // constant the draggable button's own drag-clamping math uses, so
-  // this one sits exactly as far from the edge as that one is ever
-  // allowed to get dragged.
+  // The detail view's "Changelog" button - lives in detailHeaderRow
+  // now, right next to backButton (see the JSX above and this file's
+  // NOTES.md entry on why it moved there from an earlier floating spot
+  // at the bottom-right of the screen). Height matches backButton's
+  // own 40px exactly, same "match the neighboring control's height"
+  // reasoning this file already applies elsewhere (see the NFT count
+  // chip's own history in NOTES.md) - no shadow/elevation either,
+  // since it's a plain row button now, not something floating above
+  // scrollable content the way it briefly was.
   historyButton: {
-    position: 'absolute',
-    right: FLOATING_BUTTON_EDGE_MARGIN,
-    bottom: FLOATING_BUTTON_EDGE_MARGIN,
+    height: 40,
     paddingHorizontal: 13,
-    height: FLOATING_BUTTON_HEIGHT,
     borderWidth: 1,
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 5,
   },
   historyButtonText: {
     fontWeight: '600',
-    fontSize: 17,
+    fontSize: 15,
   },
   applyButton: {
     borderRadius: 8,
@@ -1369,12 +1363,23 @@ const styles = StyleSheet.create({
   // "‹" icon button (top-left corner) per later feedback, matching the
   // same icon-only back button now used by WalletManager.js,
   // Feedback.js, and HelpAssistant.js.
+  // Holds the back button and (once there's history to show) the
+  // Changelog button on one line - see the JSX's own comment. Margins
+  // that used to live on backButton itself now live here instead, same
+  // relocation KleverscanView.js's own topRow/backButton split already
+  // made for the same reason: a shared row needs the spacing once, not
+  // duplicated per child.
+  detailHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 12,
+    marginVertical: 12,
+  },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    marginHorizontal: 12,
-    marginVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1385,15 +1390,5 @@ const styles = StyleSheet.create({
   },
   detailScrollContent: {
     paddingBottom: 24,
-  },
-  // Applied on top of detailScrollContent above (not instead of - see
-  // the ScrollView's own contentContainerStyle) only while the
-  // floating "Changelog" button is showing, so the last stat row isn't
-  // left sitting partly hidden underneath it - the bottom-of-screen
-  // mirror of listContentClearFloatingButton's own top padding for the
-  // list screen's floating "Filters ✕" button, same
-  // FLOATING_BUTTON_HEIGHT-plus-breathing-room reasoning.
-  detailScrollContentClearFloatingButton: {
-    paddingBottom: FLOATING_BUTTON_HEIGHT + 20,
   },
 });
