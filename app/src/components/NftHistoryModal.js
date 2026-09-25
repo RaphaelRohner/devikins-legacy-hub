@@ -51,12 +51,35 @@ import { TRAIT_COLUMNS } from '../constants/schema';
 // its own schema.js definition order, and that's still the default
 // here too - an override only needs to name whichever fields are
 // actually being pulled out of that default position, not re-list
-// every trait. Weapons are the only kind with one so far: Rarity and
-// Slot pinned to the front, Improvement Level pinned to the back,
-// exactly as Raphael asked for after seeing the (previously accidental)
-// default order in practice.
+// every trait.
+//
+// Weapons: Rarity and Slot pinned to the front, Improvement Level
+// pinned to the back, per Raphael's own feedback after seeing the
+// (previously accidental) default order in practice.
+//
+// Devikins: per Raphael's own game knowledge, Rarity/Ancestry/
+// Personality/the five Genes/the five Affinities never actually change
+// through normal play - only Life Stage, Procreations Left, and the
+// five Attributes (trained up over time) do. Pinned those to the
+// front in the order he asked for - Life Stage, then Procreations
+// Left, then the Attributes (kept in their own existing schema.js
+// order among themselves, since he didn't ask to reorder those
+// relative to each other) - with every other trait still logged and
+// shown if it were ever somehow to change (same reasoning as Weapons'
+// Base Durability: unexpected, but worth knowing about rather than
+// silently hidden), just falling after these at the bottom via the
+// natural-order fallback below.
 const FIELD_ORDER_FRONT = {
   weapon: ['rarity', 'slot'],
+  devikin: [
+    'life_stage',
+    'procreations_left',
+    'vitality_attribute',
+    'power_attribute',
+    'fortitude_attribute',
+    'agility_attribute',
+    'sanity_attribute',
+  ],
 };
 const FIELD_ORDER_BACK = {
   weapon: ['improvement_level'],
