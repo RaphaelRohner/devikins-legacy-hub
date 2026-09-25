@@ -1388,20 +1388,27 @@ const styles = StyleSheet.create({
   },
   // The bordered chip wrapping the relocated "142 Devikins" /
   // Compare-progress text - see collectionStatusText's own comment
-  // above. Same border/background/radius/padding numbers as themeToggle
-  // below so the two read as a matched pair sharing this row, just
-  // without its fixed width or icon+label gap, since this one's
-  // content length varies a lot more (a short count vs. a longer
-  // Compare-mode message) - sized to its own content and capped to the
-  // available space instead, so it can still shrink and ellipsize
-  // rather than overflowing menuRow on a long message.
+  // above. Deliberately matches ProgressBar.js's own `container` style
+  // almost exactly, height:44 included, rather than themeToggle's
+  // numbers - the two literally swap places in this same
+  // inlineProgressWrapper slot depending on isFetching/isRetrying (see
+  // the JSX above), so matching ProgressBar's own explicit height (its
+  // own comment there: "matches the hamburger button's own height
+  // exactly") is what actually guarantees this chip, the progress bar,
+  // and the hamburger/theme-toggle buttons flanking this row all line
+  // up, the same way padding-matching alone didn't reliably hold
+  // elsewhere in this app (see sortButton's own comment on the
+  // arrow-glyph line-height issue). No explicit width, same as
+  // ProgressBar's own container - it fills inlineProgressWrapper's
+  // full flex:1 width by default rather than sizing to its own content
+  // (per feedback wanting this to match the search field's own width,
+  // which fills its wrapper the exact same way one row down).
   menuRowStatusChip: {
-    alignSelf: 'center',
-    maxWidth: '100%',
+    height: 44,
+    justifyContent: 'center',
     borderWidth: 1,
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
   },
   // The text itself, now always inside menuRowStatusChip above. Centered
   // (ProgressBar itself is already a centered element in this same

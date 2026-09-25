@@ -2588,6 +2588,25 @@ explains the ⇄ button, the two-item selection, and the "Show
 differences only" toggle. Both keyword-matchable the same as every
 other entry, in addition to showing in the always-visible grouped list.
 
+## NFT count chip: height matched to the hamburger button, width to the search field
+
+Follow-up on the previous "NFT count is a styled chip again" fix - it
+looked right per feedback, but wasn't quite lining up with the hamburger
+button/theme toggle in height, and stayed sized to its own text content
+rather than the full width of the search field one row down. Switched
+`menuRowStatusChip` (`App.js`) from copying themeToggle's padding
+numbers to copying `ProgressBar.js`'s own `container` style instead -
+the progress bar literally swaps into this exact same slot while a
+fetch/retry is running, and its own style comment already says its
+`height: 44` "matches the hamburger button's own height exactly," so
+matching that (rather than trusting padding numbers to add up the same
+way, which has bitten this app before - see sortButton's arrow-glyph
+line-height comment) is what actually guarantees the row lines up.
+Dropped the chip's own fixed alignSelf/maxWidth too, so like
+ProgressBar - and like the search field in its own wrapper one row
+down - it now fills its full flex:1 slot instead of hugging its own
+text.
+
 ## App structure decisions (made while building)
  (made while building)
 
