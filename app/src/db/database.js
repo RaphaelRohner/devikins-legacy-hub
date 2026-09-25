@@ -236,6 +236,24 @@ export async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_nft_history_kind_nonce ON nft_history(kind, nonce);
   `);
 
+  // Retroactive cleanup for Weapons' Durability, which upsertNft below
+  // now skips logging going forward (see its own comment there) - but
+  // that only stops NEW Durability rows. It does nothing about rows
+  // already written before that exclusion existed, back when this
+  // table was being filled passively with no Changelog viewer reading
+  // it yet. Raphael's own testing surfaced exactly that leftover noise
+  // once the viewer shipped: a regularly-fetched weapon had already
+  // picked up a pile of Durability entries from that earlier period,
+  // with nothing useful in them (constant in-play wear, not a change
+  // worth remembering - same reasoning as the upsertNft exclusion).
+  // Base Durability is deliberately left alone here - per Raphael's
+  // own game knowledge, it's meant to only move when a weapon is
+  // actually upgraded, so it stays a real, relevant piece of history.
+  // A plain, unconditional DELETE is safe to run on every launch: it's
+  // a no-op the moment nothing matches, with no per-run bookkeeping
+  // needed the way the wallet-address migration above needs.
+  await db.execAsync(`DELETE FROM nft_history WHERE field_name = 'durability'`);
+
   // A tiny generic key/value table for small bits of app state that
   // isn't NFT data. These days that's nothing load-bearing any more (the
   // wallet list below replaced the one thing this used to store), but

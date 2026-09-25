@@ -759,6 +759,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
         <NftHistoryModal
           visible={isHistoryModalVisible}
           entries={nftHistory}
+          kind={kind}
           onClose={() => setIsHistoryModalVisible(false)}
         />
       </View>
