@@ -2538,6 +2538,42 @@ restructuring:
   the Add row and the wallet list beneath it, naming the set they
   belong to by its actual name rather than leaving that implicit.
 
+## V3.1 - three small corrections from real use
+
+The first work toward V3.1 (version not bumped yet - two bigger features,
+a real background scan and an NFT history view, are still to come before
+this becomes an actual release; see the project's own v3-feature-ideas
+doc for that discussion). Three small corrections raised after some real
+day-to-day use of V3.0.0:
+
+- **Wallets screen's top explanation was wrong since wallet sets shipped.**
+  It still said "Fetch/Update pulls ... from every wallet address listed
+  here," which reads as every wallet across every set - not true since
+  wallet sets exist, each with its own separate wallets. Reworded to
+  "from every wallet in your active wallet set below - not every wallet
+  across every set." Devi's own `multiple-wallets` FAQ answer had the
+  exact same stale claim ("Fetch/Update pulls ... from all of them
+  together") - caught and corrected alongside it, per this project's
+  standing rule to keep Devi's answers in sync with whatever changes.
+- **The NFT count is a styled chip again, matching the theme toggle.**
+  Back when the count/Compare-progress text first moved up into menuRow
+  (next to the hamburger button and theme toggle), it lost the bordered
+  "button" look it used to have further down the old toolbar and became
+  plain centered text. Restored that look - now wrapped in a bordered
+  chip (`menuRowStatusChip` in `App.js`) using the exact same
+  border/background/radius/padding as the theme toggle right next to it,
+  so the two read as a matched pair. Purely visual - it's still just a
+  status display, not a new tappable control.
+- **Devi's FAQ grouped into topics.** All 17 questions used to be one
+  flat list - per feedback, unstructured once there were this many.
+  Grouped under five headings (`FAQ_TOPICS` in `HelpAssistant.js`):
+  Wallets & wallet sets, Browsing & organizing your collection, When
+  something looks off, Other tools, and Data, feedback & about Devi.
+  Purely a display grouping - each entry keeps its own `topic` field
+  alongside its existing keywords, and the free-text matching logic
+  still searches every entry regardless of topic, so this doesn't change
+  what typing a question finds, only how the always-visible list reads.
+
 ## App structure decisions (made while building)
  (made while building)
 

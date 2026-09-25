@@ -31,6 +31,16 @@
  * questions get their own answer appended below the list as a small
  * chat exchange.
  *
+ * As the list grew past a dozen entries, a single flat list of
+ * questions started reading as unstructured - no way to tell at a
+ * glance what was covered without reading every question. Grouped now
+ * under a handful of topic headings (see FAQ_TOPICS, right above
+ * FAQ_ENTRIES) - Wallets & wallet sets, Browsing & organizing your
+ * collection, When something looks off, Other tools, and Data,
+ * feedback & about Devi. Purely a display grouping: the free-text
+ * matching below still searches every entry regardless of topic, so
+ * this doesn't change what typing a question finds.
+ *
  * Same full-screen-takeover pattern as WalletManager.js/Feedback.js -
  * this is App.js's seventh "screen" (`currentScreen === 'help'`), opened
  * from the hamburger menu, with its own small round "‹" back button in
@@ -52,13 +62,37 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
+// The topics FAQ_ENTRIES below are grouped into for display (see the
+// "topic" field on each entry, and the grouped render further down) -
+// per feedback that one long flat list of 17 questions read as
+// unstructured, with no way to tell at a glance what's covered. Order
+// here is the display order: roughly the order a new user would
+// actually need these things, from getting wallets set up through to
+// what to do when something looks wrong, other built-in tools, and
+// finally data/feedback/about-Devi questions that apply to the app as
+// a whole rather than any one screen. Purely a display grouping - it
+// has no effect on keyword matching (matchEntry/scoreEntry below still
+// search every entry in FAQ_ENTRIES regardless of topic), so adding a
+// new topic here is safe and won't change what a typed question
+// matches.
+const FAQ_TOPICS = [
+  { id: 'wallets', title: 'Wallets & wallet sets' },
+  { id: 'browsing', title: 'Browsing & organizing your collection' },
+  { id: 'troubleshooting', title: 'When something looks off' },
+  { id: 'tools', title: 'Other tools' },
+  { id: 'data-feedback', title: 'Data, feedback & about Devi' },
+];
+
 // The whole "brain" - a fixed list of question/answer pairs, each with a
-// handful of keywords that, if typed, should surface that answer. This
-// is intentionally small and specific to THIS app, not general
-// knowledge - Devi doesn't know anything it isn't told here.
+// handful of keywords that, if typed, should surface that answer, plus
+// the "topic" field used only for the grouped display above (see
+// FAQ_TOPICS' own comment). This is intentionally small and specific to
+// THIS app, not general knowledge - Devi doesn't know anything it isn't
+// told here.
 const FAQ_ENTRIES = [
   {
     id: 'add-wallet',
+    topic: 'wallets',
     question: 'How do I add a wallet?',
     keywords: ['wallet', 'address', 'klv1', 'wallets', 'connect'],
     answer:
@@ -66,6 +100,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'wallet-sets',
+    topic: 'wallets',
     question: 'How do wallet sets work?',
     keywords: ['set', 'sets', 'wallet set', 'wallet sets', 'switch', 'profile', 'profiles', 'friend', 'kid'],
     answer:
@@ -73,6 +108,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'fetch-update',
+    topic: 'wallets',
     question: 'What does Fetch/Update do?',
     keywords: ['fetch', 'update', 'scan', 'refresh', 'sync'],
     answer:
@@ -80,6 +116,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'deleted',
+    topic: 'browsing',
     question: "What does marking something 'Deleted' do?",
     keywords: ['delete', 'deleted', 'hide', 'sold', 'restore', 'remove', 'traded'],
     answer:
@@ -87,6 +124,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'list-tiles',
+    topic: 'browsing',
     question: "What's the difference between List and Tiles view?",
     keywords: ['list', 'tiles', 'grid', 'view', 'layout'],
     answer:
@@ -94,6 +132,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'search-star-filter',
+    topic: 'browsing',
     question: 'How do search and the star filter work?',
     keywords: ['search', 'star filter', 'filter'],
     answer:
@@ -101,6 +140,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'sort-vs-filters',
+    topic: 'browsing',
     question: "What's the difference between Sort and Filters?",
     keywords: ['sort', 'sorting', 'sort vs filter', 'sort and filter', 'order', 'difference'],
     answer:
@@ -108,6 +148,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'devikin-filter-groups',
+    topic: 'browsing',
     question: 'Why can\'t I see all the Devikins filters at once?',
     keywords: ['genes', 'affinities', 'attributes', 'devikin filters', 'more filters', 'filter groups', 'grouped filters'],
     answer:
@@ -115,6 +156,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'name-rating',
+    topic: 'browsing',
     question: 'How do I give an NFT a nickname or rating?',
     keywords: ['nickname', 'rate', 'rating', 'name this', 'rename', 'stars', 'unrate', 'un-rate', 'remove rating', 'clear rating'],
     answer:
@@ -122,6 +164,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'kleverscan',
+    topic: 'tools',
     question: 'What is the Kleverscan tab?',
     keywords: ['kleverscan', 'explorer', 'holders', 'block explorer', 'holder', 'browser'],
     answer:
@@ -129,6 +172,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'feedback',
+    topic: 'data-feedback',
     question: 'How do I send feedback or report a bug?',
     keywords: ['feedback', 'bug', 'report', 'suggest', 'contact', 'email', 'request'],
     answer:
@@ -136,6 +180,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'unavailable-failed',
+    topic: 'troubleshooting',
     question: "Why does an item say 'Unavailable' or 'Fetch failed'?",
     keywords: ['unavailable', 'missing', 'failed', 'no image', 'no data'],
     answer:
@@ -143,6 +188,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'reset-data',
+    topic: 'data-feedback',
     question: 'How do I reset all my data?',
     keywords: ['reset', 'wipe', 'start over', 'fresh install'],
     answer:
@@ -150,6 +196,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'automatic-retry',
+    topic: 'troubleshooting',
     question: 'Does the app retry failed items automatically?',
     keywords: ['automatic', 'automatically', 'background retry', 'auto retry', 'retry'],
     answer:
@@ -157,6 +204,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'theme-toggle',
+    topic: 'tools',
     question: "Where's the light/dark mode button?",
     keywords: ['theme', 'dark mode', 'light mode', 'dark', 'light', 'appearance'],
     answer:
@@ -164,13 +212,15 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'multiple-wallets',
+    topic: 'wallets',
     question: 'Can I add more than one wallet?',
     keywords: ['multiple wallets', 'second wallet', 'another wallet', 'two wallets', 'many wallets'],
     answer:
-      "Yes - open Wallets from the ☰ menu and add as many addresses as you like. Fetch/Update pulls Devikins, Weapons, and Equipment from all of them together, and you can give each wallet its own nickname from its Edit button.",
+      "Yes - open Wallets from the ☰ menu and add as many addresses as you like. Fetch/Update pulls Devikins, Weapons, and Equipment from all of them together, as long as they're in the same wallet set - a different set has its own separate wallets. You can give each wallet its own nickname from its Edit button.",
   },
   {
     id: 'who-are-you',
+    topic: 'data-feedback',
     question: 'Who or what are you?',
     keywords: ['who are you', 'what are you', 'are you ai', 'are you claude', 'real ai', 'robot'],
     answer:
@@ -392,17 +442,32 @@ export default function HelpAssistant({ onClose }) {
               rather than behind tappable chips you'd have to try one at
               a time to see what's there. Typing your own question below
               still works and appends its own answer as a chat bubble
-              above this list. */}
+              above this list. Grouped under FAQ_TOPICS' headings rather
+              than one flat 17-entry list (see FAQ_TOPICS' own comment
+              above) - a topic with no entries just renders nothing,
+              rather than an empty heading, so adding a topic ahead of
+              having anything filed under it yet is harmless. */}
           <View style={[styles.faqSection, { borderTopColor: colors.border }]}>
             <Text style={[styles.faqSectionTitle, { color: colors.secondaryText }]}>
               Frequently asked
             </Text>
-            {FAQ_ENTRIES.map((entry) => (
-              <View key={entry.id} style={styles.faqEntry}>
-                <Text style={[styles.faqQuestion, { color: colors.primary }]}>{entry.question}</Text>
-                <Text style={[styles.faqAnswer, { color: colors.text }]}>{entry.answer}</Text>
-              </View>
-            ))}
+            {FAQ_TOPICS.map((topic) => {
+              const entries = FAQ_ENTRIES.filter((entry) => entry.topic === topic.id);
+              if (entries.length === 0) return null;
+              return (
+                <View key={topic.id} style={styles.faqTopicGroup}>
+                  <Text style={[styles.faqTopicTitle, { color: colors.secondaryText }]}>
+                    {topic.title}
+                  </Text>
+                  {entries.map((entry) => (
+                    <View key={entry.id} style={styles.faqEntry}>
+                      <Text style={[styles.faqQuestion, { color: colors.primary }]}>{entry.question}</Text>
+                      <Text style={[styles.faqAnswer, { color: colors.text }]}>{entry.answer}</Text>
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
           </View>
         </ScrollView>
 
@@ -507,6 +572,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  // One per FAQ_TOPICS entry - just spacing between topic groups, no
+  // border/background of its own (faqSection above already draws the
+  // one border that sets the whole FAQ apart from the chat bubbles).
+  faqTopicGroup: {
+    marginBottom: 20,
+  },
+  // Sits between faqSectionTitle ("Frequently asked", the whole FAQ's
+  // own label) and each entry's own faqQuestion below - a second,
+  // smaller level of heading, same muted color as faqSectionTitle but
+  // not uppercase/letter-spaced, so it reads as one level down rather
+  // than a repeat of the section title.
+  faqTopicTitle: {
+    fontSize: 13,
+    fontWeight: '700',
     marginBottom: 10,
   },
   faqEntry: {

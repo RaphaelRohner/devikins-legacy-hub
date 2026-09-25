@@ -326,7 +326,12 @@ function AppContent() {
   // from CollectionView via onStatusTextChange, mirroring
   // onAppliedFiltersChange just above; stays '' (renders nothing) on
   // every other screen, since menuRow itself is only ever shown on the
-  // three collection tabs.
+  // three collection tabs. Went back to plain centered text once this
+  // moved up here (it used to have its own bordered "button" look
+  // further down the toolbar, back before it shared a row with
+  // anything) - per feedback, restored to that same bordered-chip look
+  // (menuRowStatusChip below), now matching the theme toggle's box
+  // right next to it, rather than sitting there as bare text.
   const [collectionStatusText, setCollectionStatusText] = useState('');
 
   // V3: which field the current collection is sorted by, and which
@@ -970,13 +975,20 @@ function AppContent() {
               isCancelling={isCancelling}
             />
           ) : collectionStatusText ? (
-            <Text
-              style={[styles.menuRowStatusText, { color: colors.secondaryText }]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
+            <View
+              style={[
+                styles.menuRowStatusChip,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
             >
-              {collectionStatusText}
-            </Text>
+              <Text
+                style={[styles.menuRowStatusText, { color: colors.text }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {collectionStatusText}
+              </Text>
+            </View>
           ) : null}
         </View>
 
@@ -1374,10 +1386,27 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 10,
   },
-  // The relocated "142 Devikins" / Compare-progress text - see
-  // collectionStatusText's own comment above. Centered (ProgressBar
-  // itself is already a centered element in this same slot) and capped
-  // to one line, same as every other toolbar label in this app.
+  // The bordered chip wrapping the relocated "142 Devikins" /
+  // Compare-progress text - see collectionStatusText's own comment
+  // above. Same border/background/radius/padding numbers as themeToggle
+  // below so the two read as a matched pair sharing this row, just
+  // without its fixed width or icon+label gap, since this one's
+  // content length varies a lot more (a short count vs. a longer
+  // Compare-mode message) - sized to its own content and capped to the
+  // available space instead, so it can still shrink and ellipsize
+  // rather than overflowing menuRow on a long message.
+  menuRowStatusChip: {
+    alignSelf: 'center',
+    maxWidth: '100%',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  // The text itself, now always inside menuRowStatusChip above. Centered
+  // (ProgressBar itself is already a centered element in this same
+  // slot) and capped to one line, same as every other toolbar label in
+  // this app.
   menuRowStatusText: {
     fontSize: 13,
     fontWeight: '600',

@@ -390,7 +390,7 @@ export default function WalletManager({
 
       <Text style={[styles.title, { color: colors.text }]}>Wallets</Text>
       <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
-        Fetch/Update pulls Devikins, Weapons, and Equipment from every wallet address listed here.
+        Fetch/Update pulls Devikins, Weapons, and Equipment from every wallet in your active wallet set below - not every wallet across every set.
       </Text>
 
       {/* Wallet set switcher - see this file's own header comment for
