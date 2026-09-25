@@ -2907,6 +2907,54 @@ unreliable API. Raphael has since knowingly kicked off the real ~8k-NFT
 fetch on that wallet set to test with; storage numbers to be compared
 before/after once he's back to check.
 
+## Corrected the storage-warning's numbers: 200KB/NFT and 1GB were both way off
+
+Follow-up to the two sections above, from the same day of testing. Once
+the "size-warning could silently skip itself" fix shipped, Raphael
+actually ran the real ~8,000-9,500-NFT fetch on the 2nd/3rd-biggest
+DVKNFT holder wallet set to test with, then checked storage afterward -
+and the numbers that came back didn't match what this feature's
+constants assumed at all.
+
+Chased through a few dead ends before landing on the real explanation.
+Android's Settings app reported "Expo Go" (the dev-preview app this
+project runs inside during testing) at 1.37GB for what Raphael described
+as "overall 9,503 NFTs" - a long way from the app's own "Total storage
+used" line, which read only 129MB for the very same three wallet sets.
+First guess was that Expo Go's storage figure might be shared across
+multiple dev projects, but Raphael confirmed Devikins is the only one he
+runs through it, ruling that out. Also checked whether most of those
+9,503 NFTs might simply be missing their downloaded images yet (plausible
+for a huge, mostly-unattended fetch) - but Raphael scrolled through and
+confirmed only a few were actually missing, ruling that out too.
+
+The real explanation: Android's "App size" reading for Expo Go bundles
+in Expo Go's OWN runtime, JS engine, and its own caches alongside
+whatever this project itself stored - it was never a clean read of just
+Devikins' own data, even back when the original "600MB for ~3,000 NFTs"
+number (which `AVERAGE_BYTES_PER_NFT`, storageStats.js, was originally
+grounded in) was first measured. The app's own "Total storage used"
+line, by contrast, is computed by reading the actual database + image
+files directly (`getStorageBytesForSets`) - nothing else mixed in - so
+it's the trustworthy number. At 129MB across 9,503 NFTs, that's roughly
+14KB/NFT, not 200KB - about 14x lower. Retroactively, the original 3,000
+NFTs should have only been about 43MB of real app data, not the 600MB
+"App size" reading that was mistaken for it at the time.
+
+**Fixed (`storageStats.js`):** `AVERAGE_BYTES_PER_NFT` corrected from
+200KB to 16KB (a little headroom above the measured ~14KB, not the exact
+number). Discussed with Raphael what this meant for
+`STORAGE_WARNING_THRESHOLD_BYTES` too, since at the old 200KB/NFT the
+1GB line needed ~5,200 new NFTs to cross, but at the corrected rate it
+would take ~75,000 - more than the entire Devikins collection has ever
+minted, making the warning something that could realistically never
+fire. Raphael's own call, given the game's still-uncertain future
+(potential playerbase growth if it's saved/succeeds): keep a warning
+that's actually reachable now rather than one that's already
+theoretical, so `STORAGE_WARNING_THRESHOLD_BYTES` is now 200MB (down
+from 1GB) - still comfortably out of reach today, but meaningful if NFT
+counts grow substantially later.
+
 ## App structure decisions (made while building)
  (made while building)
 

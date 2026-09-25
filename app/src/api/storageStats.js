@@ -31,25 +31,37 @@ import * as SQLite from 'expo-sqlite';
 // make this screen noticeably slow to open.
 const SIZE_CHECK_CONCURRENCY = 8;
 
-// Raphael's own real-world number: about 600MB across roughly 3,000
-// NFTs after a round of testing that included several wallet sets built
-// from random Kleverscan holder addresses (2026-09-25) - which works out
-// to a bit under 200KB per NFT (almost entirely the downloaded image;
-// each NFT's own database row is well under 1KB, negligible next to
-// its picture). Used only to PROJECT how big an upcoming scan might be
-// before it happens (see estimateNewNftCountForWallets below) - the
-// actual current-usage numbers this file also computes are always real
-// measured bytes, never this estimate. This doesn't need to be exact,
-// just close enough to reliably catch "this scan is about to add a lot
-// of storage" - see STORAGE_WARNING_THRESHOLD_BYTES below for where
-// that line is drawn.
-export const AVERAGE_BYTES_PER_NFT = 200 * 1024;
+// Corrected (2026-09-25) from an earlier, much higher estimate. The
+// first version of this constant (200KB/NFT) was grounded in an early
+// reading of "about 600MB across roughly 3,000 NFTs" - but that number
+// came from Android's own "App size" figure for Expo Go, which bundles
+// in Expo Go's own runtime/caches alongside whatever this project
+// actually stored, not just our own data. Once Raphael had a much
+// bigger, real data point to check against - the app's OWN measured
+// total (getStorageBytesForSets below, real bytes read off the actual
+// database + image files, nothing else mixed in) across three wallet
+// sets holding 9,503 NFTs came out to 129MB, i.e. roughly 14KB/NFT, not
+// 200KB. That lines up with what those 3,000 NFTs should have actually
+// used too (~43MB), a lot less than the 600MB "App size" reading
+// suggested. 16KB/NFT here keeps a little headroom above that measured
+// ~14KB rather than using it exactly. Used only to PROJECT how big an
+// upcoming scan might be before it happens (see
+// estimateNewNftCountForWallets below) - the actual current-usage
+// numbers this file also computes are always real measured bytes, never
+// this estimate.
+export const AVERAGE_BYTES_PER_NFT = 16 * 1024;
 
 // The line a projected scan has to cross before App.js's handleFetchPress
-// interrupts with a confirmation instead of just proceeding quietly, per
-// Raphael's own suggestion after the "how does Android handle app
-// storage" conversation.
-export const STORAGE_WARNING_THRESHOLD_BYTES = 1024 * 1024 * 1024; // 1 GB
+// interrupts with a confirmation instead of just proceeding quietly.
+// Originally set at 1GB per Raphael's own suggestion, then lowered here
+// (2026-09-25) once AVERAGE_BYTES_PER_NFT's correction above made clear
+// that 1GB would need roughly 75,000 new NFTs to ever be reached in
+// practice - more than the entire Devikins collection has minted, so a
+// warning that could realistically never fire. Raphael's own call:
+// 200MB is still comfortably out of reach today, but leaves the warning
+// meaningful if the game's playerbase (and NFT count) grows a lot in
+// the future.
+export const STORAGE_WARNING_THRESHOLD_BYTES = 200 * 1024 * 1024; // 200 MB
 
 /**
  * Turns a raw byte count into something readable ("640 MB", "1.2 GB") -
