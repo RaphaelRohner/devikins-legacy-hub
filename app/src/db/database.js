@@ -683,6 +683,18 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
     const changedAt = Date.now();
     for (const columnName of traitColumnNames) {
       if (traitColumns[columnName].filterable === false) continue;
+      // Weapons' Durability changes constantly during normal play (per
+      // Raphael's own game knowledge) and isn't meaningful history -
+      // it's current wear state, not a change worth remembering, and
+      // logging every tick of it would flood a weapon's history with
+      // noise that buries the traits someone would actually want to
+      // see (Rarity, Improvement Level, Refine XP, ...). Excluded here
+      // rather than filtered out later in the viewer, so it's never
+      // written in the first place. base_durability is deliberately
+      // NOT excluded alongside it - per the same notes, it shouldn't
+      // change at all, so if it ever does, that's exactly the kind of
+      // unexpected thing worth a history entry, not noise.
+      if (columnName === 'durability') continue;
       const oldValue = existingUserData[columnName];
       const newValue = traitValues[columnName];
       if (newValue === null || newValue === undefined) continue;
@@ -1005,6 +1017,26 @@ export async function setNftStarRating(kind, nonce, starRating) {
   await db.runAsync(
     `UPDATE ${kind} SET star_rating = ? WHERE nonce = ?`,
     [normalized, nonce]
+  );
+}
+
+/**
+ * Every logged change for one NFT, newest first - what the detail
+ * view's "Changelog" button (see NftHistoryModal.js) shows. Returns the
+ * flat rows exactly as stored (see initDatabase's nft_history comment
+ * for what does and doesn't get logged, and upsertNft for the actual
+ * writing) - grouping rows that came from the same fetch into one
+ * dated entry is left to the caller (NftHistoryModal.js), since every
+ * field changed by the same fetch shares the exact same changed_at
+ * value (see upsertNft's single `changedAt = Date.now()` per fetch),
+ * which makes that grouping trivial there without needing anything
+ * fancier than an equality check.
+ */
+export async function getNftHistory(kind, nonce) {
+  const db = await getDatabase();
+  return db.getAllAsync(
+    `SELECT field_name, old_value, new_value, changed_at FROM nft_history WHERE kind = ? AND nonce = ? ORDER BY changed_at DESC, id DESC`,
+    [kind, nonce]
   );
 }
 

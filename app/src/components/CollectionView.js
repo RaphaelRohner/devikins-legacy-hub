@@ -80,7 +80,8 @@ import DevikinSummaryRow from './DevikinSummaryRow';
 import WeaponSummaryRow from './WeaponSummaryRow';
 import EquipmentSummaryRow from './EquipmentSummaryRow';
 import CompareView from './CompareView';
-import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange } from '../db/database';
+import NftHistoryModal from './NftHistoryModal';
+import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange, getNftHistory } from '../db/database';
 import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER } from '../constants/schema';
 import { useTheme } from '../context/ThemeContext';
 
@@ -157,6 +158,16 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // Which item (by nonce) is currently open in detail view, if any. Only
   // meaningful for a kind listed in SUMMARY_ROW_COMPONENTS above.
   const [selectedNonce, setSelectedNonce] = useState(null);
+
+  // The detail view's "Changelog" - every logged nft_history row for
+  // whichever item is currently open (see the effect further down that
+  // loads this whenever selectedNonce/kind change). Empty array (not
+  // null) both before anything's loaded and for an item with no logged
+  // changes - either way the floating Changelog button below just stays
+  // hidden, no separate loading state needed for something this quick
+  // (a single indexed lookup - see getNftHistory in database.js).
+  const [nftHistory, setNftHistory] = useState([]);
+  const [isHistoryModalVisible, setIsHistoryModalVisible] = useState(false);
 
   // "Compare" mode - see the Compare toggle button in toggleRow below, and
   // this file's own top comment. Off by default; turning it on switches
@@ -297,6 +308,34 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // screen - the two never conflict, since this component isn't even
   // mounted while that screen is showing.
   const isDetailViewOpen = Boolean(SUMMARY_ROW_COMPONENTS[kind]) && selectedNonce !== null;
+
+  // Loads this item's Changelog the moment its detail view opens (or
+  // closes any previously-loaded one the moment it doesn't, so a
+  // leftover history from the last item viewed can never flash up
+  // against a new one for a single frame before its own load finishes).
+  // Depends on kind/selectedNonce directly rather than selectedRow
+  // itself - selectedRow is derived from `rows` further down (after a
+  // fetch/filter/sort), and re-runs of THIS effect only need to know
+  // WHICH item, not its current field values, so tying it to rows would
+  // just mean extra, pointless reloads every time rows changes for an
+  // unrelated reason (a background refresh, say) while the same item
+  // stays open. Also resets the sheet closed on every item change, so
+  // switching detail views (or backing out) never leaves a stale
+  // Changelog sheet open over the wrong item.
+  useEffect(() => {
+    setIsHistoryModalVisible(false);
+    if (!isDetailViewOpen) {
+      setNftHistory([]);
+      return;
+    }
+    let cancelled = false;
+    getNftHistory(kind, selectedNonce).then((rows) => {
+      if (!cancelled) setNftHistory(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [kind, selectedNonce, isDetailViewOpen]);
 
   // Same idea as isDetailViewOpen above, for the comparison screen -
   // compareSelection reaching two is exactly the condition the render
@@ -681,9 +720,45 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
         >
           <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹</Text>
         </TouchableOpacity>
-        <ScrollView contentContainerStyle={[styles.detailScrollContent, { paddingHorizontal: centeredContentPadding }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.detailScrollContent,
+            { paddingHorizontal: centeredContentPadding },
+            nftHistory.length > 0 && styles.detailScrollContentClearFloatingButton,
+          ]}
+        >
           <NftCard kind={kind} nft={selectedRow} onNftUpdated={reloadRows} />
         </ScrollView>
+
+        {/* Floating "Changelog" button - only appears once there's
+            actually something logged for this item (see the effect
+            above that loads nftHistory), so an NFT with no history
+            doesn't show a button leading to an empty sheet. Pinned in
+            place (unlike the list screen's own floating "Filters ✕"
+            button, which is draggable) - there's nothing on this
+            screen it would ever need to dodge, so dragging would just
+            be complexity with no purpose here. Same floating-pill look
+            (border/shadow/elevation) as that button, for the same
+            "clearly floating above the content, not part of the
+            normal scroll flow" reason - reachable without scrolling
+            all the way down through however many stats this item has. */}
+        {nftHistory.length > 0 && (
+          <TouchableOpacity
+            style={[
+              styles.historyButton,
+              { backgroundColor: colors.surface, borderColor: colors.border, shadowColor: colors.cardShadow },
+            ]}
+            onPress={() => setIsHistoryModalVisible(true)}
+          >
+            <Text style={[styles.historyButtonText, { color: colors.text }]}>Changelog</Text>
+          </TouchableOpacity>
+        )}
+
+        <NftHistoryModal
+          visible={isHistoryModalVisible}
+          entries={nftHistory}
+          onClose={() => setIsHistoryModalVisible(false)}
+        />
       </View>
     );
   }
@@ -1212,6 +1287,35 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 17,
   },
+  // The detail view's floating "Changelog" button (see the JSX in the
+  // `if (selectedRow)` block above) - same border/shadow/elevation
+  // recipe as floatingRemoveButton just above, since it's the same
+  // "clearly floating above the content" look, but pinned to the
+  // bottom-right corner with plain right/bottom (not draggable like
+  // that one - there's nothing on this screen it would ever need to
+  // dodge). FLOATING_BUTTON_EDGE_MARGIN is the same edge-margin
+  // constant the draggable button's own drag-clamping math uses, so
+  // this one sits exactly as far from the edge as that one is ever
+  // allowed to get dragged.
+  historyButton: {
+    position: 'absolute',
+    right: FLOATING_BUTTON_EDGE_MARGIN,
+    bottom: FLOATING_BUTTON_EDGE_MARGIN,
+    paddingHorizontal: 13,
+    height: FLOATING_BUTTON_HEIGHT,
+    borderWidth: 1,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
+  },
+  historyButtonText: {
+    fontWeight: '600',
+    fontSize: 17,
+  },
   applyButton: {
     borderRadius: 8,
     paddingVertical: 10,
@@ -1281,5 +1385,15 @@ const styles = StyleSheet.create({
   },
   detailScrollContent: {
     paddingBottom: 24,
+  },
+  // Applied on top of detailScrollContent above (not instead of - see
+  // the ScrollView's own contentContainerStyle) only while the
+  // floating "Changelog" button is showing, so the last stat row isn't
+  // left sitting partly hidden underneath it - the bottom-of-screen
+  // mirror of listContentClearFloatingButton's own top padding for the
+  // list screen's floating "Filters ✕" button, same
+  // FLOATING_BUTTON_HEIGHT-plus-breathing-room reasoning.
+  detailScrollContentClearFloatingButton: {
+    paddingBottom: FLOATING_BUTTON_HEIGHT + 20,
   },
 });

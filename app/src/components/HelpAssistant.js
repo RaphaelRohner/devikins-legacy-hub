@@ -163,6 +163,14 @@ const FAQ_ENTRIES = [
       "Open its detail view - right above the Notes section you'll find a Name field with a Save Name button, and a row of 5 stars. Type a name and tap Save Name to save it. Tap a star to rate it - once you have, a Clear Rating button appears right below the stars to un-rate it again (tapping the same star a second time does the same thing).",
   },
   {
+    id: 'changelog',
+    topic: 'browsing',
+    question: "What's the Changelog button in an item's detail view?",
+    keywords: ['changelog', 'history', 'nft history', 'change log', 'past values', 'what changed', 'track changes'],
+    answer:
+      "Open any item's detail view and, if the app has ever caught a real change on it, a floating Changelog button appears bottom-right. Tap it for a simple list of every change, newest first, grouped by when it was caught. This only tracks actual trait changes seen during a fetch (old value → new value) - not everything about the item, and not a change to something it never had a value for before. Weapon Durability is deliberately left out, since it shifts constantly during normal play and isn't meaningful history. An item with no logged changes yet just won't show the button at all.",
+  },
+  {
     id: 'kleverscan',
     topic: 'tools',
     question: 'What is the Kleverscan tab?',

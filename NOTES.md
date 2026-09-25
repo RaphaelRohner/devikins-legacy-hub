@@ -2607,6 +2607,64 @@ ProgressBar - and like the search field in its own wrapper one row
 down - it now fills its full flex:1 slot instead of hugging its own
 text.
 
+## NFT history gets a viewer: the "Changelog" button
+
+The first bigger V3.1 feature (see "V3.1 - three small corrections from
+real use" above for the smaller ones, and the project's own
+v3-feature-ideas doc for the full V3.1 plan). The `nft_history` table
+itself has existed since V3.0.0 ("Passive per-NFT change history" above)
+and was already quietly logging every real trait change it caught on a
+fetch - this is the first time any of that data is actually shown to a
+player.
+
+Raphael's own proposal, implemented close to as-described: a floating
+"Changelog" button, bottom-right in an NFT's detail view, that only
+appears once there's actually something logged for that item (an NFT
+with no history shows no button - nothing to lead to an empty sheet).
+Tapping it opens a bottom-sheet list (`NftHistoryModal.js`, reusing
+`SortPickerModal.js`'s existing dim-backdrop/rounded-sheet pattern
+rather than inventing a new one) of every logged change, newest first.
+
+Two things worth remembering about how it reads the data, both handled
+in `NftHistoryModal.js` rather than the database layer:
+
+- **Grouping.** A single fetch can catch more than one real change at
+  once (say Procreations Left and Life Stage both moved since the NFT
+  was last seen) - `upsertNft` logs those as separate rows, but every
+  row from the same fetch shares one `changed_at` timestamp (stamped
+  once per fetch, not once per field). The viewer groups rows sharing
+  that exact timestamp into a single dated entry, so a fetch that
+  caught three changes reads as one entry listing all three, not three
+  disconnected lines.
+- **No fake/test data.** Building this without any real change ever
+  having fired yet made testing awkward enough that a "fake a before
+  value for debugging" shortcut was floated and then explicitly
+  declined ("I agree with everything except the fake before entries.
+  Don't need them.") - Raphael's own in-game wallet holds real Devikins/
+  Weapons/Equipment he can fetch and refetch to generate genuine history
+  for testing, so this stayed out entirely rather than shipping a debug
+  path nobody wanted.
+
+One real fix landed alongside the viewer, in `upsertNft` itself:
+Weapons' `durability` is now excluded from being logged at all. It's
+current wear state, not meaningful history - it changes constantly
+during normal play, and logging every tick of it would flood a
+weapon's Changelog with noise burying the traits someone would
+actually want to see there (Rarity, Improvement Level, Refine XP, ...).
+`base_durability` is deliberately NOT excluded alongside it - per the
+same game knowledge, it shouldn't change at all, so if it ever does,
+that's exactly the kind of unexpected thing worth a history entry, not
+noise. Excluded at the point of writing (never logged in the first
+place), not filtered out later in the viewer.
+
+Devi's `changelog` FAQ entry (under "Browsing & organizing your
+collection") was added alongside this, per the project's standing rule
+to keep Devi in sync with whatever ships.
+
+Background scan - the other bigger V3.1 feature - stays deliberately
+next, not started here; see the project's own v3-feature-ideas doc for
+why it got reprioritized behind this one.
+
 ## App structure decisions (made while building)
  (made while building)
 
