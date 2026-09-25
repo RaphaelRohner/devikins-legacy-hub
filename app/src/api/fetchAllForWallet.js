@@ -138,14 +138,30 @@ export async function fetchAllForWallet(walletAddress, { onProgress, shouldCance
     try {
       nonces = await fetchWalletNonces(walletAddress, assetId);
     } catch (err) {
-      // If even asking "what does this wallet hold" fails, tell the UI
-      // about this specific collection's problem and move on to the next
-      // collection rather than aborting the whole fetch over one glitch.
+      // fetchWalletNonces itself shouldn't throw any more (see its own
+      // comment in kleverApi.js - it returns whatever it managed to
+      // gather instead, with .truncated/.truncationReason attached) -
+      // this stays purely as a defensive catch-all for something truly
+      // unexpected, so one collection's bug still can't take down the
+      // rest of the fetch.
       onProgress({ phase: 'error', kind, label, error: err.message });
       continue;
     }
 
     if (shouldCancel()) return;
+
+    if (nonces.truncated) {
+      // Either a real error partway through (rare), or - far more
+      // likely, per kleverApi.js's own header comment - this wallet
+      // holds more of this collection than Klever's own API will let us
+      // page through in one go (a hard 10,000-item ceiling). Either way,
+      // `nonces` still holds everything successfully gathered before
+      // that happened, so this carries on and fetches THOSE rather than
+      // treating the whole collection as failed - just flags it so the
+      // UI can say what happened instead of silently showing a short
+      // count with no explanation.
+      onProgress({ phase: 'truncated', kind, label, nonceCount: nonces.length, error: nonces.truncationReason });
+    }
 
     // Don't bother re-fetching nonces we already know are permanently
     // gone (status 'unavailable' - see metadataApi.js for what earns that
@@ -389,10 +405,15 @@ export async function estimateNewNftCountForWallets(walletAddresses, { shouldCan
       try {
         nonces = await fetchWalletNonces(walletAddress, assetId);
       } catch (err) {
-        // Same spirit as fetchAllForWallet's own listing phase: one
-        // collection failing to list shouldn't block the estimate for
-        // everything else - it just can't count what it couldn't see,
-        // so this likely undercounts slightly rather than overcounting.
+        // fetchWalletNonces shouldn't throw any more (see its own
+        // comment in kleverApi.js) - this is purely a defensive
+        // catch-all so one collection's bug can't sink the whole
+        // estimate. When it DOES hit trouble partway through (a real
+        // error, or Klever's own 10,000-item pagination ceiling), it
+        // returns whatever nonces it already gathered instead, which is
+        // exactly what gets counted below - the right number to
+        // project from, since that's genuinely all the real fetch will
+        // be able to reach either.
         continue;
       }
 

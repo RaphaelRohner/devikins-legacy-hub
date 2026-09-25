@@ -601,6 +601,16 @@ function AppContent() {
     nextRetryAtRef.current = 0;
     setIsFetching(true);
 
+    // Filled in as fetchAllForWallets' onProgress reports a 'truncated'
+    // collection (see fetchAllForWallet.js/kleverApi.js - most likely
+    // Klever's own 10,000-item pagination ceiling, occasionally a real
+    // error) - summarized in one Alert once the fetch finishes, since
+    // the inline progress-bar message for 'truncated' (ProgressBar.js)
+    // flashes by quickly and is easy to miss, and this is worth actually
+    // seeing rather than just quietly ending up with fewer NFTs than
+    // expected.
+    const truncationNotices = [];
+
     try {
       // Before actually fetching anything, get a rough sense of how big
       // this scan is about to be (see estimateNewNftCountForWallets' own
@@ -650,6 +660,16 @@ function AppContent() {
         onProgress: (nextProgress) => {
           setProgress(nextProgress);
 
+          // Record any collection that hit a real limit partway through
+          // listing (see truncationNotices' own comment above) - it
+          // keeps going the same as any other progress update, this
+          // just also remembers it for the summary Alert once the whole
+          // fetch finishes.
+          if (nextProgress.phase === 'truncated') {
+            const walletPrefix = nextProgress.walletTotal > 1 ? `Wallet ${nextProgress.walletIndex}: ` : '';
+            truncationNotices.push(`${walletPrefix}${nextProgress.label} - ${nextProgress.error}`);
+          }
+
           // As soon as one collection finishes fetching, refresh the
           // screen so its data shows up right away - the user doesn't
           // have to wait for ALL three collections (let alone every
@@ -664,6 +684,10 @@ function AppContent() {
         },
         shouldCancel: () => cancelRequestedRef.current,
       });
+
+      if (truncationNotices.length > 0) {
+        Alert.alert('Some collections were larger than we could list', truncationNotices.join('\n\n'));
+      }
     } catch (err) {
       setProgress({ phase: 'error', label: 'this wallet', error: err.message });
     } finally {

@@ -59,6 +59,15 @@ export default function ProgressBar({ progress, onCancel, isCancelling }) {
     fractionComplete = progress.total > 0 ? progress.completed / progress.total : 0;
   } else if (progress.phase === 'error') {
     message = `Couldn't list ${progress.label}: ${progress.error}`;
+  } else if (progress.phase === 'truncated') {
+    // See fetchAllForWallet.js/kleverApi.js - this collection hit a
+    // real limit partway through listing (most likely Klever's own
+    // 10,000-item pagination ceiling), so only progress.nonceCount of
+    // it could be reached. This flashes by quickly just like every
+    // other phase here, so App.js also collects these into one summary
+    // Alert shown after the fetch finishes - this inline message is a
+    // secondary way to catch it in the moment, not the primary one.
+    message = `${progress.label}: only the first ${progress.nonceCount.toLocaleString()} could be listed - ${progress.error}`;
   }
 
   // When fetching more than one wallet (see fetchAllForWallets/

@@ -2799,6 +2799,69 @@ change - not done now since it would mean summing every existing set's
 real bytes and counts just to derive a multiplier, extra cost for
 marginal accuracy over a number already grounded in his own testing.
 
+## Diagnosed and fixed: a wallet with 10,000+ of one collection silently showed 0
+
+Raphael tested the storage warning feature above against his second-
+largest known wallet (~20,000 DVKNFT) and saw the "Checking scan size..."
+spinner run, then nothing - the collection just showed 0 Devikins
+afterward, with no visible error. He asked whether this meant he'd
+somehow queried the wrong contract.
+
+**Diagnosed by testing directly against Klever's live API** (not
+guessed): fetched pages 1 through 250 of the game's own main contract
+address's Devikins collection (which holds far more than 20,000, so
+guaranteed to hit whatever the real ceiling was). Page 100 succeeded;
+page 101 and every page after it came back `HTTP 400
+{"error":"result window is too large."}` - confirmed the exact boundary
+by testing every page from 100 to 149. Also tried `sort`/`order` params
+and a much larger `limit` to see if either sidesteps it - neither does,
+same error every time. **This is a hard limit in Klever's own API**
+(the wording matches a classic Elasticsearch/OpenSearch `max_result_window`
+guard): `page * limit` cannot exceed 10,000 for one address+collection
+query, full stop. Not a wrong-contract issue, and not something this
+app was doing wrong - any wallet (or the main contract, which holds
+~94% of the entire collection) holding more than 10,000 of one
+collection is simply unreachable past its first 10,000 via this
+endpoint as it exists today.
+
+That explained the "nothing happens" half, but not why it silently
+showed 0 rather than an error. Two real app bugs, both now fixed
+(`kleverApi.js`, `fetchAllForWallet.js`, `App.js`, `ProgressBar.js`):
+
+- **`fetchWalletNonces` threw away everything it had already fetched.**
+  It gathered nonces into a local array page by page, but the moment
+  ANY page failed - including hitting the 10,000 ceiling on page 101,
+  after 100 pages' worth of real nonces had already been collected -
+  it just `throw`s, discarding the array entirely. The caller's
+  `catch` then skipped the whole collection. **Fixed:** it no longer
+  throws at all. It stops at whatever page fails and returns
+  everything gathered so far, with `.truncated`/`.truncationReason`
+  attached to the returned array (kept as plain properties on the
+  array itself, not a new `{ nonces, truncated }` shape, so every
+  existing caller that just reads `.length` or loops over it keeps
+  working unchanged).
+- **A failed collection was nearly invisible in the UI.** The existing
+  `'error'` progress phase only ever shows in the compact progress bar
+  (tap it to reveal detail) - easy to miss if it flashes by before the
+  next collection starts or the fetch finishes. Now a `'truncated'`
+  collection gets its own progress phase (`ProgressBar.js` renders it
+  inline the same transient way), AND `App.js`'s `handleFetchPress`
+  collects every truncation notice into an array as they come in and
+  shows one summary `Alert` after the whole fetch finishes - "Some
+  collections were larger than we could list" - so it can't be missed
+  the way a mid-fetch flash could be.
+
+`estimateNewNftCountForWallets` (the pre-scan size check above) needed
+no logic change at all once `fetchWalletNonces` stopped throwing - it
+was already just counting whatever `nonces` it got back, which is now
+correctly the same partial list the real fetch will actually reach,
+rather than silently undercounting to zero for a capped collection.
+
+Net effect for a wallet like Raphael's 20k-DVKNFT test: it now
+correctly fetches and shows the first 10,000, with a clear one-time
+Alert explaining that the wallet holds more than that and only the
+first 10,000 could be reached - instead of silently ending up at 0.
+
 ## App structure decisions (made while building)
  (made while building)
 
