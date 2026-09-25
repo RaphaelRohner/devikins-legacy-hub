@@ -2727,6 +2727,20 @@ only has to name what's actually moving, not re-list every trait, so
 this is easy to extend to Devikins/Equipment later if Raphael wants a
 similar tweak there.
 
+**Update (same day): Devikins got their own order too**, sight unseen
+- Raphael hadn't tested a Devikin change yet, but asked for the field
+list ahead of time (Weapons/Devikins/Equipment, as the Changelog would
+currently show each) so he could review it without needing to trigger
+a real change first. Per his own game knowledge, only Life Stage,
+Procreations Left, and the five Attributes (trained up over time)
+actually change through normal play - Rarity, Ancestry, Personality,
+the five Genes, and the five Affinities never do. Pinned to the front
+in the order he asked for: Life Stage, then Procreations Left, then
+the five Attributes in their own existing `schema.js` order among
+themselves (not asked to reorder those relative to each other).
+Equipment's order is still untouched, pending Raphael's own review of
+that list.
+
 ## App structure decisions (made while building)
  (made while building)
 
