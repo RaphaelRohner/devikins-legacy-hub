@@ -2665,6 +2665,33 @@ Background scan - the other bigger V3.1 feature - stays deliberately
 next, not started here; see the project's own v3-feature-ideas doc for
 why it got reprioritized behind this one.
 
+## Changelog button moved from a floating pill to the header row
+
+Follow-up the same day, after Raphael's first real test of the
+Changelog feature above (weapon #1450: added a slot and bumped it from
+Common to Uncommon in-game, then confirmed the app's own fetch caught
+both changes correctly - `Slot: None -> Slotted`, `Rarity: Common ->
+Uncommon`, grouped under one entry). The feature itself worked; the
+floating bottom-right button was just easy to miss.
+
+Raphael offered two alternatives - float it near the top under the
+item's own ID, or move it up into the row the back button already
+lives in. Went with the second: a new `detailHeaderRow` now holds both
+the back button (left) and Changelog (right, when there's history to
+show), the exact same row pattern `KleverscanView.js` already uses for
+its own back-button-plus-controls row. Preferred over the "float near
+the ID" option since that would mean guessing a pixel offset into
+`NftCard.js`'s own layout, which differs between Devikins/Weapons/
+Equipment and moves with the scroll - the header row is anchored to
+something already identical and fixed across all three.
+
+`historyButton` dropped its floating-pill styling (no more
+`position: absolute`, no shadow/elevation) now that it's a plain
+button sharing a row rather than something hovering over scrollable
+content - and its height now matches the back button's own 40px
+exactly, rather than the bigger 50px a truly standalone floating
+button needed.
+
 ## App structure decisions (made while building)
  (made while building)
 
