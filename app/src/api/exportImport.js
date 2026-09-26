@@ -483,6 +483,7 @@ async function readCentralDirectoryEntries(uri, eocd) {
       name: strFromU8(nameBytes),
       compressionMethod,
       compressedSize,
+      localHeaderOffset,
       // Right after this entry's local header's fixed 30 bytes plus
       // that same filename/extra-field length (see this function's own
       // comment on why it's safe to reuse those lengths from here).
@@ -733,6 +734,25 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
   // system's own docs describe this exact scenario for copyAsync -
   // "copy content shared by other apps to local filesystem" - so this
   // is its intended use, not a workaround bolted on sideways.
+  //
+  // THIRD ROUND (2026-09-26, later the same day): attempt 2's fix turned
+  // out to be necessary but not sufficient - live testing showed the
+  // EXACT SAME "isn't readable" IOException still happening on THIS
+  // copyAsync call itself, intermittently: picking the identical file
+  // several times in a row failed with a fresh DocumentPicker-cache
+  // path each time on most attempts, then eventually succeeded on one,
+  // with no code change in between. That's Android not having the
+  // picked document's bytes fully ready to read the instant the picker
+  // resolves - a timing/readiness race, not a wrong-URI bug. Worse: a
+  // race like that could plausibly let a copy "succeed" while only
+  // PARTIALLY landing rather than throwing at all, which would neatly
+  // explain a separate real symptom already seen once - an import that
+  // completed with no error at all, but produced a database with no
+  // tables in it once opened. So this doesn't just retry on a thrown
+  // error - it verifies the copy's byte size against the source's own
+  // reported size before trusting it, retrying the whole copy again if
+  // either the copy throws or the sizes don't match, rather than
+  // silently proceeding to import whatever landed.
   const pickResult = await DocumentPicker.getDocumentAsync({
     type: '*/*',
     copyToCacheDirectory: false,
@@ -741,8 +761,47 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
     return null;
   }
 
+  const sourceUri = pickResult.assets[0].uri;
+  let expectedSize = null;
+  try {
+    const sourceInfo = await FileSystem.getInfoAsync(sourceUri, { size: true });
+    if (sourceInfo.exists && sourceInfo.size) expectedSize = sourceInfo.size;
+  } catch {
+    // Some content providers won't report a size for their own URI up
+    // front - fine, the retry loop below just can't size-check in that
+    // case, but still protects against a thrown error.
+  }
+
   const importScratchUri = `${FileSystem.cacheDirectory}import-scratch-${Date.now()}.zip`;
-  await FileSystem.copyAsync({ from: pickResult.assets[0].uri, to: importScratchUri });
+  const maxAttempts = 5;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    lastError = null;
+    try {
+      await FileSystem.deleteAsync(importScratchUri, { idempotent: true });
+      await FileSystem.copyAsync({ from: sourceUri, to: importScratchUri });
+      const copiedInfo = await FileSystem.getInfoAsync(importScratchUri, { size: true });
+      const gotBytes = copiedInfo.exists ? copiedInfo.size || 0 : 0;
+      if (gotBytes === 0) {
+        lastError = new Error('The copy came back empty.');
+      } else if (expectedSize != null && gotBytes !== expectedSize) {
+        lastError = new Error(`The copy came back as ${gotBytes} bytes, but the original is ${expectedSize}.`);
+      }
+    } catch (err) {
+      lastError = err;
+    }
+    if (!lastError) break;
+    console.log(`[exportImport] import copy attempt ${attempt}/${maxAttempts} not ready yet: ${lastError.message}`);
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+    }
+  }
+
+  if (lastError) {
+    await FileSystem.deleteAsync(importScratchUri, { idempotent: true });
+    throw new Error("Android wasn't ready to hand over that file after a few tries. Please try picking it again.");
+  }
 
   try {
     return await importWalletSetsZipFromLocalFile(importScratchUri, { onProgress });
@@ -760,6 +819,34 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
 
   const eocd = await findEndOfCentralDirectory(pickedUri, totalBytes);
   const centralEntries = await readCentralDirectoryEntries(pickedUri, eocd);
+
+  // TEMPORARY diagnostics, added 2026-09-26 after the central-directory
+  // rewrite still showed no data once imported ("no such table:
+  // wallets" straight from SQLite - i.e. the copied database.db wasn't
+  // real database content at all). Logs exactly what parsing the zip's
+  // central directory found, and directly verifies the one thing the
+  // whole rewrite depends on: that a local file header really does
+  // start at the byte offset the central directory says it does. If
+  // that check fails, the offsets themselves are wrong (something off
+  // in how this zip's central directory is being read); if it passes
+  // but the resulting file still isn't valid SQLite, the bug is in the
+  // actual byte copy instead, not the offset math.
+  console.log(
+    `[exportImport] DIAG zip: totalBytes=${totalBytes}, centralDirOffset=${eocd.centralDirOffset}, ` +
+    `centralDirSize=${eocd.centralDirSize}, entries found=${centralEntries.length}`
+  );
+  for (const entry of centralEntries) {
+    if (entry.name.endsWith('database.db') || entry.name.endsWith('manifest.json')) {
+      const sigBytes = await readRangeBytes(pickedUri, entry.localHeaderOffset, 4);
+      const sig = readUint32LE(sigBytes, 0);
+      const sigOk = sig === 0x04034b50;
+      console.log(
+        `[exportImport] DIAG entry "${entry.name}": compressionMethod=${entry.compressionMethod}, ` +
+        `compressedSize=${entry.compressedSize}, localHeaderOffset=${entry.localHeaderOffset}, ` +
+        `dataOffset=${entry.dataOffset}, local header signature ${sigOk ? 'OK' : `WRONG (0x${sig.toString(16)})`}`
+      );
+    }
+  }
 
   // One entry per top-level zip folder (a `set-<id>-<name>/` from
   // exportWalletSet/exportAllWalletSets above) - allocated the first
@@ -849,7 +936,18 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
     }
 
     if (restOfPath === 'database.db') {
-      await copyEntryBytesTo(entry, getWalletSetDatabasePath(group.dbFileName));
+      const destPath = getWalletSetDatabasePath(group.dbFileName);
+      await copyEntryBytesTo(entry, destPath);
+      // TEMPORARY - see this function's own DIAG comment above.
+      try {
+        const writtenInfo = await FileSystem.getInfoAsync(destPath, { size: true });
+        console.log(
+          `[exportImport] DIAG wrote ${destPath} - expected ${entry.compressedSize} bytes, ` +
+          `actually on disk: ${writtenInfo.exists ? writtenInfo.size : '(missing!)'}`
+        );
+      } catch (err) {
+        console.log(`[exportImport] DIAG couldn't stat ${destPath} after writing: ${err.message}`);
+      }
       continue;
     }
 
