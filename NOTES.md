@@ -3040,6 +3040,75 @@ button itself ("Reading images... 4213/9503") - fine for a first pass,
 but worth watching once tested against the real large set in case the
 whole screen feels unresponsive for however long that takes.
 
+## V3.1: export/import rewritten to stream, after a real crash on the big set
+
+Follow-up to the export/import section above, same day - the "not yet
+tested" memory risk that section flagged turned out to be a real,
+reproducible problem, not just a theoretical one. Raphael tried "Export
+all sets" against his real ~9,500-NFT wallet set (~130MB of images) and
+watched the progress label freeze right after the last image finished
+reading; a few minutes later the whole Expo Go process got killed and
+dropped back to its own QR-scan home screen - no JS error, nothing in
+the Metro/Expo console. That's exactly what an Android out-of-memory
+kill of the whole app process looks like from the outside, not
+something this app's own try/catch could ever have caught, since the
+process itself was gone.
+
+Root cause: the first version used fflate's all-at-once `zipSync`/
+`unzipSync` - simple to write, but it meant holding an entire wallet
+set's raw image bytes, PLUS the zip's own output buffer, PLUS a
+temporary base64 string of the whole thing, all in memory at the same
+moment before a single byte ever reached disk. For "export all" across
+several sets that's cumulative, not just the biggest set's own size.
+
+**Fixed by switching to fflate's STREAMING classes** (`Zip`/
+`ZipPassThrough` for writing, `Unzip`/`UnzipPassThrough` for reading)
+instead of the all-at-once functions. Both directions now process the
+archive in bounded ~4MB windows (`STREAM_CHUNK_BYTES`) rather than the
+whole thing at once - peak memory is now roughly "one window's worth"
+regardless of how many thousands of images are involved. New
+`StreamingFileWriter` class handles the actual base64-encode-and-append-
+to-disk side (carrying over the 0-2 leftover bytes between chunks that
+base64's 3-byte grouping would otherwise force padding into mid-file -
+gets it right so real padding only happens once, for real, at the true
+end of the file) and is reused by both the zip-writing side
+(`StreamingZipWriter`) and, on import, for writing each extracted file
+(a set's database.db, or one image) straight to its real destination as
+its data streams in, rather than ever materializing the whole archive
+in memory on either side.
+
+**Real concurrency bug found and fixed during this same rewrite, before
+ever shipping it:** fflate can deliver several chunks for the very same
+still-open file back-to-back, synchronously, before any of that file's
+own earlier disk write has actually finished (import in particular -
+db.database.db or a large image spanning more than one 4MB read
+window). The first draft called `flushIfNeeded()`/`finish()` as plain
+independent async calls, which could let two flushes for the SAME
+writer run concurrently and interleave their writes - silently
+corrupting the file (or both thinking they were the first write and
+using `append: false`, overwriting each other instead of appending).
+Fixed by giving `StreamingFileWriter` its own internal promise chain -
+every flush/finish for one writer now runs strictly one at a time, in
+request order, never concurrently with itself. Caught by reasoning
+through the actual call timing rather than by hitting it in testing -
+worth remembering as the kind of bug that a quick manual test with a
+small set would never have surfaced (needs multiple chunks for the same
+file in flight to matter at all), only a large one would.
+
+**Export format also unified in the same pass:** single-set and
+"export all" exports now share exactly one shape - a top-level
+`export-manifest.json` plus one `set-<id>-<name>/` folder per included
+set - rather than a single-set export being a special flat case. Purely
+a simplification enabled by this rewrite (no one had successfully
+imported anything yet, so there was no compatibility cost to changing
+it): the streaming importer only needs one code path now instead of
+detecting and branching on two different shapes.
+
+Not yet re-tested against the real ~9,500-NFT set as of this writing -
+Raphael restarted his Expo Go session (independently reasonable
+hygiene, unrelated to the actual cause) and is about to try again with
+this rewritten version.
+
 ## App structure decisions (made while building)
  (made while building)
 
