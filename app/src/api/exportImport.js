@@ -588,7 +588,33 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
     return null;
   }
 
-  const pickedUri = pickResult.assets[0].uri;
+  // FOUND AND FIXED (2026-09-26): reading straight from DocumentPicker's
+  // own cache copy (pickResult.assets[0].uri) via readAsStringAsync's
+  // position/length options threw a real, reproducible native error -
+  // "java.io.IOException: Location '...DocumentPicker/<uuid>.zip' isn't
+  // readable" - even though that exact same file's plain existence/size
+  // check (getInfoAsync) succeeded just fine. A whole-file read (no
+  // position/length) would likely have worked, but that's exactly the
+  // all-at-once approach this file exists to avoid for a large export.
+  // Fixed by making our OWN plain copy of the picked file, under a
+  // directory this app fully owns (FileSystem.cacheDirectory, not
+  // DocumentPicker's own cache subfolder) - copyAsync does a normal
+  // whole-file stream copy, no ranged reads involved, so it isn't
+  // affected by whatever made the picker's own copy unreadable that
+  // way. Every read below happens against THIS copy, never the original
+  // picked URI. Cleaned up in the `finally` at the bottom either way -
+  // it's a temporary scratch copy, not something worth leaving behind.
+  const importScratchUri = `${FileSystem.cacheDirectory}import-scratch-${Date.now()}.zip`;
+  await FileSystem.copyAsync({ from: pickResult.assets[0].uri, to: importScratchUri });
+
+  try {
+    return await importWalletSetsZipFromLocalFile(importScratchUri, { onProgress });
+  } finally {
+    await FileSystem.deleteAsync(importScratchUri, { idempotent: true });
+  }
+}
+
+async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) {
   const pickedInfo = await FileSystem.getInfoAsync(pickedUri, { size: true });
   const totalBytes = pickedInfo.size || 0;
   if (totalBytes === 0) {
