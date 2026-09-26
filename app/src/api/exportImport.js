@@ -507,7 +507,16 @@ async function streamWalletSetIntoWriter(writer, walletSet, pathPrefix, onProgre
   await checkpointWalletSetForExport(walletSet.db_file_name);
 
   const dbPath = getWalletSetDatabasePath(walletSet.db_file_name);
-  const dbInfo = await FileSystem.getInfoAsync(dbPath);
+  const dbInfo = await FileSystem.getInfoAsync(dbPath, { size: true });
+  // TEMPORARY diagnostic, added 2026-09-26 - the import side's own DIAG
+  // logging never once showed a database.db entry in an exported zip,
+  // despite checking for one on every entry found. This answers the
+  // obvious follow-up question directly, at the source: did THIS
+  // export actually find walletSet.db_file_name on disk at all.
+  console.log(
+    `[exportImport] DIAG export "${walletSet.name}" (db_file_name=${walletSet.db_file_name}): ` +
+    `dbPath=${dbPath}, exists=${dbInfo.exists}, size=${dbInfo.exists ? dbInfo.size : 'n/a'}`
+  );
   if (dbInfo.exists) {
     const dbBytes = await readFileBytes(dbPath);
     if (stats) stats.totalRawBytes += dbBytes.length;
@@ -981,6 +990,12 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
     } catch {
       continue;
     }
+    // TEMPORARY diagnostic - see streamWalletSetIntoWriter's own DIAG
+    // comment. This is the exported manifest.json's own recorded
+    // hasDatabase/imageCount for THIS zip, straight from the file
+    // itself - tells us what the export actually believed it packed,
+    // even for a zip exported before this diagnostic existed.
+    console.log(`[exportImport] DIAG manifest for "${manifest.name}": ${JSON.stringify(manifest)}`);
     const importedName = `${manifest.name || 'Imported set'} (imported)`;
     await registerImportedWalletSet(importedName, group.dbFileName, group.imagesDirName);
     await logImportedSetRowCounts(group.dbFileName);
