@@ -31,36 +31,38 @@ import * as SQLite from 'expo-sqlite';
 // make this screen noticeably slow to open.
 const SIZE_CHECK_CONCURRENCY = 8;
 
-// Corrected (2026-09-25) from an earlier, much higher estimate. The
-// first version of this constant (200KB/NFT) was grounded in an early
-// reading of "about 600MB across roughly 3,000 NFTs" - but that number
-// came from Android's own "App size" figure for Expo Go, which bundles
-// in Expo Go's own runtime/caches alongside whatever this project
-// actually stored, not just our own data. Once Raphael had a much
-// bigger, real data point to check against - the app's OWN measured
-// total (getStorageBytesForSets below, real bytes read off the actual
-// database + image files, nothing else mixed in) across three wallet
-// sets holding 9,503 NFTs came out to 129MB, i.e. roughly 14KB/NFT, not
-// 200KB. That lines up with what those 3,000 NFTs should have actually
-// used too (~43MB), a lot less than the 600MB "App size" reading
-// suggested. 16KB/NFT here keeps a little headroom above that measured
-// ~14KB rather than using it exactly. Used only to PROJECT how big an
-// upcoming scan might be before it happens (see
-// estimateNewNftCountForWallets below) - the actual current-usage
+// Corrected AGAIN (2026-09-26), and this time the previous "measured"
+// figure it was corrected FROM turned out to be wrong too - not because
+// anyone mismeasured anything, but because getStorageBytesForSets below
+// had a real bug (a classic JS lost-update race across concurrent
+// workers - see directorySizeBytes's own comment) that silently threw
+// away most of what it was supposed to be adding up. The 129MB/14KB-
+// per-NFT figure the previous version of this comment cited was itself
+// a symptom of that bug, not a real measurement - the SAME three wallet
+// sets, once the race was fixed, actually came out to just over 1GB
+// (1024MB across 9,702 saved images: 54MB + 18MB + 952MB), roughly
+// 108KB/NFT, not 14KB - about 7.7x higher. 112KB/NFT here keeps a
+// little headroom above that measured ~108KB rather than using it
+// exactly, same spirit as this constant's very first correction. Used
+// only to PROJECT how big an upcoming scan might be before it happens
+// (see estimateNewNftCountForWallets below) - the actual current-usage
 // numbers this file also computes are always real measured bytes, never
-// this estimate.
-export const AVERAGE_BYTES_PER_NFT = 16 * 1024;
+// this estimate (and can no longer undercount the way they used to).
+export const AVERAGE_BYTES_PER_NFT = 112 * 1024;
 
 // The line a projected scan has to cross before App.js's handleFetchPress
 // interrupts with a confirmation instead of just proceeding quietly.
-// Originally set at 1GB per Raphael's own suggestion, then lowered here
-// (2026-09-25) once AVERAGE_BYTES_PER_NFT's correction above made clear
-// that 1GB would need roughly 75,000 new NFTs to ever be reached in
-// practice - more than the entire Devikins collection has minted, so a
-// warning that could realistically never fire. Raphael's own call:
-// 200MB is still comfortably out of reach today, but leaves the warning
-// meaningful if the game's playerbase (and NFT count) grows a lot in
-// the future.
+// Originally set at 1GB per Raphael's own suggestion, then lowered to
+// 200MB (2026-09-25) once AVERAGE_BYTES_PER_NFT's correction at the time
+// made clear 1GB would need roughly 75,000 new NFTs to ever be reached -
+// more than the entire Devikins collection had minted, so a warning that
+// could realistically never fire. That 75,000 figure is now known to
+// have been wrong too (see AVERAGE_BYTES_PER_NFT's own comment above,
+// 2026-09-26) - with the corrected ~112KB/NFT, 200MB is actually only
+// about 1,800 new NFTs away, well within reach of a single big scan.
+// Raphael's own call once shown the corrected math: keep the line at
+// 200MB anyway - still a meaningful amount of storage to warn about
+// before spending it, corrected estimate or not.
 export const STORAGE_WARNING_THRESHOLD_BYTES = 200 * 1024 * 1024; // 200 MB
 
 /**

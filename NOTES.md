@@ -3176,13 +3176,24 @@ screen has ever shown was very likely a significant undercount whenever
 a set had enough images to trigger real worker overlap (small sets with
 only a handful of files were less likely to show it, simply because
 there was less chance of two checks genuinely overlapping) - not just
-today's specific numbers. `AVERAGE_BYTES_PER_NFT`'s own calibration
-comment (~14KB/NFT, based on the old, buggy 129MB figure) is now known
-to be wrong too and needs re-deriving from a real post-fix measurement,
-which we don't have yet as of this writing - once Raphael confirms the
-corrected on-screen numbers, that constant (and what
-`STORAGE_WARNING_THRESHOLD_BYTES` actually means in practice, since it
-was sized against the same wrong per-NFT estimate) should be revisited.
+today's specific numbers.
+
+Confirmed fixed: Raphael reloaded and the same three sets that showed
+129MB total before now show 1.0GB (54MB + 18MB + 952MB across 9,702
+saved images) - in the same ballpark as the 1.08GB the real export
+independently found earlier, well within the rounding you'd expect
+across several separately-rounded MB/GB display figures.
+
+**Follow-up done the same day:** `AVERAGE_BYTES_PER_NFT` was re-derived
+from these corrected numbers - 1024MB / 9,702 images works out to
+~108KB/NFT, not the old ~14KB (a ~7.7x correction, right in line with
+the race's own severity), so the constant is now `112 * 1024` (a little
+headroom above the ~108KB measured, same spirit as its very first
+correction). Told about what this means in practice - 200MB is now only
+about 1,800 new NFTs away, not the ~75,000 the old wrong estimate
+implied - Raphael's call was to keep `STORAGE_WARNING_THRESHOLD_BYTES`
+at 200MB anyway: still a meaningful amount of storage to warn about
+before spending it, corrected estimate or not.
 
 Worth remembering as a pattern: a shared mutable variable updated with
 `+=` (or any read-modify-write) across concurrent `await`-ing workers is
