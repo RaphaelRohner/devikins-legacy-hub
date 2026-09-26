@@ -630,38 +630,43 @@ export default function WalletManager({
         )}
 
         <View style={styles.backupRow}>
-          <TouchableOpacity
-            style={[
-              styles.rowButton,
-              styles.backupButton,
-              { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
-              (isExportingId !== null || walletSets.length === 0) && { opacity: 0.5 },
-            ]}
-            onPress={handleExportAllSets}
-            disabled={isExportingId !== null || isImporting || walletSets.length === 0}
-          >
-            <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
-              {isExportingId === 'all' ? (exportProgressLabel || 'Exporting...') : 'Export all sets'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.rowButton,
-              styles.backupButton,
-              { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
-              (isImporting || isExportingId !== null) && { opacity: 0.5 },
-            ]}
-            onPress={handleImport}
-            disabled={isImporting || isExportingId !== null}
-          >
-            <Text style={[styles.rowButtonText, { color: colors.text }]}>
-              {isImporting ? 'Importing...' : 'Import a set'}
-            </Text>
-          </TouchableOpacity>
+          {!isImporting ? (
+            <TouchableOpacity
+              style={[
+                styles.rowButton,
+                styles.backupButton,
+                { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+                (isExportingId !== null || walletSets.length === 0) && { opacity: 0.5 },
+              ]}
+              onPress={handleExportAllSets}
+              disabled={isExportingId !== null || isImporting || walletSets.length === 0}
+            >
+              <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
+                {isExportingId === 'all' ? (exportProgressLabel || 'Exporting...') : 'Export all sets'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+          {isExportingId !== 'all' ? (
+            <TouchableOpacity
+              style={[
+                styles.rowButton,
+                styles.backupButton,
+                { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+                (isImporting || isExportingId !== null) && { opacity: 0.5 },
+              ]}
+              onPress={handleImport}
+              disabled={isImporting || isExportingId !== null}
+            >
+              <Text style={[styles.rowButtonText, { color: colors.text }]}>
+                {isImporting ? 'Importing...' : 'Import a set'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {walletSets.map((set) => {
           const isActive = set.id === activeWalletSetId;
+          const isThisSetExporting = isExportingId === set.id;
           return (
             <View
               key={set.id}
@@ -709,12 +714,14 @@ export default function WalletManager({
                     </Text>
                   </TouchableOpacity>
                   <View style={styles.walletRowButtons}>
-                    <TouchableOpacity
-                      style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
-                      onPress={() => handleStartRenameSet(set)}
-                    >
-                      <Text style={[styles.rowButtonText, { color: colors.text }]}>Rename</Text>
-                    </TouchableOpacity>
+                    {!isThisSetExporting ? (
+                      <TouchableOpacity
+                        style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+                        onPress={() => handleStartRenameSet(set)}
+                      >
+                        <Text style={[styles.rowButtonText, { color: colors.text }]}>Rename</Text>
+                      </TouchableOpacity>
+                    ) : null}
                     <TouchableOpacity
                       style={[
                         styles.rowButton,
@@ -728,7 +735,7 @@ export default function WalletManager({
                         {isExportingId === set.id ? (exportProgressLabel || 'Exporting...') : 'Export'}
                       </Text>
                     </TouchableOpacity>
-                    {isActive ? (
+                    {isActive && !isThisSetExporting ? (
                       <TouchableOpacity
                         style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
                         onPress={handleEmptySet}
@@ -736,12 +743,14 @@ export default function WalletManager({
                         <Text style={[styles.rowButtonText, { color: colors.text }]}>Empty</Text>
                       </TouchableOpacity>
                     ) : null}
-                    <TouchableOpacity
-                      style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }]}
-                      onPress={() => handleDeleteSet(set)}
-                    >
-                      <Text style={[styles.rowButtonText, { color: colors.cancelText }]}>Delete</Text>
-                    </TouchableOpacity>
+                    {!isThisSetExporting ? (
+                      <TouchableOpacity
+                        style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }]}
+                        onPress={() => handleDeleteSet(set)}
+                      >
+                        <Text style={[styles.rowButtonText, { color: colors.cancelText }]}>Delete</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 </>
               )}
