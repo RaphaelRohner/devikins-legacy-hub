@@ -22,6 +22,7 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
 
 // How many files to stat at once when summing up an images folder - the
 // same "small worker pool" idea fetchAllForWallet.js uses for network
@@ -101,6 +102,66 @@ export function formatBytes(bytes) {
 export function getWalletSetDatabasePath(dbFileName) {
   const dir = (SQLite.defaultDatabaseDirectory || '').replace(/\/*$/, '');
   return `${dir}/${dbFileName}`;
+}
+
+// FOUND AND FIXED (2026-09-26): SQLite.defaultDatabaseDirectory (used by
+// getWalletSetDatabasePath above, matching expo-sqlite's own internal
+// path-building logic exactly) reports the app's SQLite folder using
+// Android's "/data/data/<package>/..." form. expo-sqlite's own native
+// calls (openDatabaseAsync et al) open a database at that path just
+// fine - real, working wallet sets prove that every time the app runs.
+// But expo-file-system's own calls (getInfoAsync, readAsStringAsync,
+// writeAsStringAsync) apparently do NOT reliably resolve that exact
+// path form on this device - confirmed directly: exporting "My
+// Wallets" (definitely real, definitely populated - not an edge case)
+// still logged getInfoAsync reporting the database file as not
+// existing. Every image this app reads or writes goes through
+// FileSystem.documentDirectory instead, which reports the equivalent
+// "/data/user/0/<package>/..." form - the two are the same real
+// directory on a real Android device (a standard OS-level bind
+// mount/symlink), but only one of them is one expo-file-system
+// consistently recognizes. This one mismatch is what made every wallet
+// set's own database file invisible to expo-file-system this whole
+// time: the storage-size calculation below has been silently reporting
+// 0 bytes for every set's database (hidden by images dwarfing it in the
+// total - see AVERAGE_BYTES_PER_NFT's own comment above, which measured
+// storage as if it were 100% images, because as far as expo-file-system
+// could see, it effectively was), and every export has produced a zip
+// with no database.db in it at all (see NOTES.md's write-up).
+function normalizeDatabaseDirectoryForFileSystem(path) {
+  if (Platform.OS !== 'android') return path;
+  return path.replace('/data/data/', '/data/user/0/');
+}
+
+/**
+ * Resolves a wallet set's database file to whichever path form
+ * expo-file-system can actually see it through - see
+ * normalizeDatabaseDirectoryForFileSystem's own comment above for the
+ * full story on why this is needed at all. Use this (never
+ * getWalletSetDatabasePath directly) for anything that needs to READ an
+ * EXISTING database file through expo-file-system - checking its size,
+ * or reading its raw bytes for export. Writing a BRAND NEW database
+ * file (the import side, registering a newly-imported set) should keep
+ * using getWalletSetDatabasePath's own unmodified path instead, since
+ * that exact value is what SQLite.openDatabaseAsync will use to find it
+ * again later - swapping that would just move the mismatch to the
+ * opposite side.
+ */
+export async function resolveExistingWalletSetDatabasePath(dbFileName) {
+  const primaryPath = getWalletSetDatabasePath(dbFileName);
+  const primaryInfo = await FileSystem.getInfoAsync(primaryPath).catch(() => ({ exists: false }));
+  if (primaryInfo.exists) return primaryPath;
+
+  const fallbackPath = normalizeDatabaseDirectoryForFileSystem(primaryPath);
+  if (fallbackPath !== primaryPath) {
+    const fallbackInfo = await FileSystem.getInfoAsync(fallbackPath).catch(() => ({ exists: false }));
+    if (fallbackInfo.exists) return fallbackPath;
+  }
+  // Neither form found anything on disk - genuinely doesn't exist yet
+  // (e.g. a set that was created but never actually fetched into).
+  // Return the primary path so a caller's own getInfoAsync-based
+  // `exists` check stays consistent with what this function just found.
+  return primaryPath;
 }
 
 async function fileSizeBytes(uri) {
@@ -187,10 +248,11 @@ async function directorySizeBytes(dirUri) {
  * happens to be open right now.
  */
 export async function getWalletSetStorageBytes(walletSet) {
-  const [dbBytes, imagesBytes] = await Promise.all([
-    fileSizeBytes(getWalletSetDatabasePath(walletSet.db_file_name)),
+  const [dbPath, imagesBytes] = await Promise.all([
+    resolveExistingWalletSetDatabasePath(walletSet.db_file_name),
     directorySizeBytes(`${FileSystem.documentDirectory}${walletSet.images_dir_name}/`),
   ]);
+  const dbBytes = await fileSizeBytes(dbPath);
   return { dbBytes, imagesBytes, totalBytes: dbBytes + imagesBytes };
 }
 

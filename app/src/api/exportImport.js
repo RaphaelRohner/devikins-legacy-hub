@@ -99,7 +99,7 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { Platform } from 'react-native';
 import { Zip, ZipPassThrough, strToU8, strFromU8 } from 'fflate';
-import { getWalletSetDatabasePath } from './storageStats';
+import { getWalletSetDatabasePath, resolveExistingWalletSetDatabasePath } from './storageStats';
 import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSetRowCounts } from '../db/database';
 
 // Bumped only if a future change to what's INSIDE an export (the shape
@@ -506,16 +506,16 @@ async function readCentralDirectoryEntries(uri, eocd) {
 async function streamWalletSetIntoWriter(writer, walletSet, pathPrefix, onProgress, stats) {
   await checkpointWalletSetForExport(walletSet.db_file_name);
 
-  const dbPath = getWalletSetDatabasePath(walletSet.db_file_name);
+  const dbPath = await resolveExistingWalletSetDatabasePath(walletSet.db_file_name);
   const dbInfo = await FileSystem.getInfoAsync(dbPath, { size: true });
-  // TEMPORARY diagnostic, added 2026-09-26 - the import side's own DIAG
-  // logging never once showed a database.db entry in an exported zip,
-  // despite checking for one on every entry found. This answers the
-  // obvious follow-up question directly, at the source: did THIS
-  // export actually find walletSet.db_file_name on disk at all.
+  // TEMPORARY diagnostic, added 2026-09-26 - confirms the real fix
+  // (resolveExistingWalletSetDatabasePath in storageStats.js - see its
+  // own long comment for the "/data/data/" vs "/data/user/0/" story)
+  // actually finds the file this time, for a set already proven to have
+  // real data.
   console.log(
     `[exportImport] DIAG export "${walletSet.name}" (db_file_name=${walletSet.db_file_name}): ` +
-    `dbPath=${dbPath}, exists=${dbInfo.exists}, size=${dbInfo.exists ? dbInfo.size : 'n/a'}`
+    `resolved dbPath=${dbPath}, exists=${dbInfo.exists}, size=${dbInfo.exists ? dbInfo.size : 'n/a'}`
   );
   if (dbInfo.exists) {
     const dbBytes = await readFileBytes(dbPath);
