@@ -3104,10 +3104,94 @@ imported anything yet, so there was no compatibility cost to changing
 it): the streaming importer only needs one code path now instead of
 detecting and branching on two different shapes.
 
-Not yet re-tested against the real ~9,500-NFT set as of this writing -
-Raphael restarted his Expo Go session (independently reasonable
-hygiene, unrelated to the actual cause) and is about to try again with
-this rewritten version.
+Retested against the real ~9,500-NFT set after a fresh Expo Go restart
+(Raphael's own reasonable hygiene, done at the same time but not itself
+the fix) - the streaming rewrite held up. "Export all sets" completed
+without crashing, the progress label moved the whole way through, and
+Save-to-folder wrote the finished zip successfully. The memory fix was
+the real one.
+
+## V3.1: the exported zip was 8x bigger than "Total storage used" said - a real async race, not the export
+
+Immediately after the above retest succeeded, Raphael noticed the
+finished zip was 1.08GB, while the Wallets screen's own "Total storage
+used" said 129MB across all sets - roughly 8x smaller than reality. This
+turned out to be a completely different, pre-existing bug, unrelated to
+the streaming rewrite - it just took a real byte-for-byte export to
+expose it, since nothing had ever compared these two numbers against
+each other before.
+
+**Diagnosis, in order:** added a one-line, non-throwing size check to
+exportImport.js itself (`logExportSizeCheck`) that logs total raw bytes
+read from disk versus the finished zip's own real size on every export.
+A quick single-set export of the small "Test 1" set (fast, since it's
+only a couple thousand files) showed raw-bytes-read and zip-file-size
+matching exactly (17.8MB read, 17.9MB written, ratio 1.00x) - proving
+the export/zip-writing side was already correct, and read/wrote every
+byte it saw faithfully. That meant the OTHER number - storageStats.js's
+own "Total storage used" - had to be the one under-counting, even
+though it was reading the exact same folder.
+
+Added matching temporary diagnostics to storageStats.js: counted how
+many files getInfoAsync returned as zero-byte/missing/errored (answer:
+zero, every single file's own size came back correct and non-zero) and
+logged the raw getInfoAsync result for a few sample files (all correct -
+real sizes like 110KB-130KB for actual images). So every INDIVIDUAL file
+read was right, but "Test 1"'s folder - 166 files, several sampled at
+~110-130KB each, which multiplies out to roughly the same ~18-19MB the
+export actually found - was being SUMMED to only 2.17MB. Only the
+summing itself was wrong.
+
+**Root cause:** `directorySizeBytes`'s concurrent worker pool
+(`SIZE_CHECK_CONCURRENCY` workers checking files in parallel) accumulated
+into one shared `total` variable via `total += await fileSizeBytes(...)`.
+That line reads `total`'s CURRENT value, then awaits the actual disk
+check - and while it's awaiting, other workers can finish their own
+checks and write their own updated `total` first. When THIS worker's
+await finally resolves, it adds its own file's size to the STALE value
+of `total` it read before awaiting, and overwrites whatever the other
+workers had already written - silently discarding their contributions.
+This is a textbook JavaScript lost-update race (the classic "`x += await
+y`" trap), not a filesystem or native-module bug at all - and it wasn't
+occasional: with several workers checking thousands of files
+concurrently, two of them overlapping was effectively the normal case,
+not an edge case, which is exactly why the loss was so consistent and
+so large (close to "only 1 of every ~8 concurrent updates survives",
+matching the ~8x undercount seen everywhere this was checked).
+
+**Fixed** by giving each worker its own local running total (a plain
+variable that's never shared with any other worker, so nothing can race
+on it) and only adding the workers' own totals together with a plain
+`reduce` once every worker has completely finished. `nextIndex` (which
+IS still shared across workers, to hand out "the next file to check")
+was never actually part of this bug - reading it and incrementing it
+happens in one synchronous step with no `await` in between, and JS's
+single-threaded execution already makes that atomic. It was specifically
+a statement that reads a shared value, then awaits, then writes back
+based on what it read earlier, that could be interleaved with another
+worker doing the same thing.
+
+This means every "Total storage used" and per-set size the Wallets
+screen has ever shown was very likely a significant undercount whenever
+a set had enough images to trigger real worker overlap (small sets with
+only a handful of files were less likely to show it, simply because
+there was less chance of two checks genuinely overlapping) - not just
+today's specific numbers. `AVERAGE_BYTES_PER_NFT`'s own calibration
+comment (~14KB/NFT, based on the old, buggy 129MB figure) is now known
+to be wrong too and needs re-deriving from a real post-fix measurement,
+which we don't have yet as of this writing - once Raphael confirms the
+corrected on-screen numbers, that constant (and what
+`STORAGE_WARNING_THRESHOLD_BYTES` actually means in practice, since it
+was sized against the same wrong per-NFT estimate) should be revisited.
+
+Worth remembering as a pattern: a shared mutable variable updated with
+`+=` (or any read-modify-write) across concurrent `await`-ing workers is
+never safe in JS unless you're certain none of those awaits can ever
+overlap. The fix is always the same shape - give each worker its own
+local accumulator, combine once, after everything's done - and it's easy
+to miss in code review because the individual pieces (`fileSizeBytes`,
+the worker loop, `Promise.all`) all look correct in isolation; the bug
+only exists in how they compose.
 
 ## App structure decisions (made while building)
  (made while building)

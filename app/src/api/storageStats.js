@@ -101,29 +101,11 @@ export function getWalletSetDatabasePath(dbFileName) {
   return `${dir}/${dbFileName}`;
 }
 
-// DIAGNOSTIC (2026-09-26): temporary, to chase down a real reported
-// mismatch - the app's own storage display said "Test 1" was 2.1MB, but
-// exporting that exact same set (exportImport.js, which reads every
-// file's real bytes off disk directly) came out to 18.7MB, 3 separate
-// times. Since both sides list the very same folder and both should be
-// reading real, current file sizes, one of them has to be wrong about
-// individual files - this counts how many files getInfoAsync silently
-// treats as zero-byte/missing (via the catch below, or a false
-// `exists`) so the next real run says exactly how many files that's
-// happening to, rather than just the total. Remove once the cause is
-// confirmed.
-let DIAG_zeroOrMissingCount = 0;
-let DIAG_totalFileCount = 0;
-
 async function fileSizeBytes(uri) {
   try {
     const info = await FileSystem.getInfoAsync(uri);
-    const size = info.exists && !info.isDirectory ? info.size || 0 : 0;
-    if (size === 0) DIAG_zeroOrMissingCount += 1;
-    return size;
-  } catch (err) {
-    DIAG_zeroOrMissingCount += 1;
-    console.log(`[storageStats] DIAG getInfoAsync threw for ${uri}: ${err.message}`);
+    return info.exists && !info.isDirectory ? info.size || 0 : 0;
+  } catch {
     // Missing/unreadable file (e.g. a set that was created but never
     // actually fetched into, so its database file doesn't exist as an
     // actual file yet) - treat that as zero bytes rather than throwing,
@@ -133,6 +115,41 @@ async function fileSizeBytes(uri) {
   }
 }
 
+/**
+ * FOUND AND FIXED (2026-09-26): this used to accumulate into one shared
+ * `total` via `total += await fileSizeBytes(...)` from several
+ * concurrent workers - a classic lost-update race. `total += await X`
+ * reads the CURRENT value of `total` before awaiting X, so if two
+ * workers are both "in flight" at once, whichever one finishes its
+ * await and writes back last wins, silently discarding the other's
+ * contribution. With SIZE_CHECK_CONCURRENCY workers all racing on the
+ * same variable, this was throwing away roughly (concurrency-1) out of
+ * every `concurrency` file sizes - not occasionally, structurally, any
+ * time two of the 8 workers' getInfoAsync calls overlapped, which for
+ * thousands of files was effectively always.
+ *
+ * This is what was actually behind Raphael's real, reported mismatch:
+ * the app's own "Total storage used" said 129MB across all sets, but
+ * exporting them for real (exportImport.js, which reads every file's
+ * bytes directly, with no shared-variable summing at all) came out to
+ * 1.08GB - and a smaller, easier-to-check single set ("Test 1") showed
+ * the same pattern exactly: computed at 2.1MB here, but 18.7MB when
+ * actually exported, three separate times. Confirmed via temporary
+ * per-file logging that every individual getInfoAsync call was already
+ * returning the correct size (zero files came back missing or
+ * zero-byte) - the individual reads were fine, only the summing itself
+ * was wrong, which pointed straight at this race rather than anything
+ * about the files or the read calls themselves.
+ *
+ * Fixed by giving each worker its OWN local running total (a plain
+ * local variable, never shared or raced) and only adding the workers'
+ * totals together once every one of them has completely finished - see
+ * Promise.all below. `nextIndex` staying shared is fine: reading it and
+ * incrementing it happens in the same synchronous step with no `await`
+ * in between, so JS's single-threaded execution already makes that part
+ * atomic - it was only a statement spanning an `await` that could be
+ * interleaved.
+ */
 async function directorySizeBytes(dirUri) {
   let fileNames;
   try {
@@ -145,32 +162,19 @@ async function directorySizeBytes(dirUri) {
 
   if (fileNames.length === 0) return 0;
 
-  DIAG_zeroOrMissingCount = 0;
-  DIAG_totalFileCount = fileNames.length;
-
-  let total = 0;
   let nextIndex = 0;
   async function worker() {
+    let workerTotal = 0;
     while (nextIndex < fileNames.length) {
       const name = fileNames[nextIndex];
       nextIndex += 1;
-      total += await fileSizeBytes(`${dirUri}${name}`);
+      workerTotal += await fileSizeBytes(`${dirUri}${name}`);
     }
+    return workerTotal;
   }
   const workerCount = Math.min(SIZE_CHECK_CONCURRENCY, fileNames.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  console.log(
-    `[storageStats] DIAG ${dirUri} - ${DIAG_totalFileCount} files found, ` +
-    `${DIAG_zeroOrMissingCount} came back zero-byte/missing/errored, summed total: ${total} bytes`
-  );
-  if (fileNames.length > 0) {
-    const sampleNames = fileNames.slice(0, 3);
-    for (const name of sampleNames) {
-      const info = await FileSystem.getInfoAsync(`${dirUri}${name}`).catch((err) => ({ error: err.message }));
-      console.log(`[storageStats] DIAG sample file ${name}: ${JSON.stringify(info)}`);
-    }
-  }
-  return total;
+  const workerTotals = await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return workerTotals.reduce((sum, t) => sum + t, 0);
 }
 
 /**
