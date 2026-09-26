@@ -3204,6 +3204,54 @@ to miss in code review because the individual pieces (`fileSizeBytes`,
 the worker loop, `Promise.all`) all look correct in isolation; the bug
 only exists in how they compose.
 
+## V3.1: export progress row polish, and a real import bug found on first real use
+
+Two follow-ups from Raphael actually living with the export/import
+feature on his phone, same day as the streaming rewrite and the
+storage-race fix above.
+
+**Progress row no longer visibly resizes while exporting.** Raphael's
+feedback: the progress label itself ("Reading images... 5000/9098") is
+great, but its own row kept visibly shifting as the text changed length
+- the Export button was squeezed against Rename/Empty/Delete, and its
+own border kept growing/shrinking to fit whatever text was in it that
+moment. Fixed in two steps: first, hide the sibling buttons entirely
+(not just gray them out) for whichever row's own export/import is
+actually running (`WalletManager.js`) - a set that ISN'T the one
+exporting is unaffected, its buttons still just dim as before. Second,
+once siblings are hidden, give the exporting button's own container
+`flex: 1` (pairing with the name/status block shrinking to its own
+content width instead of competing for space) so the button's box size
+is fixed by the row's layout, not by whatever text is in it - only the
+text itself can change now, never the border. The "Export all sets"/
+"Import a set" row already got this for free once its sibling was
+hidden, since `backupButton`'s existing `flex: 1` naturally claims the
+whole row when it's the only child left.
+
+**Real import bug, found on Raphael's first actual import attempt:**
+`ExponentFileSystem.readAsStringAsync` rejected with a native
+`java.io.IOException: Location '...DocumentPicker/<uuid>.zip' isn't
+readable` - thrown by the ranged (`position`/`length`) read used to
+stream the picked zip apart in bounded chunks, even though a plain
+`getInfoAsync` on that exact same file succeeded moments earlier (so
+the file genuinely existed and was stat-able - just not readable that
+particular way). Root cause: reading directly from
+`expo-document-picker`'s own cache copy via a ranged/random-access read
+isn't reliable, evidently regardless of the file existing and being a
+normal size. **Fixed** by making the app's own plain copy of the picked
+file first (`FileSystem.copyAsync`, a normal whole-file stream copy, no
+ranged reads involved - and expo-file-system's own docs note this
+exact use case, "copy content shared by other apps to local
+filesystem") into a scratch path under `FileSystem.cacheDirectory`
+(which this app fully owns), then doing every subsequent read against
+that copy instead of the original picked URI. The scratch copy is
+deleted in a `finally` either way, win or lose. `pickAndImportWalletSetsZip`
+split into itself (pick, copy, clean up) and a new
+`importWalletSetsZipFromLocalFile` (the actual streaming import logic,
+unchanged otherwise, just now working against a known-good local path
+instead of the picker's own). Not yet retested against a real import as
+of this writing - next step once Raphael tries again.
+
 ## App structure decisions (made while building)
  (made while building)
 
