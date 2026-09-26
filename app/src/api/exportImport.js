@@ -47,17 +47,26 @@
  * looks like from the outside, rather than something this app's own
  * try/catch could ever have caught.
  *
- * Fixed by switching to fflate's STREAMING classes (`Zip`/`ZipPassThrough`
- * for writing, `Unzip`/`UnzipPassThrough` for reading) instead of the
- * all-at-once functions - see StreamingFileWriter/StreamingZipWriter
- * below. Both directions now process the archive in bounded-size
- * windows (~4MB at a time, WRITE_FLUSH_THRESHOLD_BYTES/READ_CHUNK_BYTES
- * below) rather than the whole thing at once - peak memory is now
- * roughly "one chunk's worth" regardless of how many thousands of
- * images are involved, not "the whole wallet set's worth." Still worth
- * testing against Raphael's real large set again to confirm this
- * actually holds up in practice, but this addresses the specific,
- * reproduced failure directly rather than just lowering the odds of it.
+ * Fixed by switching WRITING to fflate's streaming `Zip`/`ZipPassThrough`
+ * classes instead of the all-at-once functions - see StreamingFileWriter/
+ * StreamingZipWriter below. The archive is now built in bounded-size
+ * windows (~4MB at a time, STREAM_CHUNK_BYTES below) rather than all at
+ * once - peak memory is roughly "one chunk's worth" regardless of how
+ * many thousands of images are involved, not "the whole wallet set's
+ * worth." Confirmed against Raphael's real ~9,500-NFT set afterward.
+ *
+ * READING (revised again 2026-09-26, same day, after a real import bug):
+ * this file originally read a picked zip back the mirror-image way -
+ * fflate's streaming `Unzip`/`UnzipPassThrough` classes, fed the picked
+ * file in the same ~4MB chunks. That turned out to have a real, silent
+ * data-corruption bug for this app's specific use (STORED/uncompressed
+ * entries whose writer never declares a size up front - see
+ * findEndOfCentralDirectory/readCentralDirectoryEntries's own long
+ * comment below for the full mechanism and how it was confirmed with a
+ * standalone reproduction before writing the fix). Reading now goes
+ * through the zip's own central directory instead, which sidesteps that
+ * failure mode entirely while keeping the same bounded-memory,
+ * chunked-read approach for each entry's actual bytes.
  *
  * Export format (changed in this same revision): single-set and
  * "export all" zips now share exactly one shape - a top-level
@@ -89,9 +98,9 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { Platform } from 'react-native';
-import { Zip, ZipPassThrough, Unzip, UnzipPassThrough, strToU8, strFromU8 } from 'fflate';
+import { Zip, ZipPassThrough, strToU8, strFromU8 } from 'fflate';
 import { getWalletSetDatabasePath } from './storageStats';
-import { checkpointWalletSetForExport, registerImportedWalletSet } from '../db/database';
+import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSetRowCounts } from '../db/database';
 
 // Bumped only if a future change to what's INSIDE an export (the shape
 // of manifest.json, what folders/files exist) would need the import
@@ -360,6 +369,130 @@ async function readFileBytes(uri) {
   return base64ToUint8Array(base64);
 }
 
+async function readRangeBytes(uri, position, length) {
+  if (length <= 0) return new Uint8Array(0);
+  const base64 = await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+    position,
+    length,
+  });
+  return base64ToUint8Array(base64);
+}
+
+function readUint16LE(bytes, offset) {
+  return bytes[offset] | (bytes[offset + 1] << 8);
+}
+
+function readUint32LE(bytes, offset) {
+  return (
+    (bytes[offset] |
+      (bytes[offset + 1] << 8) |
+      (bytes[offset + 2] << 16) |
+      (bytes[offset + 3] << 24)) >>> 0
+  );
+}
+
+const ZIP_END_OF_CENTRAL_DIR_SIGNATURE = 0x06054b50;
+const ZIP_CENTRAL_DIR_SIGNATURE = 0x02014b50;
+// The end-of-central-directory record is exactly 22 bytes, plus an
+// optional trailing comment this app never writes (fflate's own zip
+// writer doesn't add one either) - so it's always the very last 22
+// bytes of a file this app produced. A generous 4KB tail window covers
+// a stray comment from a zip made by some other tool too, without
+// having to read the whole file just to find it.
+const ZIP_EOCD_SEARCH_WINDOW_BYTES = 4096;
+
+/**
+ * Locates and parses the ZIP "end of central directory" record - see
+ * readCentralDirectoryEntries's own comment just below for why the
+ * importer reads a zip this way instead of fflate's streaming Unzip.
+ */
+async function findEndOfCentralDirectory(uri, totalBytes) {
+  const windowSize = Math.min(ZIP_EOCD_SEARCH_WINDOW_BYTES, totalBytes);
+  const windowStart = totalBytes - windowSize;
+  const tail = await readRangeBytes(uri, windowStart, windowSize);
+  for (let i = tail.length - 22; i >= 0; i -= 1) {
+    if (readUint32LE(tail, i) === ZIP_END_OF_CENTRAL_DIR_SIGNATURE) {
+      return {
+        centralDirSize: readUint32LE(tail, i + 12),
+        centralDirOffset: readUint32LE(tail, i + 16),
+      };
+    }
+  }
+  throw new Error("That file doesn't look like a wallet-set export (no zip directory found).");
+}
+
+/**
+ * V3.1, 2026-09-26 - the reason the importer reads a zip this way at
+ * all, REPLACING an earlier version that used fflate's streaming
+ * `Unzip` class: that class figures out where an entry's data ends by
+ * scanning the incoming byte stream for the next zip signature, because
+ * this app's own exporter (via fflate's streaming `Zip` writer) always
+ * marks an entry's size as "unknown at header-write time" and appends
+ * the real size afterward in a trailing marker - genuinely
+ * streaming-safe when the payload is compressed (noise-like output,
+ * essentially never spells out an exact 4-byte zip signature by
+ * coincidence), but every entry here is STORED, uncompressed (see this
+ * file's own header comment on why): a raw SQLite database file, or a
+ * raw PNG. A large enough raw binary blob has a real, reproduced-in-a-
+ * standalone-test chance of coincidentally containing that exact 4-byte
+ * sequence somewhere in its own content - and when it does, the
+ * scanning reader mistakes it for the entry ending early (or a brand
+ * new entry starting), silently corrupting everything read from that
+ * point on, with no crash at all. That silent corruption is exactly
+ * what a real import showed: it completed with no error and the
+ * correct total file size, but the resulting wallet set had no wallets
+ * or NFTs in it once switched into.
+ *
+ * The robust fix: don't scan for signatures inside entries at all.
+ * Every ZIP file's CENTRAL DIRECTORY - a separate index written once,
+ * at the very end of the file, after every entry's real compressed size
+ * is already known - lists each entry's name, exact size, and its local
+ * header's byte offset, unambiguously (this is how real random-access
+ * zip readers, like Python's zipfile or Java's ZipFile, work). Since
+ * this app's own picked/copied zip file already supports reliable
+ * ranged reads (see pickAndImportWalletSetsZip's own history), each
+ * entry can still be read in bounded STREAM_CHUNK_BYTES-sized pieces
+ * afterward - never the whole entry, let alone the whole archive, in
+ * memory at once.
+ *
+ * Deliberately reads each entry's data-start offset using the FILENAME/
+ * EXTRA-FIELD lengths already recorded in the central directory, rather
+ * than re-reading each local header separately just to get those same
+ * two numbers (an extra native read per file, times potentially
+ * thousands of images) - safe here specifically because this app is
+ * always both the writer AND the reader of its own exports, and
+ * fflate's zip writer (see StreamingZipWriter/Zip.prototype.add) always
+ * uses the exact same filename bytes and no extra field for both an
+ * entry's local header and its central directory record.
+ */
+async function readCentralDirectoryEntries(uri, eocd) {
+  const dirBytes = await readRangeBytes(uri, eocd.centralDirOffset, eocd.centralDirSize);
+  const entries = [];
+  let pos = 0;
+  while (pos + 46 <= dirBytes.length) {
+    if (readUint32LE(dirBytes, pos) !== ZIP_CENTRAL_DIR_SIGNATURE) break;
+    const compressionMethod = readUint16LE(dirBytes, pos + 10);
+    const compressedSize = readUint32LE(dirBytes, pos + 20);
+    const fileNameLength = readUint16LE(dirBytes, pos + 28);
+    const extraFieldLength = readUint16LE(dirBytes, pos + 30);
+    const fileCommentLength = readUint16LE(dirBytes, pos + 32);
+    const localHeaderOffset = readUint32LE(dirBytes, pos + 42);
+    const nameBytes = dirBytes.subarray(pos + 46, pos + 46 + fileNameLength);
+    entries.push({
+      name: strFromU8(nameBytes),
+      compressionMethod,
+      compressedSize,
+      // Right after this entry's local header's fixed 30 bytes plus
+      // that same filename/extra-field length (see this function's own
+      // comment on why it's safe to reuse those lengths from here).
+      dataOffset: localHeaderOffset + 30 + fileNameLength + extraFieldLength,
+    });
+    pos += 46 + fileNameLength + extraFieldLength + fileCommentLength;
+  }
+  return entries;
+}
+
 /**
  * Streams one wallet set's database file, every image, and a
  * manifest.json into `writer` under `pathPrefix` (always
@@ -565,15 +698,15 @@ export async function saveExportedFileToFolder(fileUri, fileName) {
 /**
  * The whole import flow: opens the OS document picker so Raphael can
  * pick a .zip he previously exported (from this phone, or copied over
- * from another one), streams it apart (see StreamingUnzipReader-style
- * logic inline below - reads the picked file in bounded chunks and
- * feeds them to fflate's streaming `Unzip`, writing each extracted file
- * straight to its own new destination as its data arrives, rather than
- * ever holding the whole archive - compressed or extracted - in memory
- * at once), writes out and registers a brand-new wallet set for each
- * one found, and returns the list of new sets' display names. Returns
- * null (not an error) if he backs out of the file picker without
- * choosing anything.
+ * from another one), reads it apart via its own zip central directory
+ * (see findEndOfCentralDirectory/readCentralDirectoryEntries below for
+ * why it's read this way instead of a simpler streaming unzip), writing
+ * each file straight to its own new destination in bounded chunks
+ * rather than ever holding a whole file - let alone the whole archive -
+ * in memory at once, writes out and registers a brand-new wallet set
+ * for each one found, and returns the list of new sets' display names.
+ * Returns null (not an error) if he backs out of the file picker
+ * without choosing anything.
  *
  * Deliberately does NOT switch to any imported set, or touch whatever
  * set is currently active - see registerImportedWalletSet's own comment
@@ -625,6 +758,9 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
     throw new Error("That file is empty - nothing to import.");
   }
 
+  const eocd = await findEndOfCentralDirectory(pickedUri, totalBytes);
+  const centralEntries = await readCentralDirectoryEntries(pickedUri, eocd);
+
   // One entry per top-level zip folder (a `set-<id>-<name>/` from
   // exportWalletSet/exportAllWalletSets above) - allocated the first
   // time any file belonging to that folder is seen, since the
@@ -633,8 +769,6 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
   // own comment in database.js for why fresh filenames are used at
   // all).
   const groups = new Map();
-  const pendingFileWrites = [];
-  let streamError = null;
   let groupCounter = 0;
 
   function getOrCreateGroup(folderName) {
@@ -646,76 +780,77 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
         dbFileName: `devikins-import-${suffix}.db`,
         imagesDirName: `nft-images-import-${suffix}`,
         imagesDirEnsured: null,
-        manifestChunks: [],
+        manifestBytes: null,
       };
       groups.set(folderName, group);
     }
     return group;
   }
 
-  const unzipper = new Unzip((file) => {
-    const slashIndex = file.name.indexOf('/');
-    if (slashIndex === -1) {
-      // A file sitting at the zip's own root - only export-manifest.json
-      // does this, which is purely informational (see
-      // exportAllWalletSets above) and not needed to actually import
-      // anything. Still has to be started and consumed (fflate expects
-      // every discovered file to be either started or left alone
-      // consistently), so give it a no-op sink rather than leaving it
-      // unhandled.
-      file.ondata = () => {};
-      file.start();
-      return;
+  // A first pass over the central directory's (already-complete) entry
+  // list, sorting every file into its set's group before reading any
+  // actual bytes - mirrors the old streaming version's up-front
+  // folder-name grouping, just done from a known-complete list instead
+  // of discovering folders as they streamed past.
+  const plannedEntries = [];
+  for (const entry of centralEntries) {
+    const slashIndex = entry.name.indexOf('/');
+    if (slashIndex === -1) continue; // export-manifest.json at the zip root - informational only
+    const folderName = entry.name.slice(0, slashIndex);
+    const restOfPath = entry.name.slice(slashIndex + 1);
+    if (!restOfPath) continue;
+    plannedEntries.push({ entry, group: getOrCreateGroup(folderName), restOfPath });
+  }
+
+  const totalPlannedBytes = plannedEntries.reduce((sum, p) => sum + p.entry.compressedSize, 0) || 1;
+  let bytesProcessed = 0;
+
+  function assertStored(entry) {
+    // Every entry this app's own exporter writes is stored,
+    // uncompressed (see this file's header comment) - anything else
+    // means this isn't really one of Companion's own exports.
+    if (entry.compressionMethod !== 0) {
+      throw new Error("This file doesn't look like a Companion export Raphael can import.");
     }
+  }
 
-    const folderName = file.name.slice(0, slashIndex);
-    const restOfPath = file.name.slice(slashIndex + 1);
-    if (!restOfPath) {
-      file.ondata = () => {};
-      file.start();
-      return;
+  // Reads one entry's exact byte range in STREAM_CHUNK_BYTES-sized
+  // pieces and writes it straight to destUri - deliberately one whole
+  // file at a time, start to finish, rather than the old version's
+  // several-files-in-flight-at-once approach: simpler, and this project
+  // has already been burned once this same cycle by a "clever"
+  // concurrent version of something that turned out to hide a real race
+  // condition (see NOTES.md's storage-undercount writeup) - not worth
+  // that trade-off for an action Raphael only does occasionally.
+  async function copyEntryBytesTo(entry, destUri) {
+    assertStored(entry);
+    const writer = new StreamingFileWriter(destUri);
+    let remaining = entry.compressedSize;
+    let position = entry.dataOffset;
+    while (remaining > 0) {
+      const length = Math.min(STREAM_CHUNK_BYTES, remaining);
+      const bytes = await readRangeBytes(pickedUri, position, length);
+      writer.push(bytes);
+      await writer.flushIfNeeded();
+      position += length;
+      remaining -= length;
+      bytesProcessed += length;
+      onProgress?.({ phase: 'unzipping', current: bytesProcessed, total: totalPlannedBytes });
     }
+    await writer.finish();
+  }
 
-    const group = getOrCreateGroup(folderName);
-
+  for (const { entry, group, restOfPath } of plannedEntries) {
     if (restOfPath === 'manifest.json') {
-      file.ondata = (err, chunk) => {
-        if (err) {
-          streamError = streamError || err;
-          return;
-        }
-        if (chunk && chunk.length > 0) group.manifestChunks.push(chunk);
-      };
-      file.start();
-      return;
+      assertStored(entry);
+      group.manifestBytes = await readRangeBytes(pickedUri, entry.dataOffset, entry.compressedSize);
+      bytesProcessed += entry.compressedSize;
+      continue;
     }
 
     if (restOfPath === 'database.db') {
-      // finish() and flushIfNeeded() both queue their work onto the
-      // writer's own internal chain (see StreamingFileWriter's own
-      // comment) rather than running immediately, so it's safe to call
-      // one right after the other here without waiting for either to
-      // actually land on disk first - they can never run out of order
-      // relative to each other for this one writer.
-      const writer = new StreamingFileWriter(getWalletSetDatabasePath(group.dbFileName));
-      pendingFileWrites.push(
-        new Promise((resolve, reject) => {
-          file.ondata = (err, chunk, final) => {
-            if (err) {
-              reject(err);
-              return;
-            }
-            writer.push(chunk);
-            if (final) {
-              writer.finish().then(resolve).catch(reject);
-            } else {
-              writer.flushIfNeeded().catch(reject);
-            }
-          };
-          file.start();
-        })
-      );
-      return;
+      await copyEntryBytesTo(entry, getWalletSetDatabasePath(group.dbFileName));
+      continue;
     }
 
     if (restOfPath.startsWith('images/') && restOfPath.length > 'images/'.length) {
@@ -724,74 +859,33 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
       if (!group.imagesDirEnsured) {
         group.imagesDirEnsured = FileSystem.makeDirectoryAsync(imagesDirUri, { intermediates: true });
       }
-      const writer = new StreamingFileWriter(`${imagesDirUri}${imageFileName}`);
-      pendingFileWrites.push(
-        group.imagesDirEnsured.then(
-          () =>
-            new Promise((resolve, reject) => {
-              file.ondata = (err, chunk, final) => {
-                if (err) {
-                  reject(err);
-                  return;
-                }
-                writer.push(chunk);
-                if (final) {
-                  writer.finish().then(resolve).catch(reject);
-                } else {
-                  writer.flushIfNeeded().catch(reject);
-                }
-              };
-              file.start();
-            })
-        )
-      );
-      return;
+      await group.imagesDirEnsured;
+      await copyEntryBytesTo(entry, `${imagesDirUri}${imageFileName}`);
+      continue;
     }
 
     // Anything else under a set's folder isn't something this app wrote
     // there - ignore it rather than guessing what to do with it.
-    file.ondata = () => {};
-    file.start();
-  });
-  unzipper.register(UnzipPassThrough);
-
-  let position = 0;
-  while (position < totalBytes) {
-    const length = Math.min(STREAM_CHUNK_BYTES, totalBytes - position);
-    const base64Chunk = await FileSystem.readAsStringAsync(pickedUri, {
-      encoding: FileSystem.EncodingType.Base64,
-      position,
-      length,
-    });
-    const bytes = base64ToUint8Array(base64Chunk);
-    position += length;
-    const isFinalChunk = position >= totalBytes;
-
-    onProgress?.({ phase: 'unzipping', current: position, total: totalBytes });
-    unzipper.push(bytes, isFinalChunk);
-    if (streamError) throw streamError;
+    bytesProcessed += entry.compressedSize;
   }
-
-  await Promise.all(pendingFileWrites);
-  if (streamError) throw streamError;
 
   const importedNames = [];
   for (const group of groups.values()) {
-    if (group.manifestChunks.length === 0) {
+    if (!group.manifestBytes || group.manifestBytes.length === 0) {
       // A folder with no manifest.json isn't a wallet set this app
       // exported - skip it rather than registering something with no
       // real name/metadata behind it.
       continue;
     }
-    const manifestBytes = group.manifestChunks.reduce((acc, chunk) => concatUint8Arrays(acc, chunk), new Uint8Array(0));
     let manifest;
     try {
-      manifest = JSON.parse(strFromU8(manifestBytes));
+      manifest = JSON.parse(strFromU8(group.manifestBytes));
     } catch {
       continue;
     }
     const importedName = `${manifest.name || 'Imported set'} (imported)`;
     await registerImportedWalletSet(importedName, group.dbFileName, group.imagesDirName);
+    await logImportedSetRowCounts(group.dbFileName);
     importedNames.push(importedName);
   }
 

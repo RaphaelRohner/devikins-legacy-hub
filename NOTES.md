@@ -3261,11 +3261,80 @@ expo-file-system's own docs describe as intended for exactly this -
 raw content:// URI is its actual supported use case, not a workaround).
 `pickAndImportWalletSetsZip` stays split into itself (pick, copy, clean
 up) and `importWalletSetsZipFromLocalFile` (the actual streaming import
-logic, unchanged, working against a local path either way). Not yet
-retested against a real import as of this writing - next step once
-Raphael tries again. If this ALSO doesn't hold, worth asking whether it
-reproduces on a small export specifically (isolating size/memory as a
-factor) versus every size, since that hasn't been distinguished yet.
+logic, working against a local path either way). This DID fix the crash
+- Raphael's retest imported without error - but surfaced a third,
+separate bug; see the next section.
+
+## V3.1: import "succeeded" but showed no NFTs - a silent zip-parsing bug, found and fixed with a standalone repro
+
+Same day as everything above. After round 2's fix, Raphael's next test
+imported cleanly (no crash), the new set showed up as "Test 1
+(imported)", switching into it worked, and its storage size correctly
+matched the original (~18MB) - but the Devikins/Weapons/Equipment tabs
+showed the app's own empty-onboarding screen, as if the set had never
+had a single wallet added to it. Three quick diagnostic questions ruled
+out the obvious causes first (confirmed: he had switched into the new
+set; its size was right; it showed the true "no wallets at all" empty
+state, not just "no NFTs yet") before touching any code - same
+discipline as every bug this session.
+
+**Root cause, found by reasoning about the zip format itself, then
+proven with a standalone Node.js script before touching the app's own
+code:** every entry this app's export writes (`database.db`, each
+image) is added to the zip STORED, uncompressed (see exportImport.js's
+own header comment on why). fflate's streaming `Zip` writer, regardless
+of whether the caller already has a file's full bytes in hand (this app
+always does), ALWAYS marks an entry's size as "unknown at header-write
+time" and appends the real size afterward in a trailing 16-byte marker -
+genuinely necessary for true streaming sources, but it means fflate's
+matching streaming `Unzip` reader has no length to trust up front:
+instead it scans the incoming bytes for the NEXT zip signature to find
+where such an entry ends. That's essentially safe for COMPRESSED data
+(looks like noise, vanishingly unlikely to spell out an exact 4-byte
+signature by coincidence) - but a raw, uncompressed SQLite file or PNG
+is exactly the kind of content that CAN coincidentally contain those
+exact 4 bytes somewhere in its own data. When it does, the reader
+mistakes that coincidence for the entry ending early (or a new entry
+starting) and silently corrupts everything read afterward - no crash,
+no error, just wrong data from that point on. Wrote a standalone script
+(outside the app, using the exact same fflate build) that deliberately
+embedded a zip local-file-header signature in the middle of an
+otherwise-random 2MB buffer, ran it through the app's exact
+zip-write-then-read pattern, and confirmed the reader corrupts/misreads
+it - reproducing the bug's actual mechanism on demand, not just a
+plausible-sounding theory.
+
+**The fix:** stop scanning for signatures inside entries at all. Every
+zip file's CENTRAL DIRECTORY - a separate index written once, at the
+very end of the file, once every entry's real size is already known -
+records each entry's exact size and its local header's byte offset
+unambiguously (this is how real random-access zip readers, like
+Python's `zipfile` or Java's `ZipFile`, actually work). Rewrote the
+importer (`findEndOfCentralDirectory`/`readCentralDirectoryEntries` in
+exportImport.js) to locate and parse that central directory first, then
+read each entry directly by its known offset and size, still in bounded
+~4MB chunks via the same ranged reads already proven reliable on the
+app's own local scratch copy - never the whole entry, let alone the
+whole archive, in memory at once. Re-ran the standalone repro script
+against the new central-directory-based reader with the same
+deliberately-corrupted input: byte-perfect recovery, including the
+entry with the embedded signature. Also deliberately kept things
+SIMPLE over clever here - each file is now copied one at a time, start
+to finish, rather than several files' writes interleaving concurrently
+the way the old streaming version allowed - this project already got
+burned once this same day by a "clever" concurrent version of something
+hiding a real race condition (see the storage-undercount section
+above), and import is not a hot path worth that risk for.
+
+Added one more thing alongside the fix: a temporary diagnostic
+(`logImportedSetRowCounts` in database.js) that opens a just-imported
+set's database directly right after import and logs its real
+wallet/devikin/weapon/equipment row counts - the fastest, most direct
+way to confirm real data actually made it across, independent of
+switching into the set or navigating the UI. Remove once Raphael's
+confirmed a real import shows real counts here.
+
+Not yet retested on Raphael's phone as of this writing - next step.
 
 ## App structure decisions (made while building)
  (made while building)

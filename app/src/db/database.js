@@ -1295,6 +1295,36 @@ export async function registerImportedWalletSet(name, dbFileName, imagesDirName)
   return result.lastInsertRowId;
 }
 
+// TEMPORARY diagnostic, added 2026-09-26 alongside the central-directory
+// import fix (see exportImport.js's own long comment on
+// findEndOfCentralDirectory/readCentralDirectoryEntries for the bug this
+// is checking for) - opens the just-written database file directly
+// (a throwaway connection, same pattern as checkpointWalletSetForExport
+// above) right after an import finishes, and logs how many real rows it
+// actually contains. This is the fast, direct way to confirm the fix
+// worked - counting rows here doesn't depend on switching into the set
+// or navigating the UI at all, so it isolates "is the copied db file
+// itself actually populated" from anything else that could separately
+// go wrong afterward. Remove once Raphael's confirmed a real import
+// shows real counts here.
+export async function logImportedSetRowCounts(dbFileName) {
+  try {
+    const tempDb = await SQLite.openDatabaseAsync(dbFileName);
+    const walletCount = await tempDb.getFirstAsync(`SELECT COUNT(*) AS count FROM wallets`);
+    const devikinCount = await tempDb.getFirstAsync(`SELECT COUNT(*) AS count FROM devikin`);
+    const weaponCount = await tempDb.getFirstAsync(`SELECT COUNT(*) AS count FROM weapon`);
+    const equipmentCount = await tempDb.getFirstAsync(`SELECT COUNT(*) AS count FROM equipment`);
+    await tempDb.closeAsync();
+    console.log(
+      `[database] DIAG imported ${dbFileName} - wallets: ${walletCount?.count ?? '?'}, ` +
+      `devikin: ${devikinCount?.count ?? '?'}, weapon: ${weaponCount?.count ?? '?'}, ` +
+      `equipment: ${equipmentCount?.count ?? '?'}`
+    );
+  } catch (err) {
+    console.log(`[database] DIAG couldn't read row counts from imported ${dbFileName}: ${err.message}`);
+  }
+}
+
 // Creates the registry's two tables if they don't already exist yet -
 // pulled out into its own memoized helper (rather than living inline
 // inside initWalletSets below) because of a real race that showed up in
