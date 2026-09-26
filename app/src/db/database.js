@@ -1232,6 +1232,69 @@ async function deleteWalletSetFiles(id) {
   await deleteStoredImagesForDir(set.images_dir_name);
 }
 
+// V3.1: makes sure whatever's actually on disk for one wallet set's
+// database file is a single, complete, consistent copy - not something
+// split across a separate not-yet-merged WAL (write-ahead log) file -
+// before the export feature (see src/api/exportImport.js) reads that
+// file's raw bytes to bundle into a zip. expo-sqlite can write in WAL
+// mode, where recent changes briefly live in a side "-wal" file next to
+// the main one and only get folded in ("checkpointed") periodically -
+// copying just the main file at the wrong moment could silently miss
+// those recent writes. `PRAGMA wal_checkpoint(TRUNCATE)` forces that
+// merge right now and empties the WAL file back out, so the main file
+// alone is always safe to copy afterward, regardless of whether this is
+// the currently active set (existing open connection, reused as-is) or
+// some other set nothing has open right now (a throwaway connection is
+// opened just long enough to run the checkpoint, then closed again -
+// never left lingering for a set nothing else is using). Safe to call
+// on a set that was created but never actually fetched into (no
+// database file exists yet) - openDatabaseAsync creates an empty one
+// harmlessly in that case, same spirit as deleteWalletSetFiles above
+// being a no-op on a set with nothing to delete.
+export async function checkpointWalletSetForExport(dbFileName) {
+  if (dbFileName === activeDatabaseFileName && databaseConnectionPromise) {
+    const db = await databaseConnectionPromise;
+    await db.execAsync('PRAGMA wal_checkpoint(TRUNCATE);').catch(() => {});
+    return;
+  }
+
+  try {
+    const tempDb = await SQLite.openDatabaseAsync(dbFileName);
+    await tempDb.execAsync('PRAGMA wal_checkpoint(TRUNCATE);').catch(() => {});
+    await tempDb.closeAsync();
+  } catch (err) {
+    console.log(`[database] Couldn't checkpoint ${dbFileName} before export: ${err.message}`);
+  }
+}
+
+// V3.1: registers a wallet set whose database file and images folder
+// have ALREADY been written to disk under dbFileName/imagesDirName -
+// used by the import side of src/api/exportImport.js once it's finished
+// extracting an exported zip's contents, mirroring what createWalletSet
+// above does for a brand-new empty set, just pointing at files that are
+// already populated instead of creating fresh empty ones. Deliberately
+// does NOT switch to the imported set (unlike createWalletSet, where
+// "create" and "start using it" are the same action) - importing one or
+// several sets at once shouldn't yank Raphael away from whatever set
+// he's actively working in; he uses the existing switcher above to load
+// an imported set once it's there. That same switch is also what brings
+// an imported set's schema up to date if it was exported from an older
+// app version missing a newer column - switchToWalletSet already runs
+// initDatabase() (every ensureColumn/CREATE TABLE call is a safe no-op
+// once a column already exists) as part of loading any set, so nothing
+// extra is needed here for that.
+export async function registerImportedWalletSet(name, dbFileName, imagesDirName) {
+  await ensureRegistryTablesExist();
+  const registryDb = await getRegistryDatabase();
+  const trimmedName = (name || '').trim() || 'Imported set';
+  const result = await registryDb.runAsync(
+    `INSERT INTO wallet_sets (name, db_file_name, images_dir_name, created_at, is_active)
+     VALUES (?, ?, ?, ?, 0)`,
+    [trimmedName, dbFileName, imagesDirName, Date.now()]
+  );
+  return result.lastInsertRowId;
+}
+
 // Creates the registry's two tables if they don't already exist yet -
 // pulled out into its own memoized helper (rather than living inline
 // inside initWalletSets below) because of a real race that showed up in

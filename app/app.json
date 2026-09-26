@@ -28,7 +28,8 @@
         {
           "cameraPermission": "Allow Devikins Legacy Companion to access your camera to scan a wallet address QR code."
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "extra": {
       "eas": {

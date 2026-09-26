@@ -2955,6 +2955,91 @@ theoretical, so `STORAGE_WARNING_THRESHOLD_BYTES` is now 200MB (down
 from 1GB) - still comfortably out of reach today, but meaningful if NFT
 counts grow substantially later.
 
+## V3.1: export/import a wallet set as a zip file
+
+New feature, not a fix - raised by Raphael during a V3.1 planning
+session once he'd finished testing V3.0.0 on his phone. Two concrete
+reasons: moving to a new device without re-fetching everything from
+scratch, and making his own testing easier (export a known-good set
+once, then import it back instead of re-running a real multi-minute
+fetch against the Klever API every time). He explicitly asked for BOTH
+"export one set" and "export every set at once," and for the resulting
+file to offer both Save-to-a-folder and Share (rather than picking one
+for him) once it's built - see WalletManager.js's own
+presentSaveOrShareChoice.
+
+What a wallet set actually IS on disk (see database.js's "Wallet sets"
+section, and storageStats.js's own file comment) is exactly two things:
+one SQLite database file, and one folder of downloaded images - nothing
+else. So export/import (new file: src/api/exportImport.js) is a plain
+file-level copy in and out of a zip, never a row-by-row JSON dump of
+every table - a file copy can't get a column wrong or silently drop
+data, since it never has to know what's inside those files at all.
+
+Zip library: `jszip` (the obvious first choice) was ruled out after
+research turned up a real, previously-reported failure mode - it
+depends on `readable-stream` (a reimplementation of Node's own `stream`
+module), and Metro (Expo's bundler) has a spotty history of correctly
+following that package's own browser-field remapping meant to avoid
+Node's `stream` outside of actual Node. Went with `fflate` instead -
+confirmed zero dependencies of its own before adding it, works directly
+with plain Uint8Array, and is a well-established, actively maintained
+library.
+
+Before reading a set's database file's raw bytes, a new
+`checkpointWalletSetForExport` (database.js) runs
+`PRAGMA wal_checkpoint(TRUNCATE)` on it first - expo-sqlite can write in
+WAL mode, where recent changes briefly live in a separate side file next
+to the main one; without forcing that merge first, a copy of just the
+main file could silently miss whatever hasn't been checkpointed into it
+yet. Works on the currently active set (reuses its live connection) or
+any other one (opens a throwaway connection just long enough to run the
+checkpoint, then closes it again).
+
+Import writes everything to brand-new, never-used-before filenames
+(`registerImportedWalletSet`, database.js) rather than reusing the
+exported set's original ones, since those could collide with a set that
+already exists on the phone doing the importing. Deliberately does NOT
+switch to an imported set automatically, or touch whichever set is
+currently active - Raphael uses the existing set-switcher to load one
+once it's there, same as loading any other set. That existing switch
+action is also what brings an imported set's schema up to date if it
+came from an older app version missing a newer column -
+switchToWalletSet already runs initDatabase() (every ensureColumn/CREATE
+TABLE call is a safe no-op once a column already exists) as part of
+loading any set, so nothing extra was needed for that.
+
+expo-file-system's read/write functions only speak plain text or base64
+- no raw ArrayBuffer/Uint8Array file I/O in this SDK's file API - so
+every file this feature touches crosses that base64 boundary somewhere.
+Rather than relying on a global `atob`/`btoa` (not guaranteed to exist
+in every Hermes/RN version) or adding yet another dependency for just
+this, wrote small, dependency-free base64<->Uint8Array conversions
+directly in exportImport.js.
+
+New dependencies added via `npx expo install expo-sharing
+expo-document-picker` (both confirmed Expo-Go compatible - no custom
+dev client needed, matching this project's one hard constraint) plus
+`npm install fflate`. `expo-sharing` also added itself to app.json's
+plugins list automatically.
+
+KNOWN, NOT-YET-TESTED RISK - flagged rather than assumed away: fflate's
+zipSync/unzipSync are both all-at-once, not streaming, so the whole
+zip is built in memory before being written out. For Raphael's own real
+~9,500-NFT wallet set (roughly 130MB of images, per the storage-warning
+correction above), that could mean holding a few hundred MB in memory
+at once (raw image bytes + the zip's own output buffer + temporary
+base64 strings along the way). This is exactly the scale his real
+wallet sets reach, so the plan is to test export/import directly
+against his biggest set rather than assume it's fine - if it turns out
+to fail there, the likely fix is splitting a huge export into several
+smaller zips rather than switching libraries again.
+
+Also not yet done: no UI progress bar beyond a text label on the
+button itself ("Reading images... 4213/9503") - fine for a first pass,
+but worth watching once tested against the real large set in case the
+whole screen feels unresponsive for however long that takes.
+
 ## App structure decisions (made while building)
  (made while building)
 

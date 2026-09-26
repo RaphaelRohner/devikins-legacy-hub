@@ -96,7 +96,7 @@ export function formatBytes(bytes) {
 // does is enough to reconstruct exactly where a given set's database
 // file actually lives on disk, including for a set that isn't the
 // currently active one (and so has no open connection to ask directly).
-function databaseFilePath(dbFileName) {
+export function getWalletSetDatabasePath(dbFileName) {
   const dir = (SQLite.defaultDatabaseDirectory || '').replace(/\/*$/, '');
   return `${dir}/${dbFileName}`;
 }
@@ -150,7 +150,7 @@ async function directorySizeBytes(dirUri) {
  */
 export async function getWalletSetStorageBytes(walletSet) {
   const [dbBytes, imagesBytes] = await Promise.all([
-    fileSizeBytes(databaseFilePath(walletSet.db_file_name)),
+    fileSizeBytes(getWalletSetDatabasePath(walletSet.db_file_name)),
     directorySizeBytes(`${FileSystem.documentDirectory}${walletSet.images_dir_name}/`),
   ]);
   return { dbBytes, imagesBytes, totalBytes: dbBytes + imagesBytes };

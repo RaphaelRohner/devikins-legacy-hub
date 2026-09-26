@@ -99,6 +99,14 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import QrScannerModal from './QrScannerModal';
 import { getStorageBytesForSets, formatBytes } from '../api/storageStats';
+import {
+  exportWalletSet,
+  exportAllWalletSets,
+  shareExportedFile,
+  saveExportedFileToFolder,
+  pickAndImportWalletSetsZip,
+  supportsSaveToFolder,
+} from '../api/exportImport';
 
 export default function WalletManager({
   wallets,
@@ -159,6 +167,18 @@ export default function WalletManager({
   const [storageBytesById, setStorageBytesById] = useState({});
   const [totalStorageBytes, setTotalStorageBytes] = useState(null);
   const [isCalculatingStorage, setIsCalculatingStorage] = useState(false);
+
+  // V3.1: export/import. isExportingId is either null (nothing
+  // exporting right now), a wallet set's own id (that set's own Export
+  // button was pressed), or the literal string 'all' (Export all sets
+  // was pressed) - used both to show a progress label on the right
+  // button and to disable every OTHER export button while one export is
+  // already running, since two exports at once would mean two full zips
+  // being built in memory at the same time (see exportImport.js's own
+  // file comment on how much memory just ONE of those can already use).
+  const [isExportingId, setIsExportingId] = useState(null);
+  const [exportProgressLabel, setExportProgressLabel] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -379,6 +399,126 @@ export default function WalletManager({
     );
   }
 
+  // Turns an exportImport.js onProgress callback into the one-line
+  // status text shown on whichever Export button is currently running -
+  // shared by handleExportSet and handleExportAllSets below since both
+  // report the exact same phases.
+  function describeExportProgress(progress) {
+    if (progress.phase === 'reading-images') {
+      return `Reading images... ${progress.current}/${progress.total}`;
+    }
+    if (progress.phase === 'zipping') return 'Compressing...';
+    if (progress.phase === 'writing') return 'Writing file...';
+    return 'Exporting...';
+  }
+
+  // Raphael's own explicit request: rather than picking one of "share
+  // it" or "save it to a folder" up front, ask which one he wants once
+  // the file's actually ready, and only then do that one thing - Share
+  // opens the OS share sheet (works everywhere), Save to folder (Android
+  // only - see supportsSaveToFolder/saveExportedFileToFolder's own
+  // comment in exportImport.js) asks Android for a destination folder
+  // and copies the file there directly.
+  function presentSaveOrShareChoice(fileUri, fileName) {
+    return new Promise((resolve) => {
+      const buttons = [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve() },
+        {
+          text: 'Share',
+          onPress: async () => {
+            try {
+              await shareExportedFile(fileUri);
+            } catch (err) {
+              reportSetActionError(err, 'Sharing the export');
+            }
+            resolve();
+          },
+        },
+      ];
+      if (supportsSaveToFolder) {
+        buttons.push({
+          text: 'Save to folder',
+          onPress: async () => {
+            try {
+              const saved = await saveExportedFileToFolder(fileUri, fileName);
+              if (saved) {
+                Alert.alert('Saved', `${fileName} was saved to the folder you picked.`);
+              }
+            } catch (err) {
+              reportSetActionError(err, 'Saving the export');
+            }
+            resolve();
+          },
+        });
+      }
+      Alert.alert(
+        'Export ready',
+        `${fileName} is ready. Where would you like to send it?`,
+        buttons,
+        { cancelable: true, onDismiss: () => resolve() }
+      );
+    });
+  }
+
+  async function handleExportSet(set) {
+    setIsExportingId(set.id);
+    setExportProgressLabel('Preparing export...');
+    try {
+      const { fileUri, fileName } = await exportWalletSet(set, {
+        onProgress: (progress) => setExportProgressLabel(describeExportProgress(progress)),
+      });
+      await presentSaveOrShareChoice(fileUri, fileName);
+    } catch (err) {
+      reportSetActionError(err, 'Exporting that set');
+    } finally {
+      setIsExportingId(null);
+      setExportProgressLabel('');
+    }
+  }
+
+  async function handleExportAllSets() {
+    setIsExportingId('all');
+    setExportProgressLabel('Preparing export...');
+    try {
+      const { fileUri, fileName } = await exportAllWalletSets(walletSets, {
+        onProgress: (progress) => setExportProgressLabel(describeExportProgress(progress)),
+      });
+      await presentSaveOrShareChoice(fileUri, fileName);
+    } catch (err) {
+      reportSetActionError(err, 'Exporting all sets');
+    } finally {
+      setIsExportingId(null);
+      setExportProgressLabel('');
+    }
+  }
+
+  // Imports one or more wallet sets from a zip Raphael previously
+  // exported (from this phone or another one) - see exportImport.js's
+  // own file comment for the full reasoning. A cancelled file picker
+  // comes back as null, not an error, so that's treated as a quiet
+  // no-op rather than an "Import failed" alert over Raphael simply
+  // backing out of the picker.
+  async function handleImport() {
+    setIsImporting(true);
+    try {
+      const importedNames = await pickAndImportWalletSetsZip();
+      if (importedNames === null) {
+        return;
+      }
+      onWalletSetsChanged();
+      Alert.alert(
+        importedNames.length > 0 ? 'Import complete' : 'Nothing imported',
+        importedNames.length > 0
+          ? `Added: ${importedNames.join(', ')}. Use the switcher above to load one.`
+          : "That file didn't contain any wallet sets."
+      );
+    } catch (err) {
+      reportSetActionError(err, 'Importing that file');
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
   // Wipes every wallet set entirely - every wallet, every saved NFT,
   // and every downloaded image, across ALL sets, not just the active
   // one - back to exactly what a brand-new install looks like (a single
@@ -489,6 +629,37 @@ export default function WalletManager({
           </TouchableOpacity>
         )}
 
+        <View style={styles.backupRow}>
+          <TouchableOpacity
+            style={[
+              styles.rowButton,
+              styles.backupButton,
+              { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+              (isExportingId !== null || walletSets.length === 0) && { opacity: 0.5 },
+            ]}
+            onPress={handleExportAllSets}
+            disabled={isExportingId !== null || isImporting || walletSets.length === 0}
+          >
+            <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
+              {isExportingId === 'all' ? (exportProgressLabel || 'Exporting...') : 'Export all sets'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.rowButton,
+              styles.backupButton,
+              { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+              (isImporting || isExportingId !== null) && { opacity: 0.5 },
+            ]}
+            onPress={handleImport}
+            disabled={isImporting || isExportingId !== null}
+          >
+            <Text style={[styles.rowButtonText, { color: colors.text }]}>
+              {isImporting ? 'Importing...' : 'Import a set'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {walletSets.map((set) => {
           const isActive = set.id === activeWalletSetId;
           return (
@@ -543,6 +714,19 @@ export default function WalletManager({
                       onPress={() => handleStartRenameSet(set)}
                     >
                       <Text style={[styles.rowButtonText, { color: colors.text }]}>Rename</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.rowButton,
+                        { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+                        isExportingId !== null && { opacity: 0.5 },
+                      ]}
+                      onPress={() => handleExportSet(set)}
+                      disabled={isExportingId !== null || isImporting}
+                    >
+                      <Text style={[styles.rowButtonText, { color: colors.text }]}>
+                        {isExportingId === set.id ? (exportProgressLabel || 'Exporting...') : 'Export'}
+                      </Text>
                     </TouchableOpacity>
                     {isActive ? (
                       <TouchableOpacity
@@ -814,6 +998,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginHorizontal: 12,
     marginBottom: 10,
+  },
+  backupRow: {
+    flexDirection: 'row',
+    marginHorizontal: 12,
+    marginBottom: 10,
+    gap: 8,
+  },
+  backupButton: {
+    flex: 1,
+    alignItems: 'center',
   },
   newSetButton: {
     borderWidth: 1,
