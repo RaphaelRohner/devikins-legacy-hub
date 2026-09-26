@@ -702,7 +702,10 @@ export default function WalletManager({
                 </>
               ) : (
                 <>
-                  <TouchableOpacity style={styles.setNameButton} onPress={() => handleSwitchSet(set.id)}>
+                  <TouchableOpacity
+                    style={[styles.setNameButton, isThisSetExporting && styles.setNameButtonCompact]}
+                    onPress={() => handleSwitchSet(set.id)}
+                  >
                     <Text style={[styles.setNameText, { color: colors.text }]} numberOfLines={1}>
                       {set.name}
                     </Text>
@@ -713,7 +716,7 @@ export default function WalletManager({
                       {isCalculatingStorage ? '...' : formatBytes(storageBytesById[set.id] ?? 0)}
                     </Text>
                   </TouchableOpacity>
-                  <View style={styles.walletRowButtons}>
+                  <View style={[styles.walletRowButtons, isThisSetExporting && styles.walletRowButtonsExporting]}>
                     {!isThisSetExporting ? (
                       <TouchableOpacity
                         style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
@@ -727,11 +730,15 @@ export default function WalletManager({
                         styles.rowButton,
                         { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
                         isExportingId !== null && { opacity: 0.5 },
+                        isThisSetExporting && styles.rowButtonFullWidth,
                       ]}
                       onPress={() => handleExportSet(set)}
                       disabled={isExportingId !== null || isImporting}
                     >
-                      <Text style={[styles.rowButtonText, { color: colors.text }]}>
+                      <Text
+                        style={[styles.rowButtonText, { color: colors.text }, isThisSetExporting && styles.rowButtonTextCentered]}
+                        numberOfLines={1}
+                      >
                         {isExportingId === set.id ? (exportProgressLabel || 'Exporting...') : 'Export'}
                       </Text>
                     </TouchableOpacity>
@@ -990,6 +997,13 @@ const styles = StyleSheet.create({
   setNameButton: {
     flex: 1,
   },
+  // Shrinks the name/status/size block to just its own content width
+  // while THIS set's export is running, so walletRowButtonsExporting
+  // below can claim the rest of the row for the Export button instead
+  // of the usual 50/50 flex split - see that style's own comment.
+  setNameButtonCompact: {
+    flex: 0,
+  },
   setNameText: {
     fontSize: 14,
     fontWeight: '600',
@@ -1111,14 +1125,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  // Raphael's own request: while a set's own export is running, its
+  // progress text keeps changing length ("Exporting..." -> "Reading
+  // images... 5000/9098" -> ...), and a button sized to fit its own
+  // content was visibly resizing/flickering on every update as a
+  // result. Giving this container flex:1 (paired with
+  // setNameButtonCompact above, which stops the name block competing
+  // for the same space) and rowButtonFullWidth below on the button
+  // itself means the button's own box size is now fixed by the row's
+  // layout, not by whatever text happens to be in it right now - only
+  // the text can change, never the border.
+  walletRowButtonsExporting: {
+    flex: 1,
+  },
   rowButton: {
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
+  rowButtonFullWidth: {
+    flex: 1,
+    alignItems: 'center',
+  },
   rowButtonText: {
     fontWeight: '600',
     fontSize: 13,
+  },
+  rowButtonTextCentered: {
+    textAlign: 'center',
   },
   walletAlias: {
     fontSize: 13,
