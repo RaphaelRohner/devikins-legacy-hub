@@ -3228,29 +3228,44 @@ text itself can change now, never the border. The "Export all sets"/
 hidden, since `backupButton`'s existing `flex: 1` naturally claims the
 whole row when it's the only child left.
 
-**Real import bug, found on Raphael's first actual import attempt:**
-`ExponentFileSystem.readAsStringAsync` rejected with a native
-`java.io.IOException: Location '...DocumentPicker/<uuid>.zip' isn't
-readable` - thrown by the ranged (`position`/`length`) read used to
-stream the picked zip apart in bounded chunks, even though a plain
-`getInfoAsync` on that exact same file succeeded moments earlier (so
-the file genuinely existed and was stat-able - just not readable that
-particular way). Root cause: reading directly from
-`expo-document-picker`'s own cache copy via a ranged/random-access read
-isn't reliable, evidently regardless of the file existing and being a
-normal size. **Fixed** by making the app's own plain copy of the picked
-file first (`FileSystem.copyAsync`, a normal whole-file stream copy, no
-ranged reads involved - and expo-file-system's own docs note this
-exact use case, "copy content shared by other apps to local
-filesystem") into a scratch path under `FileSystem.cacheDirectory`
-(which this app fully owns), then doing every subsequent read against
-that copy instead of the original picked URI. The scratch copy is
-deleted in a `finally` either way, win or lose. `pickAndImportWalletSetsZip`
-split into itself (pick, copy, clean up) and a new
-`importWalletSetsZipFromLocalFile` (the actual streaming import logic,
-unchanged otherwise, just now working against a known-good local path
-instead of the picker's own). Not yet retested against a real import as
-of this writing - next step once Raphael tries again.
+**Real import bug, found on Raphael's first actual import attempt, and
+it took two rounds to actually fix:** `ExponentFileSystem.readAsStringAsync`
+rejected with a native `java.io.IOException: Location
+'...DocumentPicker/<uuid>.zip' isn't readable` - thrown by the ranged
+(`position`/`length`) read used to stream the picked zip apart in
+bounded chunks, even though a plain `getInfoAsync` on that exact same
+file succeeded moments earlier (so the file genuinely existed and was
+stat-able - just not readable that particular way).
+
+**Round 1 (wrong diagnosis):** assumed this was specific to ranged/
+random-access reads on a DocumentPicker cache file, and fixed it by
+making the app's own plain copy of the picked file first
+(`FileSystem.copyAsync`) into a scratch path under
+`FileSystem.cacheDirectory`, then reading from that copy instead.
+Raphael retested and hit the EXACT SAME "isn't readable" error again -
+just now thrown by the `copyAsync` call itself (reading the source to
+copy it), still complaining about DocumentPicker's own cache file. That
+disproved the "it's specifically ranged reads" theory: no read of that
+file succeeds at all, ranged or whole-file, which relocates the actual
+bug to DocumentPicker's own `copyToCacheDirectory: true` step - it's
+producing a file this app's own process can't read back, not something
+wrong with how this app was reading it afterward.
+
+**Round 2 (the actual fix):** turned `copyToCacheDirectory` off
+entirely, so `pickResult.assets[0].uri` is the raw SAF/`content://` URI
+Android's own picker handed back, never touched by DocumentPicker's own
+copy step at all - and do the copy into the app's own cache path
+directly from THAT, via the same `FileSystem.copyAsync` (which
+expo-file-system's own docs describe as intended for exactly this -
+"copy content shared by other apps to local filesystem," i.e. reading a
+raw content:// URI is its actual supported use case, not a workaround).
+`pickAndImportWalletSetsZip` stays split into itself (pick, copy, clean
+up) and `importWalletSetsZipFromLocalFile` (the actual streaming import
+logic, unchanged, working against a local path either way). Not yet
+retested against a real import as of this writing - next step once
+Raphael tries again. If this ALSO doesn't hold, worth asking whether it
+reproduces on a small export specifically (isolating size/memory as a
+factor) versus every size, since that hasn't been distinguished yet.
 
 ## App structure decisions (made while building)
  (made while building)
