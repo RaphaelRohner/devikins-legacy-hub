@@ -3334,7 +3334,77 @@ way to confirm real data actually made it across, independent of
 switching into the set or navigating the UI. Remove once Raphael's
 confirmed a real import shows real counts here.
 
-Not yet retested on Raphael's phone as of this writing - next step.
+Retested on Raphael's phone: the crash itself was gone (no more
+DocumentPicker IOException, "Import Complete" showed up reliably), but
+the imported set still had no NFTs - and this time SQLite's own
+diagnostic said something more specific: `no such table: wallets`,
+meaning the copied file wasn't real database content at all. Chased
+that down through two more rounds:
+
+**Wrong guess #1 (recorded, then disproven):** added diagnostics
+straight to the export/import code and found the export's own
+manifest.json recording `hasDatabase: false` for every set tested -
+including "My Wallets" (Raphael's real, definitely-populated main
+collection, ruling out "maybe this particular set was just empty," his
+own very reasonable first suspicion). The export path was resolving
+`SQLite.defaultDatabaseDirectory` to Android's `/data/data/<package>/...`
+form, and a diagnostic log showed `FileSystem.getInfoAsync` reporting
+that path as not existing - even though expo-sqlite's own native calls
+open a database there just fine every single day. The fix attempted:
+try that path first, then fall back to the equivalent `/data/user/0/...`
+form (the one every image path already uses successfully via
+`FileSystem.documentDirectory`), on the theory that expo-file-system
+just couldn't resolve one of Android's two equivalent internal forms
+for its own SQLite folder.
+
+**Wrong guess #1 retested, and disproven:** after a full app reload
+(confirmed via the diagnostic's own updated wording, since Fast Refresh
+had actually been serving stale code for one round of testing - a real
+gotcha worth remembering for future rounds: if a fix "does nothing,"
+check the diagnostic text itself proves the new code is even running
+before concluding the fix failed), the export STILL reported
+`exists: false` for My Wallets' database - trying both directory forms
+made no difference at all. That ruled out the directory-form theory
+entirely: whatever was wrong, it wasn't about which of the two path
+forms was used.
+
+**The real root cause, found by reading expo-file-system's own Android
+source directly** (`node_modules/expo-file-system/android/src/main/
+java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt`) rather
+than guessing again: `SQLite.defaultDatabaseDirectory`'s own native
+definition (`node_modules/expo-sqlite/android/.../SQLiteModule.kt`) is
+just `context.filesDir.canonicalPath + "/SQLite"` - a bare filesystem
+path with NO `file://` scheme at all. `FileSystem.documentDirectory`,
+which every image this app has ever read or written goes through, is
+built completely differently - `Uri.fromFile(filesDirectory).toString()`
+- which always includes that scheme. expo-file-system's native
+`getInfoAsync`/`readAsStringAsync`/`writeAsStringAsync` all parse
+whatever string they're given as a URI and branch on its scheme: with
+a real `file://` scheme they operate on the actual file, exactly as
+expected (the only path images have ever taken); with NO scheme at all
+(exactly what a bare path produces), reads get silently misrouted into
+Android's app-resource loader instead (fails for a real path, reported
+back as `exists: false`) and writes are refused outright. This explains
+everything at once: why the storage-size screen has always shown 0
+bytes for every set's own database file (hidden by images dwarfing it
+in the total), why every export has produced a zip with no
+database.db in it, and why the earlier directory-form swap changed
+nothing - both forms were equally missing the scheme, so both were
+equally broken.
+
+**Fix:** `getWalletSetDatabasePath` (storageStats.js) now always
+builds a real `file://` URI, matching the exact format
+`FileSystem.documentDirectory` already uses successfully. The
+now-unnecessary directory-form fallback and its `Platform` import were
+removed - once the real scheme is present, there's nothing left to
+fall back to.
+
+Not yet retested on Raphael's phone as of this writing (this exact
+line is now the third time this file has said that for this same
+saga) - next step. If this holds, the fix should show up in the
+`resolved dbPath=` diagnostic line as a `file://`-prefixed path with
+`exists: true`, the manifest as `hasDatabase: true`, and - the real
+test - actual NFTs showing up in the imported copy.
 
 ## App structure decisions (made while building)
  (made while building)

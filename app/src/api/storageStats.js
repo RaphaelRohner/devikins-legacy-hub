@@ -22,7 +22,6 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SQLite from 'expo-sqlite';
-import { Platform } from 'react-native';
 
 // How many files to stat at once when summing up an images folder - the
 // same "small worker pool" idea fetchAllForWallet.js uses for network
@@ -99,69 +98,62 @@ export function formatBytes(bytes) {
 // does is enough to reconstruct exactly where a given set's database
 // file actually lives on disk, including for a set that isn't the
 // currently active one (and so has no open connection to ask directly).
+//
+// THE REAL BUG, FOUND (2026-09-26) by reading expo-file-system's own
+// Android source directly (node_modules/expo-file-system/android/src/
+// main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt) -
+// this superseded TWO earlier guesses, both wrong, about a "/data/data/"
+// vs "/data/user/0/" directory-form mismatch. The real story is much
+// simpler: SQLite.defaultDatabaseDirectory returns a bare filesystem
+// path with NO "file://" scheme at all (its native Android definition is
+// literally just `context.filesDir.canonicalPath + "/SQLite"` - see
+// node_modules/expo-sqlite/android/.../SQLiteModule.kt). Compare that to
+// FileSystem.documentDirectory, which every image this app reads/writes
+// goes through and which has ALWAYS worked - its own native definition
+// is `Uri.fromFile(filesDirectory).toString() + "/"`, which always
+// produces a real "file://" URI.
+//
+// expo-file-system's native getInfoAsync/readAsStringAsync/
+// writeAsStringAsync all call `Uri.parse(...)` on whatever string
+// they're given and branch on its `scheme`. With a real "file" scheme,
+// they read/write/stat the actual file, exactly as expected - this is
+// the only path images have ever taken. With NO scheme at all (exactly
+// what a bare path like SQLite.defaultDatabaseDirectory produces),
+// they take a completely different branch instead: reads get treated as
+// a request to open an ANDROID RESOURCE by name (meant for bundled app
+// assets, not real files - see FileSystemLegacyModule.kt's
+// openResourceInputStream), which fails for a real absolute path and
+// gets silently swallowed into "exists: false"; writes are refused
+// outright ("Unsupported scheme for location..."). THAT - not which of
+// Android's two equivalent internal path forms was used - is why every
+// wallet set's own database file has been invisible to expo-file-system
+// this whole time: the storage-size calculation below has been silently
+// reporting 0 bytes for every set's database (hidden by images
+// dwarfing it in the total - see AVERAGE_BYTES_PER_NFT's own comment
+// above), and every export has produced a zip with no database.db in it
+// at all (see NOTES.md's write-up). It also explains why the earlier
+// "/data/data/" <-> "/data/user/0/" swap fix changed nothing at all:
+// both forms are equally missing the scheme, so both were equally
+// broken.
+//
+// The actual fix: always build this path as a real file:// URI, the
+// same format FileSystem.documentDirectory already uses successfully.
 export function getWalletSetDatabasePath(dbFileName) {
   const dir = (SQLite.defaultDatabaseDirectory || '').replace(/\/*$/, '');
-  return `${dir}/${dbFileName}`;
-}
-
-// FOUND AND FIXED (2026-09-26): SQLite.defaultDatabaseDirectory (used by
-// getWalletSetDatabasePath above, matching expo-sqlite's own internal
-// path-building logic exactly) reports the app's SQLite folder using
-// Android's "/data/data/<package>/..." form. expo-sqlite's own native
-// calls (openDatabaseAsync et al) open a database at that path just
-// fine - real, working wallet sets prove that every time the app runs.
-// But expo-file-system's own calls (getInfoAsync, readAsStringAsync,
-// writeAsStringAsync) apparently do NOT reliably resolve that exact
-// path form on this device - confirmed directly: exporting "My
-// Wallets" (definitely real, definitely populated - not an edge case)
-// still logged getInfoAsync reporting the database file as not
-// existing. Every image this app reads or writes goes through
-// FileSystem.documentDirectory instead, which reports the equivalent
-// "/data/user/0/<package>/..." form - the two are the same real
-// directory on a real Android device (a standard OS-level bind
-// mount/symlink), but only one of them is one expo-file-system
-// consistently recognizes. This one mismatch is what made every wallet
-// set's own database file invisible to expo-file-system this whole
-// time: the storage-size calculation below has been silently reporting
-// 0 bytes for every set's database (hidden by images dwarfing it in the
-// total - see AVERAGE_BYTES_PER_NFT's own comment above, which measured
-// storage as if it were 100% images, because as far as expo-file-system
-// could see, it effectively was), and every export has produced a zip
-// with no database.db in it at all (see NOTES.md's write-up).
-function normalizeDatabaseDirectoryForFileSystem(path) {
-  if (Platform.OS !== 'android') return path;
-  return path.replace('/data/data/', '/data/user/0/');
+  return `file://${dir}/${dbFileName}`;
 }
 
 /**
- * Resolves a wallet set's database file to whichever path form
- * expo-file-system can actually see it through - see
- * normalizeDatabaseDirectoryForFileSystem's own comment above for the
- * full story on why this is needed at all. Use this (never
- * getWalletSetDatabasePath directly) for anything that needs to READ an
- * EXISTING database file through expo-file-system - checking its size,
- * or reading its raw bytes for export. Writing a BRAND NEW database
- * file (the import side, registering a newly-imported set) should keep
- * using getWalletSetDatabasePath's own unmodified path instead, since
- * that exact value is what SQLite.openDatabaseAsync will use to find it
- * again later - swapping that would just move the mismatch to the
- * opposite side.
+ * Historically this did extra work trying a second, alternate directory
+ * form when the first one came back "missing" (see the two now-corrected
+ * guesses in getWalletSetDatabasePath's own comment above) - now that
+ * getWalletSetDatabasePath itself returns a real, correctly-scoped
+ * file:// URI, there's nothing left to fall back to. Kept as a thin
+ * pass-through purely so exportImport.js's existing import/call sites
+ * don't need to change again.
  */
 export async function resolveExistingWalletSetDatabasePath(dbFileName) {
-  const primaryPath = getWalletSetDatabasePath(dbFileName);
-  const primaryInfo = await FileSystem.getInfoAsync(primaryPath).catch(() => ({ exists: false }));
-  if (primaryInfo.exists) return primaryPath;
-
-  const fallbackPath = normalizeDatabaseDirectoryForFileSystem(primaryPath);
-  if (fallbackPath !== primaryPath) {
-    const fallbackInfo = await FileSystem.getInfoAsync(fallbackPath).catch(() => ({ exists: false }));
-    if (fallbackInfo.exists) return fallbackPath;
-  }
-  // Neither form found anything on disk - genuinely doesn't exist yet
-  // (e.g. a set that was created but never actually fetched into).
-  // Return the primary path so a caller's own getInfoAsync-based
-  // `exists` check stays consistent with what this function just found.
-  return primaryPath;
+  return getWalletSetDatabasePath(dbFileName);
 }
 
 async function fileSizeBytes(uri) {
