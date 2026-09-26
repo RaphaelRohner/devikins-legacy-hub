@@ -101,11 +101,29 @@ export function getWalletSetDatabasePath(dbFileName) {
   return `${dir}/${dbFileName}`;
 }
 
+// DIAGNOSTIC (2026-09-26): temporary, to chase down a real reported
+// mismatch - the app's own storage display said "Test 1" was 2.1MB, but
+// exporting that exact same set (exportImport.js, which reads every
+// file's real bytes off disk directly) came out to 18.7MB, 3 separate
+// times. Since both sides list the very same folder and both should be
+// reading real, current file sizes, one of them has to be wrong about
+// individual files - this counts how many files getInfoAsync silently
+// treats as zero-byte/missing (via the catch below, or a false
+// `exists`) so the next real run says exactly how many files that's
+// happening to, rather than just the total. Remove once the cause is
+// confirmed.
+let DIAG_zeroOrMissingCount = 0;
+let DIAG_totalFileCount = 0;
+
 async function fileSizeBytes(uri) {
   try {
     const info = await FileSystem.getInfoAsync(uri);
-    return info.exists && !info.isDirectory ? info.size || 0 : 0;
-  } catch {
+    const size = info.exists && !info.isDirectory ? info.size || 0 : 0;
+    if (size === 0) DIAG_zeroOrMissingCount += 1;
+    return size;
+  } catch (err) {
+    DIAG_zeroOrMissingCount += 1;
+    console.log(`[storageStats] DIAG getInfoAsync threw for ${uri}: ${err.message}`);
     // Missing/unreadable file (e.g. a set that was created but never
     // actually fetched into, so its database file doesn't exist as an
     // actual file yet) - treat that as zero bytes rather than throwing,
@@ -127,6 +145,9 @@ async function directorySizeBytes(dirUri) {
 
   if (fileNames.length === 0) return 0;
 
+  DIAG_zeroOrMissingCount = 0;
+  DIAG_totalFileCount = fileNames.length;
+
   let total = 0;
   let nextIndex = 0;
   async function worker() {
@@ -138,6 +159,17 @@ async function directorySizeBytes(dirUri) {
   }
   const workerCount = Math.min(SIZE_CHECK_CONCURRENCY, fileNames.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  console.log(
+    `[storageStats] DIAG ${dirUri} - ${DIAG_totalFileCount} files found, ` +
+    `${DIAG_zeroOrMissingCount} came back zero-byte/missing/errored, summed total: ${total} bytes`
+  );
+  if (fileNames.length > 0) {
+    const sampleNames = fileNames.slice(0, 3);
+    for (const name of sampleNames) {
+      const info = await FileSystem.getInfoAsync(`${dirUri}${name}`).catch((err) => ({ error: err.message }));
+      console.log(`[storageStats] DIAG sample file ${name}: ${JSON.stringify(info)}`);
+    }
+  }
   return total;
 }
 
