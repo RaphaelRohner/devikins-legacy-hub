@@ -99,7 +99,7 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { Platform } from 'react-native';
 import { Zip, ZipPassThrough, strToU8, strFromU8 } from 'fflate';
-import { getWalletSetDatabasePath, resolveExistingWalletSetDatabasePath } from './storageStats';
+import { getWalletSetDatabasePath, resolveExistingWalletSetDatabasePath, alternateWalletSetDatabasePathForm } from './storageStats';
 import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSetRowCounts } from '../db/database';
 
 // Bumped only if a future change to what's INSIDE an export (the shape
@@ -518,7 +518,22 @@ async function streamWalletSetIntoWriter(writer, walletSet, pathPrefix, onProgre
     `resolved dbPath=${dbPath}, exists=${dbInfo.exists}, size=${dbInfo.exists ? dbInfo.size : 'n/a'}`
   );
   if (dbInfo.exists) {
-    const dbBytes = await readFileBytes(dbPath);
+    let dbBytes;
+    try {
+      dbBytes = await readFileBytes(dbPath);
+    } catch (err) {
+      const altPath = alternateWalletSetDatabasePathForm(dbPath);
+      if (!altPath) throw err;
+      // TEMPORARY diagnostic, added 2026-09-26 - see
+      // alternateWalletSetDatabasePathForm's own comment in
+      // storageStats.js for why getInfoAsync succeeding here didn't
+      // guarantee a real read would too.
+      console.log(
+        `[exportImport] DIAG primary db path wasn't actually readable ` +
+        `(${err.message}) - retrying via ${altPath}`
+      );
+      dbBytes = await readFileBytes(altPath);
+    }
     if (stats) stats.totalRawBytes += dbBytes.length;
     await writer.addFile(`${pathPrefix}database.db`, dbBytes);
   }
@@ -945,8 +960,27 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
     }
 
     if (restOfPath === 'database.db') {
-      const destPath = getWalletSetDatabasePath(group.dbFileName);
-      await copyEntryBytesTo(entry, destPath);
+      const primaryDestPath = getWalletSetDatabasePath(group.dbFileName);
+      let destPath = primaryDestPath;
+      try {
+        await copyEntryBytesTo(entry, primaryDestPath);
+      } catch (err) {
+        const altPath = alternateWalletSetDatabasePathForm(primaryDestPath);
+        if (!altPath) throw err;
+        // TEMPORARY diagnostic, added 2026-09-26 - same permission-wall
+        // story as the export side's own DIAG above, just for writing
+        // instead of reading. Whichever of Android's two equivalent
+        // forms the OS actually grants access through lands the exact
+        // same real file - SQLite.openDatabaseAsync always finds it
+        // again later through its OWN path resolution, independent of
+        // which literal string we used to write the bytes here.
+        console.log(
+          `[exportImport] DIAG primary db path wasn't actually writable ` +
+          `(${err.message}) - retrying via ${altPath}`
+        );
+        await copyEntryBytesTo(entry, altPath);
+        destPath = altPath;
+      }
       // TEMPORARY - see this function's own DIAG comment above.
       try {
         const writtenInfo = await FileSystem.getInfoAsync(destPath, { size: true });

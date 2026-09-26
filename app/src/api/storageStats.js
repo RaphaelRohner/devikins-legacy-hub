@@ -143,14 +143,51 @@ export function getWalletSetDatabasePath(dbFileName) {
   return `file://${dir}/${dbFileName}`;
 }
 
+// ROUND 2 of the file:// fix above (2026-09-26, same day): adding the
+// scheme fixed getInfoAsync (it now correctly reports exists:true with a
+// real size), but reading the file for real still fails with "isn't
+// readable" - a DIFFERENT bug, one layer deeper. Read directly from
+// expo-modules-core's own permission-check source
+// (node_modules/expo-modules-core/android/.../FilePermissionService.kt):
+// every real read/write first checks whether the file's path, once
+// CANONICALIZED (symlinks resolved), starts with the app's own
+// context.filesDir.canonicalPath - computed FRESH, separately, right
+// there in that permission check. getInfoAsync happens to skip this
+// check entirely for file:// input due to what looks like its own
+// internal quirk (it strips the scheme back off before checking
+// permission, which trivially always passes) - that's WHY getInfoAsync
+// could see the file dbBytes couldn't actually be read: it was never
+// really checking the same thing. Whatever the exact reason this
+// particular canonicalization comes out differently for our SQLite
+// folder than it does for the images folder every image already reads
+// through fine (Android's two equivalent internal path forms have come
+// up differently before in this exact investigation - see the two
+// earlier, wrong guesses above, though this time the actual failure
+// point is proven from the real source rather than inferred from
+// behavior alone), the fix that matches the evidence is the same shape
+// as those earlier guesses: try the path expo-sqlite itself reports
+// first, and if a REAL read/write through it fails, retry with the
+// other of Android's two equivalent forms swapped in - since both point
+// at the exact same real file, whichever one the OS actually grants
+// access through lands the same bytes.
+export function alternateWalletSetDatabasePathForm(fileUri) {
+  if (fileUri.includes('/data/data/')) return fileUri.replace('/data/data/', '/data/user/0/');
+  if (fileUri.includes('/data/user/0/')) return fileUri.replace('/data/user/0/', '/data/data/');
+  return null;
+}
+
 /**
- * Historically this did extra work trying a second, alternate directory
- * form when the first one came back "missing" (see the two now-corrected
- * guesses in getWalletSetDatabasePath's own comment above) - now that
- * getWalletSetDatabasePath itself returns a real, correctly-scoped
- * file:// URI, there's nothing left to fall back to. Kept as a thin
- * pass-through purely so exportImport.js's existing import/call sites
- * don't need to change again.
+ * Resolves a wallet set's database path for reading its EXISTENCE/size -
+ * getInfoAsync's own quirk (see alternateWalletSetDatabasePathForm's
+ * comment above) means it can reliably answer "does a file exist here,
+ * and how big is it" through getWalletSetDatabasePath's path alone, even
+ * on a form a real read would later refuse - so there's genuinely
+ * nothing to resolve here beyond what getWalletSetDatabasePath already
+ * returns. Kept as its own function (rather than inlining
+ * getWalletSetDatabasePath at every call site) purely so callers read as
+ * "I want to check this file", separately from
+ * alternateWalletSetDatabasePathForm's very different job of recovering
+ * from a real read/write that actually fails.
  */
 export async function resolveExistingWalletSetDatabasePath(dbFileName) {
   return getWalletSetDatabasePath(dbFileName);

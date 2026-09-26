@@ -3399,12 +3399,57 @@ now-unnecessary directory-form fallback and its `Platform` import were
 removed - once the real scheme is present, there's nothing left to
 fall back to.
 
-Not yet retested on Raphael's phone as of this writing (this exact
-line is now the third time this file has said that for this same
-saga) - next step. If this holds, the fix should show up in the
-`resolved dbPath=` diagnostic line as a `file://`-prefixed path with
-`exists: true`, the manifest as `hasDatabase: true`, and - the real
-test - actual NFTs showing up in the imported copy.
+Retested, and the file:// fix genuinely worked for HALF the problem:
+the diagnostic line came back exactly as hoped -
+`resolved dbPath=file:///data/data/host.exp.exponent/files/SQLite/devikins.db,
+exists=true, size=983040` - getInfoAsync now sees the real file, for
+real, for the first time. But the very next step (actually reading it
+to pack into the zip) failed with a NEW error: `ExponentFileSystem.
+readAsStringAsync` rejected with `IOException: Location '...' isn't
+readable.`
+
+**Round 3, the actual reason getInfoAsync succeeding didn't mean a real
+read would too:** read straight from expo-modules-core's own permission
+source (`node_modules/expo-modules-core/android/.../
+FilePermissionService.kt`). Every real read/write checks whether the
+file's path, once CANONICALIZED, starts with the app's own
+`context.filesDir.canonicalPath` - computed fresh, right there in that
+check. getInfoAsync turns out to have its own separate quirk that skips
+this check entirely for a `file://` input (it strips the scheme back
+off before checking permission, which trivially always passes) - which
+is exactly why it could see the file while a real read couldn't: it was
+never actually testing the same thing. Whatever the deeper reason this
+specific canonicalization comes out differently for the SQLite folder
+than it does for the images folder (which has always read/written
+fine), the fix that matches this evidence is the same shape as the two
+earlier, wrong guesses in this saga - Android's two equivalent internal
+path forms ("/data/data/..." and "/data/user/0/...") really can behave
+differently for this specific permission check, just not for the
+reason either of those two earlier guesses claimed.
+
+**Fix:** added `alternateWalletSetDatabasePathForm` (storageStats.js) -
+swaps between the two forms - and used it as a genuine fallback on both
+sides that do a REAL read or write through expo-file-system: the
+export's own database-file read, and (new territory - no earlier test
+had ever gotten far enough to actually exercise this) the import's
+database-file write. Try the primary path first; if the real
+read/write throws, retry once through the other form. Since both forms
+point at the exact same real file, whichever one Android actually
+grants access through lands the same bytes either way -
+SQLite.openDatabaseAsync finds it again later through its own,
+completely separate path resolution regardless of which literal string
+was used to write it.
+
+Not yet retested on Raphael's phone as of this writing (fourth time -
+this saga has now survived a genuine ZIP-corruption bug, a
+DocumentPicker timing race, and two back-to-back path/permission
+issues that each needed the ACTUAL underlying native source read
+before the real fix was clear) - next step. If this holds: the export
+diagnostic should show a real read succeeding (with or without the
+retry line appearing), the manifest should say `hasDatabase: true`,
+the import's own DIAG should show the write landing real bytes, and -
+the actual test that matters - real NFTs should show up in the
+imported copy.
 
 ## App structure decisions (made while building)
  (made while building)
