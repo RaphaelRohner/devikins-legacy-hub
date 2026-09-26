@@ -580,30 +580,34 @@ export async function saveExportedFileToFolder(fileUri, fileName) {
  * in database.js.
  */
 export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
+  // SECOND ROUND (2026-09-26): the first fix (copy the picked file to
+  // our own path, then read from THAT) didn't hold up - Raphael hit the
+  // exact same "isn't readable" error, just now thrown by the copyAsync
+  // call itself rather than by the ranged read, and still pointing at
+  // DocumentPicker's own cache file as the unreadable SOURCE. That
+  // moves the actual bug: it was never about ranged reads specifically
+  // - ANY read of that file fails, ranged or whole-file, which means
+  // DocumentPicker's own `copyToCacheDirectory: true` step is what's
+  // producing a file this app's own process can't actually read back,
+  // not something wrong with how this app was reading it afterward.
+  //
+  // Fixed (attempt 2) by turning `copyToCacheDirectory` OFF, so
+  // `pickResult.assets[0].uri` is the RAW SAF/content:// URI Android's
+  // own picker handed back, never touched by DocumentPicker's own copy
+  // step at all - and doing the copy into our own cache path ourselves,
+  // directly from that content:// URI, via the exact same
+  // FileSystem.copyAsync this app already uses elsewhere. expo-file-
+  // system's own docs describe this exact scenario for copyAsync -
+  // "copy content shared by other apps to local filesystem" - so this
+  // is its intended use, not a workaround bolted on sideways.
   const pickResult = await DocumentPicker.getDocumentAsync({
     type: '*/*',
-    copyToCacheDirectory: true,
+    copyToCacheDirectory: false,
   });
   if (pickResult.canceled || !pickResult.assets?.[0]) {
     return null;
   }
 
-  // FOUND AND FIXED (2026-09-26): reading straight from DocumentPicker's
-  // own cache copy (pickResult.assets[0].uri) via readAsStringAsync's
-  // position/length options threw a real, reproducible native error -
-  // "java.io.IOException: Location '...DocumentPicker/<uuid>.zip' isn't
-  // readable" - even though that exact same file's plain existence/size
-  // check (getInfoAsync) succeeded just fine. A whole-file read (no
-  // position/length) would likely have worked, but that's exactly the
-  // all-at-once approach this file exists to avoid for a large export.
-  // Fixed by making our OWN plain copy of the picked file, under a
-  // directory this app fully owns (FileSystem.cacheDirectory, not
-  // DocumentPicker's own cache subfolder) - copyAsync does a normal
-  // whole-file stream copy, no ranged reads involved, so it isn't
-  // affected by whatever made the picker's own copy unreadable that
-  // way. Every read below happens against THIS copy, never the original
-  // picked URI. Cleaned up in the `finally` at the bottom either way -
-  // it's a temporary scratch copy, not something worth leaving behind.
   const importScratchUri = `${FileSystem.cacheDirectory}import-scratch-${Date.now()}.zip`;
   await FileSystem.copyAsync({ from: pickResult.assets[0].uri, to: importScratchUri });
 
