@@ -369,13 +369,14 @@ async function readFileBytes(uri) {
  * readFileBytes just returned) - `writer` itself is what keeps the
  * actual zip-building/disk-writing side bounded, per its own comment.
  */
-async function streamWalletSetIntoWriter(writer, walletSet, pathPrefix, onProgress) {
+async function streamWalletSetIntoWriter(writer, walletSet, pathPrefix, onProgress, stats) {
   await checkpointWalletSetForExport(walletSet.db_file_name);
 
   const dbPath = getWalletSetDatabasePath(walletSet.db_file_name);
   const dbInfo = await FileSystem.getInfoAsync(dbPath);
   if (dbInfo.exists) {
     const dbBytes = await readFileBytes(dbPath);
+    if (stats) stats.totalRawBytes += dbBytes.length;
     await writer.addFile(`${pathPrefix}database.db`, dbBytes);
   }
 
@@ -388,6 +389,7 @@ async function streamWalletSetIntoWriter(writer, walletSet, pathPrefix, onProgre
       const fileName = fileNames[i];
       onProgress?.({ phase: 'reading-images', setName: walletSet.name, current: i + 1, total: fileNames.length });
       const bytes = await readFileBytes(`${imagesDirUri}${fileName}`);
+      if (stats) stats.totalRawBytes += bytes.length;
       await writer.addFile(`${pathPrefix}images/${fileName}`, bytes);
       imageCount += 1;
     }
@@ -401,6 +403,37 @@ async function streamWalletSetIntoWriter(writer, walletSet, pathPrefix, onProgre
     imageCount,
   };
   await writer.addFile(`${pathPrefix}manifest.json`, strToU8(JSON.stringify(manifest, null, 2)));
+}
+
+/**
+ * Diagnostic-only, added after Raphael reported a real, unexplained
+ * mismatch: the app's own "Total storage used" display (storageStats.js,
+ * real bytes off actual files) said 129MB across all sets, but an
+ * "export all sets" zip came out at 1.08GB - roughly 8x bigger. Logs
+ * (via console.log, visible in the Expo console) how many raw bytes were
+ * actually read off disk while building the export versus how big the
+ * finished zip file turned out to be, so the next real run tells us
+ * directly whether the SOURCE data itself is bigger than storageStats
+ * thinks, or whether reading/zipping it is what's inflating it - rather
+ * than guessing from code review alone. Never throws - a failure to
+ * stat the finished zip shouldn't fail an export that otherwise worked.
+ */
+async function logExportSizeCheck(fileUri, totalRawBytes) {
+  try {
+    const info = await FileSystem.getInfoAsync(fileUri, { size: true });
+    const zipBytes = info.exists ? info.size || 0 : 0;
+    const ratio = totalRawBytes > 0 ? (zipBytes / totalRawBytes).toFixed(2) : 'n/a';
+    console.log(
+      `[exportImport] size check - raw bytes read from disk: ${totalRawBytes} (${formatMB(totalRawBytes)}), ` +
+      `finished zip file: ${zipBytes} (${formatMB(zipBytes)}), ratio: ${ratio}x`
+    );
+  } catch (err) {
+    console.log(`[exportImport] size check failed (non-fatal): ${err.message}`);
+  }
+}
+
+function formatMB(bytes) {
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
 function pathPrefixForSet(walletSet) {
@@ -419,8 +452,9 @@ export async function exportWalletSet(walletSet, { onProgress } = {}) {
   const fileName = `devikins-${sanitizeForFileName(walletSet.name)}-${timestampForFileName()}.zip`;
   const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
   const writer = new StreamingZipWriter(fileUri);
+  const stats = { totalRawBytes: 0 };
 
-  await streamWalletSetIntoWriter(writer, walletSet, pathPrefixForSet(walletSet), onProgress);
+  await streamWalletSetIntoWriter(writer, walletSet, pathPrefixForSet(walletSet), onProgress, stats);
   await writer.addFile('export-manifest.json', strToU8(JSON.stringify(
     { formatVersion: EXPORT_FORMAT_VERSION, exportedAt: new Date().toISOString(), sets: [{ id: walletSet.id, name: walletSet.name }] },
     null,
@@ -429,6 +463,7 @@ export async function exportWalletSet(walletSet, { onProgress } = {}) {
 
   onProgress?.({ phase: 'writing', setName: walletSet.name });
   await writer.finish();
+  await logExportSizeCheck(fileUri, stats.totalRawBytes);
   return { fileUri, fileName };
 }
 
@@ -444,9 +479,10 @@ export async function exportAllWalletSets(walletSets, { onProgress } = {}) {
   const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
   const writer = new StreamingZipWriter(fileUri);
   const setSummaries = [];
+  const stats = { totalRawBytes: 0 };
 
   for (const walletSet of walletSets) {
-    await streamWalletSetIntoWriter(writer, walletSet, pathPrefixForSet(walletSet), onProgress);
+    await streamWalletSetIntoWriter(writer, walletSet, pathPrefixForSet(walletSet), onProgress, stats);
     setSummaries.push({ id: walletSet.id, name: walletSet.name });
   }
 
@@ -458,6 +494,7 @@ export async function exportAllWalletSets(walletSets, { onProgress } = {}) {
 
   onProgress?.({ phase: 'writing' });
   await writer.finish();
+  await logExportSizeCheck(fileUri, stats.totalRawBytes);
   return { fileUri, fileName };
 }
 
