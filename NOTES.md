@@ -3480,12 +3480,27 @@ library versions the way raw bytes would, and it can't ever be
 "correct file, but the permission check said no" again, because there's
 no file-level permission check left to fail.
 
-Not yet retested on Raphael's phone as of this writing - next step. If
-this holds: the export should complete with no permission errors at
-all, the imported set's manifest.json should show `hasDatabase: true`
-with a real row of data behind it, `logImportedSetRowCounts` should
-show real non-zero counts instead of "no such table," and - the actual
-test that matters - real NFTs should show up in the imported copy.
+**Confirmed working (2026-09-27).** Raphael retested on his phone with
+"My Wallets" - his real, fully-populated main set (55.3MB). Export
+completed with no permission errors at all (raw bytes read: 57,960,253 /
+finished zip: 58,038,140, a clean 1.00x ratio), the import completed the
+same way, and the imported copy showed its real NFTs. This closes out
+the multi-day investigation: the missing `file://` scheme and the
+permission-canonicalization mismatch were both real bugs worth fixing,
+but the SQL-dump/restore pivot above is what actually made export/import
+reliable, by removing the file-level permission check from the picture
+entirely.
+
+Once this was confirmed, the temporary diagnostic logging added while
+chasing the bug (`DIAG` zip-parsing dumps, per-entry header checks, the
+raw manifest dump) was removed from `exportImport.js`, and
+`logImportedSetRowCounts` in `database.js` - originally added as a
+"remove once confirmed" check - was kept as a permanent, low-noise
+post-import confirmation instead of being deleted, since it's a cheap
+sanity check worth having for any future import. The one log line that
+fires on an actual failure (a `database.json` entry that doesn't parse)
+was kept and reworded to read like a normal log message rather than a
+debug probe.
 
 ## App structure decisions (made while building)
  (made while building)

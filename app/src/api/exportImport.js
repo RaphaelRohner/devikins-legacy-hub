@@ -828,33 +828,6 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
   const eocd = await findEndOfCentralDirectory(pickedUri, totalBytes);
   const centralEntries = await readCentralDirectoryEntries(pickedUri, eocd);
 
-  // TEMPORARY diagnostics, added 2026-09-26 while chasing what turned
-  // out to be three separate bugs in this feature (see NOTES.md for the
-  // full story) - kept on since they're cheap and still catch real
-  // problems early: logs exactly what parsing the zip's central
-  // directory found, and directly verifies that a local file header
-  // really does start at the byte offset the central directory says it
-  // does. `database.json` replaced `database.db` on 2026-09-27 (see
-  // dumpWalletSetData/restoreWalletSetData in database.js) once copying
-  // the database FILE's raw bytes turned out to hit a real Android
-  // permission wall - this check now watches that entry instead.
-  console.log(
-    `[exportImport] DIAG zip: totalBytes=${totalBytes}, centralDirOffset=${eocd.centralDirOffset}, ` +
-    `centralDirSize=${eocd.centralDirSize}, entries found=${centralEntries.length}`
-  );
-  for (const entry of centralEntries) {
-    if (entry.name.endsWith('database.json') || entry.name.endsWith('manifest.json')) {
-      const sigBytes = await readRangeBytes(pickedUri, entry.localHeaderOffset, 4);
-      const sig = readUint32LE(sigBytes, 0);
-      const sigOk = sig === 0x04034b50;
-      console.log(
-        `[exportImport] DIAG entry "${entry.name}": compressionMethod=${entry.compressionMethod}, ` +
-        `compressedSize=${entry.compressedSize}, localHeaderOffset=${entry.localHeaderOffset}, ` +
-        `dataOffset=${entry.dataOffset}, local header signature ${sigOk ? 'OK' : `WRONG (0x${sig.toString(16)})`}`
-      );
-    }
-  }
-
   // One entry per top-level zip folder (a `set-<id>-<name>/` from
   // exportWalletSet/exportAllWalletSets above) - allocated the first
   // time any file belonging to that folder is seen, since the
@@ -986,12 +959,6 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
     } catch {
       continue;
     }
-    // TEMPORARY diagnostic - see streamWalletSetIntoWriter's own DIAG
-    // comment. This is the exported manifest.json's own recorded
-    // hasDatabase/imageCount for THIS zip, straight from the file
-    // itself - tells us what the export actually believed it packed,
-    // even for a zip exported before this diagnostic existed.
-    console.log(`[exportImport] DIAG manifest for "${manifest.name}": ${JSON.stringify(manifest)}`);
     const importedName = `${manifest.name || 'Imported set'} (imported)`;
 
     // 2026-09-27: rebuild the set's actual data from database.json's
@@ -1005,7 +972,7 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
       try {
         dump = JSON.parse(strFromU8(group.dumpBytes));
       } catch (err) {
-        console.log(`[exportImport] DIAG couldn't parse database.json for "${manifest.name}": ${err.message}`);
+        console.log(`[exportImport] Couldn't parse database.json for "${manifest.name}" - importing as an empty set instead: ${err.message}`);
       }
     }
     await restoreWalletSetData(group.dbFileName, dump);
