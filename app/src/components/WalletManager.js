@@ -402,7 +402,19 @@ export default function WalletManager({
       return `Reading images... ${progress.current}/${progress.total}`;
     }
     if (progress.phase === 'zipping') return 'Compressing...';
-    if (progress.phase === 'writing') return 'Writing file...';
+    // Export's own final step - see exportWalletSet/exportAllWalletSets'
+    // own onProgress call in exportImport.js. Raphael's own report: this
+    // used to just say "Writing file..." with no numbers at all, right
+    // when every image had already been read - now carries the same
+    // running byte total the reading step already tracked, so the label
+    // stays a real, specific number all the way through instead of
+    // reverting to a bare word right at the end.
+    if (progress.phase === 'writing') {
+      if (progress.current != null && progress.total != null) {
+        return `Writing file... ${formatBytes(progress.current)} / ${formatBytes(progress.total)}`;
+      }
+      return 'Writing file...';
+    }
     // Import's own read phase - see importWalletSetsZipFromLocalFile's
     // onProgress call in exportImport.js. Tracked in bytes rather than a
     // file count (it covers manifest.json/database.json too, not just

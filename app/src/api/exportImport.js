@@ -114,6 +114,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Platform } from 'react-native';
 import { Zip, ZipPassThrough, strToU8, strFromU8 } from 'fflate';
 import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSetRowCounts, dumpWalletSetData, restoreWalletSetData } from '../db/database';
+import { directorySizeBytes } from './storageStats';
 
 // Bumped only if a future change to what's INSIDE an export (the shape
 // of manifest.json, what folders/files exist) would need the import
@@ -636,6 +637,23 @@ function formatMB(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+// Raphael's own request: the export button's final "writing" step used
+// to just show a static "Writing file..." with no numbers at all, once
+// every image had already been read - see this file's own
+// exportWalletSet/exportAllWalletSets for where this gets used. Images
+// dominate a set's real size by far (see storageStats.js's own
+// comments on this), so summing just the images folder - the same real,
+// race-free directory scan storageStats.js already uses for the
+// "Total storage used" display - is a close enough stand-in for "how
+// big will this export be," known upfront, before dumpWalletSetData's
+// own (much smaller, and not knowable in advance without actually
+// running it) contribution is added in as export proceeds.
+async function estimateWalletSetImagesBytes(walletSet) {
+  const imagesDirUri = `${FileSystem.documentDirectory}${walletSet.images_dir_name}/`;
+  const imagesDirInfo = await FileSystem.getInfoAsync(imagesDirUri);
+  return imagesDirInfo.exists ? directorySizeBytes(imagesDirUri) : 0;
+}
+
 function pathPrefixForSet(walletSet) {
   return `set-${walletSet.id}-${sanitizeForFileName(walletSet.name)}/`;
 }
@@ -653,6 +671,7 @@ export async function exportWalletSet(walletSet, { onProgress } = {}) {
   const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
   const writer = new StreamingZipWriter(fileUri);
   const stats = { totalRawBytes: 0 };
+  const estimatedTotalBytes = await estimateWalletSetImagesBytes(walletSet);
 
   await streamWalletSetIntoWriter(writer, walletSet, pathPrefixForSet(walletSet), onProgress, stats);
   await writer.addFile('export-manifest.json', strToU8(JSON.stringify(
@@ -661,7 +680,7 @@ export async function exportWalletSet(walletSet, { onProgress } = {}) {
     2
   )));
 
-  onProgress?.({ phase: 'writing', setName: walletSet.name });
+  onProgress?.({ phase: 'writing', setName: walletSet.name, current: stats.totalRawBytes, total: estimatedTotalBytes });
   await writer.finish();
   await logExportSizeCheck(fileUri, stats.totalRawBytes);
   return { fileUri, fileName };
@@ -681,6 +700,11 @@ export async function exportAllWalletSets(walletSets, { onProgress } = {}) {
   const setSummaries = [];
   const stats = { totalRawBytes: 0 };
 
+  let estimatedTotalBytes = 0;
+  for (const walletSet of walletSets) {
+    estimatedTotalBytes += await estimateWalletSetImagesBytes(walletSet);
+  }
+
   for (const walletSet of walletSets) {
     await streamWalletSetIntoWriter(writer, walletSet, pathPrefixForSet(walletSet), onProgress, stats);
     setSummaries.push({ id: walletSet.id, name: walletSet.name });
@@ -692,7 +716,7 @@ export async function exportAllWalletSets(walletSets, { onProgress } = {}) {
     2
   )));
 
-  onProgress?.({ phase: 'writing' });
+  onProgress?.({ phase: 'writing', current: stats.totalRawBytes, total: estimatedTotalBytes });
   await writer.finish();
   await logExportSizeCheck(fileUri, stats.totalRawBytes);
   return { fileUri, fileName };

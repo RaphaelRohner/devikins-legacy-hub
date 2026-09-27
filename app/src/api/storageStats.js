@@ -228,7 +228,13 @@ async function fileSizeBytes(uri) {
  * atomic - it was only a statement spanning an `await` that could be
  * interleaved.
  */
-async function directorySizeBytes(dirUri) {
+// Exported (2026-09-27) so exportImport.js can reuse this same
+// concurrent, race-free directory-size sum for its own export progress
+// estimate (see estimateWalletSetImagesBytes there) - Raphael's own
+// request, to give the export button's final "writing" step a real
+// MB-written/MB-total figure instead of a bare "Writing file..." with
+// no numbers behind it.
+export async function directorySizeBytes(dirUri) {
   let fileNames;
   try {
     const dirInfo = await FileSystem.getInfoAsync(dirUri);
