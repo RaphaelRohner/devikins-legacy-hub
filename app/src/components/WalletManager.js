@@ -179,6 +179,7 @@ export default function WalletManager({
   const [isExportingId, setIsExportingId] = useState(null);
   const [exportProgressLabel, setExportProgressLabel] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [importProgressLabel, setImportProgressLabel] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -385,16 +386,41 @@ export default function WalletManager({
   }
 
   // Turns an exportImport.js onProgress callback into the one-line
-  // status text shown on whichever Export button is currently running -
-  // shared by handleExportSet and handleExportAllSets below since both
-  // report the exact same phases.
-  function describeExportProgress(progress) {
+  // status text shown on whichever Export/Import button is currently
+  // running - shared by handleExportSet/handleExportAllSets/handleImport
+  // below, since export and import report overlapping phases (both read
+  // a stream of images) and the rest are specific to one direction.
+  // Raphael's own request, once the Export button had this and the
+  // Import button was still stuck on a plain "Importing..." the whole
+  // time regardless of how big the file was. Returns null for a phase
+  // this doesn't recognize, rather than guessing - callers already fall
+  // back to their own generic "Exporting.../Importing..." label whenever
+  // this hasn't produced anything more specific yet (e.g. before the
+  // first progress event arrives at all).
+  function describeTransferProgress(progress) {
     if (progress.phase === 'reading-images') {
       return `Reading images... ${progress.current}/${progress.total}`;
     }
     if (progress.phase === 'zipping') return 'Compressing...';
     if (progress.phase === 'writing') return 'Writing file...';
-    return 'Exporting...';
+    // Import's own read phase - see importWalletSetsZipFromLocalFile's
+    // onProgress call in exportImport.js. Tracked in bytes rather than a
+    // file count (it covers manifest.json/database.json too, not just
+    // images), so this uses formatBytes the same way the storage totals
+    // elsewhere on this screen already do, rather than showing raw byte
+    // numbers.
+    if (progress.phase === 'unzipping') {
+      return `Reading files... ${formatBytes(progress.current)} / ${formatBytes(progress.total)}`;
+    }
+    // Rebuilding a set's actual data from its dump (restoreWalletSetData
+    // in database.js) - can take real time on its own for a large set,
+    // well after every byte's already been read, so this needs its own
+    // distinct label rather than leaving "Reading files..." sitting at
+    // 100% while it happens.
+    if (progress.phase === 'restoring') {
+      return progress.setName ? `Rebuilding "${progress.setName}"...` : 'Rebuilding data...';
+    }
+    return null;
   }
 
   // Raphael's own explicit request: rather than picking one of "share
@@ -450,7 +476,7 @@ export default function WalletManager({
     setExportProgressLabel('Preparing export...');
     try {
       const { fileUri, fileName } = await exportWalletSet(set, {
-        onProgress: (progress) => setExportProgressLabel(describeExportProgress(progress)),
+        onProgress: (progress) => setExportProgressLabel(describeTransferProgress(progress)),
       });
       await presentSaveOrShareChoice(fileUri, fileName);
     } catch (err) {
@@ -466,7 +492,7 @@ export default function WalletManager({
     setExportProgressLabel('Preparing export...');
     try {
       const { fileUri, fileName } = await exportAllWalletSets(walletSets, {
-        onProgress: (progress) => setExportProgressLabel(describeExportProgress(progress)),
+        onProgress: (progress) => setExportProgressLabel(describeTransferProgress(progress)),
       });
       await presentSaveOrShareChoice(fileUri, fileName);
     } catch (err) {
@@ -485,8 +511,11 @@ export default function WalletManager({
   // backing out of the picker.
   async function handleImport() {
     setIsImporting(true);
+    setImportProgressLabel('Preparing import...');
     try {
-      const result = await pickAndImportWalletSetsZip();
+      const result = await pickAndImportWalletSetsZip({
+        onProgress: (progress) => setImportProgressLabel(describeTransferProgress(progress)),
+      });
       if (result === null) {
         return;
       }
@@ -512,6 +541,7 @@ export default function WalletManager({
       reportSetActionError(err, 'Importing that file');
     } finally {
       setIsImporting(false);
+      setImportProgressLabel('');
     }
   }
 
@@ -653,8 +683,8 @@ export default function WalletManager({
               onPress={handleImport}
               disabled={isImporting || isExportingId !== null}
             >
-              <Text style={[styles.rowButtonText, { color: colors.text }]}>
-                {isImporting ? 'Importing...' : 'Import a set'}
+              <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
+                {isImporting ? (importProgressLabel || 'Importing...') : 'Import a set'}
               </Text>
             </TouchableOpacity>
           ) : null}

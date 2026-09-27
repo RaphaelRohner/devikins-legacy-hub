@@ -1056,6 +1056,13 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
     } else if (group.dumpBytes && group.dumpBytes.length > 0 && !group.dumpBytesVerified) {
       console.log(`[exportImport] database.json for "${manifest.name}" failed its checksum check - importing as an empty set rather than trusting data that didn't come through intact.`);
     }
+    // Rebuilding a large set's data (thousands of individual row
+    // inserts - see restoreWalletSetData's own comment in database.js)
+    // can take real, noticeable time on its own, well after the last
+    // byte of the zip has already been read - without this, the import
+    // button's progress label would sit frozen at "100% read" for that
+    // whole stretch, looking stuck rather than still working.
+    onProgress?.({ phase: 'restoring', setName: manifest.name });
     await restoreWalletSetData(group.dbFileName, dump);
 
     await registerImportedWalletSet(importedName, group.dbFileName, group.imagesDirName);
