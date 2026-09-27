@@ -69,15 +69,15 @@ import * as FileSystem from 'expo-file-system/legacy';
 
 // Which wallet set's own image folder is currently active - swapped by
 // setActiveImagesDirName() below whenever the active set changes (see
-// database.js's switchToWalletSet/createWalletSet/unloadCurrentWalletSet,
-// part of the wallet-sets feature). Starts out pointing at the original
+// database.js's switchToWalletSet/createWalletSet/deleteWalletSet, part
+// of the wallet-sets feature). Starts out pointing at the original
 // single-set folder name, matching database.js's own default active
 // database file, so images work correctly before the wallet-sets
 // registry has had a chance to run its own startup check. null means no
-// set is currently active at all (the "Empty" action was used, or the
-// app is still starting up) - every function below treats that as a
-// safe no-op rather than trying to touch a directory that doesn't mean
-// anything right now.
+// set is currently active at all (the previously-active set was
+// deleted and nothing new was picked yet, or the app is still starting
+// up) - every function below treats that as a safe no-op rather than
+// trying to touch a directory that doesn't mean anything right now.
 let activeImagesDirName = 'nft-images';
 
 function currentImageStorageDir() {
@@ -251,11 +251,8 @@ export async function fetchImageEtag(remoteUrl) {
  * active, because both of those callers may be reaching into a set
  * that ISN'T the active one (Delete works on any set in the switcher
  * list, not just the loaded one - see deleteWalletSet's own comment in
- * database.js). Note "Empty" (unloadCurrentWalletSet in database.js)
- * deliberately never calls this at all - unloading a set doesn't touch
- * its data, images included, that's the whole point of it being
- * non-destructive. Safe to call even if the folder was never created
- * (a set that was made but never actually fetched into).
+ * database.js). Safe to call even if the folder was never created (a
+ * set that was made but never actually fetched into).
  */
 export async function deleteStoredImagesForDir(dirName) {
   if (!dirName) return;

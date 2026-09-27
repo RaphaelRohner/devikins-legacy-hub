@@ -104,7 +104,7 @@ const FAQ_ENTRIES = [
     question: 'How do wallet sets work?',
     keywords: ['set', 'sets', 'wallet set', 'wallet sets', 'switch', 'profile', 'profiles', 'friend', 'kid'],
     answer:
-      "At the top of the Wallets screen, above your wallet list, is a switcher for wallet sets - completely separate, independently saved collections of wallets and their fetched NFTs. Handy if two people share the app (each gets their own set), or if you want to peek at a friend's collection without mixing it into your own. Tap + New set to start one; tap any set's name to load it. Rename any set any time, or Empty the active one to unload it without deleting anything - it stays in the list, ready to load back in. Delete removes a set for good, including its downloaded images.",
+      "At the top of the Wallets screen, above your wallet list, is a switcher for wallet sets - completely separate, independently saved collections of wallets and their fetched NFTs. Handy if two people share the app (each gets their own set), or if you want to peek at a friend's collection without mixing it into your own. Tap + New set to start one; tap any set's name to load it. Rename any set any time. Delete removes a set for good, including its downloaded images.",
   },
   {
     id: 'fetch-update',

@@ -181,8 +181,9 @@ function AppContent() {
   // downloaded images - see database.js's own "Wallet sets" section for
   // the full reasoning). `walletSets` is every set that exists, for the
   // switcher in WalletManager.js; `activeWalletSetId` is whichever one
-  // is currently loaded, or null if none is (the "Empty" action was
-  // used). Nothing in this file queries the database for NFT data while
+  // is currently loaded, or null if none is (this happens if the
+  // previously-active set was deleted and nothing new was picked yet).
+  // Nothing in this file queries the database for NFT data while
   // wallets is empty - and wallets is always set to [] the moment no
   // set is active (see refreshWalletSetsState below) - so a null
   // activeWalletSetId doesn't need its own separate guard everywhere;
@@ -514,10 +515,11 @@ function AppContent() {
         // always.
         await loadWallets();
       } else {
-        // Nothing's active (the "Empty" action was used on a previous
-        // run) - land straight on Wallets rather than an empty
-        // Devikins tab with no obvious way to tell why, so loading or
-        // creating a set is the very next thing in front of the user.
+        // Nothing's active (the previously-active set was deleted and
+        // nothing new was picked yet) - land straight on Wallets rather
+        // than an empty Devikins tab with no obvious way to tell why,
+        // so loading or creating a set is the very next thing in front
+        // of the user.
         setCurrentScreen('wallets');
       }
       setIsDatabaseReady(true);

@@ -42,9 +42,10 @@ import { setActiveImagesDirName, deleteStoredImagesForDir } from '../api/imageSt
 // before until initWalletSets() (called once from App.js's startup
 // effect) has had a chance to check the registry and possibly point
 // this somewhere else. null means no set is currently active at all
-// (the "Empty" action was used) - getDatabase() is never called in that
-// state (App.js doesn't query for NFTs/wallets without an active set),
-// but see closeActiveDatabase below for how the actual swap happens.
+// (this happens if the previously-active set was deleted and nothing
+// new was picked yet) - getDatabase() is never called in that state
+// (App.js doesn't query for NFTs/wallets without an active set), but
+// see closeActiveDatabase below for how the actual swap happens.
 let activeDatabaseFileName = 'devikins.db';
 
 // We only want to open the database once and reuse the same connection
@@ -1467,9 +1468,10 @@ async function ensureRegistryTablesExist() {
  * Called once from App.js's startup effect, BEFORE initDatabase() -
  * App.js only goes on to call initDatabase()/loadWallets() itself if
  * this returns a real id; a null return means no set is currently
- * active (the "Empty" action was used), and App.js shows the Wallets
- * screen so Raphael can load or create one instead of trying to query
- * NFT data that has nowhere to come from right now.
+ * active (this happens if the previously-active set was deleted and
+ * nothing new was picked yet), and App.js shows the Wallets screen so
+ * Raphael can load or create one instead of trying to query NFT data
+ * that has nowhere to come from right now.
  */
 export async function initWalletSets() {
   await ensureRegistryTablesExist();
@@ -1482,9 +1484,10 @@ export async function initWalletSets() {
 
   const activeRow = await registryDb.getFirstAsync(`SELECT * FROM wallet_sets WHERE is_active = 1`);
   if (!activeRow) {
-    // Nothing active - the "Empty" action was used on a previous run.
-    // Leave activeDatabaseFileName/imageStorage.js pointing at nothing
-    // rather than guessing; App.js handles this state explicitly.
+    // Nothing active - the previously-active set was deleted and
+    // nothing new has been picked yet. Leave activeDatabaseFileName/
+    // imageStorage.js pointing at nothing rather than guessing; App.js
+    // handles this state explicitly.
     activeDatabaseFileName = null;
     setActiveImagesDirName(null);
     return null;
@@ -1580,24 +1583,6 @@ export async function switchToWalletSet(id) {
 }
 
 /**
- * Closes out the currently active set WITHOUT deleting any of its data
- * - Raphael's own "Empty" action: leaves the app with nothing active at
- * all until Wallets is used again to load a different set or create a
- * new one. Every already-saved wallet/NFT/image for this set stays
- * exactly where it is on the phone, untouched - "Empty" only clears
- * which one is marked active, the same state a brand-new install (or a
- * Reset All Data) is already in before its own first set is created.
- */
-export async function unloadCurrentWalletSet() {
-  await ensureRegistryTablesExist();
-  const registryDb = await getRegistryDatabase();
-  await closeActiveDatabase();
-  await registryDb.runAsync(`UPDATE wallet_sets SET is_active = 0`);
-  activeDatabaseFileName = null;
-  setActiveImagesDirName(null);
-}
-
-/**
  * Permanently deletes one wallet set - its database file, its image
  * folder, and its row in the registry - with no way to get it back
  * (WalletManager.js gets a real confirmation prompt in front of this,
@@ -1606,8 +1591,8 @@ export async function unloadCurrentWalletSet() {
  * pointed at the wrong address and pulled in a huge pile of broken
  * entries) can be removed without first having to switch into it. If
  * the set being deleted happens to be the active one, the app is left
- * with nothing active afterward, same as unloadCurrentWalletSet above -
- * Raphael goes back to Wallets to load or create a different one.
+ * with nothing active afterward - Raphael goes back to Wallets to load
+ * or create a different one.
  */
 export async function deleteWalletSet(id) {
   await ensureRegistryTablesExist();

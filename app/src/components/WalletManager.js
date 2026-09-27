@@ -48,10 +48,11 @@
  * take most often (starting a new set) shouldn't require scrolling
  * past however many sets already exist to find it.
  *
- * When no set is active at all (the "Empty" action was used - see
- * handleEmptySet below), the Add row and wallet list are replaced with
- * a short explanation instead of rendering against data that doesn't
- * exist - see the `activeWalletSetId` check partway through this file.
+ * When no set is active at all (this happens if the previously-active
+ * set was deleted and nothing new was picked yet), the Add row and
+ * wallet list are replaced with a short explanation instead of
+ * rendering against data that doesn't exist - see the
+ * `activeWalletSetId` check partway through this file.
  *
  * Danger zone (bottom of the list) sits behind its own always-visible
  * toggle, off by default - also per feedback: a screen opened this
@@ -93,7 +94,6 @@ import {
   createWalletSet,
   renameWalletSet,
   switchToWalletSet,
-  unloadCurrentWalletSet,
   deleteWalletSet,
 } from '../db/database';
 import { useTheme } from '../context/ThemeContext';
@@ -352,21 +352,6 @@ export default function WalletManager({
       onWalletSetsChanged();
     } catch (err) {
       reportSetActionError(err, 'Renaming that set');
-    }
-  }
-
-  // Unloads the currently active set without touching any of its data -
-  // Raphael's own "Empty" action (see unloadCurrentWalletSet's own
-  // comment in database.js). No confirmation dialog, same reasoning as
-  // handleDelete above for a single wallet: nothing is actually erased,
-  // so there's nothing risky to confirm - the set stays in the switcher
-  // list below, ready to load back in any time.
-  async function handleEmptySet() {
-    try {
-      await unloadCurrentWalletSet();
-      onWalletSetsChanged();
-    } catch (err) {
-      reportSetActionError(err, 'Emptying that set');
     }
   }
 
@@ -753,14 +738,6 @@ export default function WalletManager({
                         {isExportingId === set.id ? (exportProgressLabel || 'Exporting...') : 'Export'}
                       </Text>
                     </TouchableOpacity>
-                    {isActive && !isThisSetExporting ? (
-                      <TouchableOpacity
-                        style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
-                        onPress={handleEmptySet}
-                      >
-                        <Text style={[styles.rowButtonText, { color: colors.text }]}>Empty</Text>
-                      </TouchableOpacity>
-                    ) : null}
                     {!isThisSetExporting ? (
                       <TouchableOpacity
                         style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }]}
