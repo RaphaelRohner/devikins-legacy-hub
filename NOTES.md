@@ -3502,6 +3502,27 @@ fires on an actual failure (a `database.json` entry that doesn't parse)
 was kept and reworded to read like a normal log message rather than a
 debug probe.
 
+**Checksum verification, added the same day.** Raphael asked, reasonably
+given how much trouble this feature caused, whether there's a way to
+actually confirm an export and its import are 100% the same - images
+included, not just "it didn't crash." The answer turned out to already be
+sitting right there in the zip format itself: every file this app writes
+into an export gets a real CRC32 checksum from `fflate` (the zip library),
+stored in the zip's own central directory exactly the way any zip file
+works - it just wasn't being checked on the way back in. Import now
+recomputes that same checksum for every image, plus `manifest.json` and
+`database.json`, and compares it against what the export recorded. If
+anything doesn't match, the "Import complete" message names exactly which
+file(s) didn't come through intact, rather than reporting success either
+way; a corrupted `database.json` specifically is treated as untrustworthy
+and that set imports with an empty database rather than risking silently
+wrong data. When everything matches (the expected case), the message now
+says so plainly: "Every file, including every image, was checked against
+the export and matched exactly." No new dependency was needed - CRC32 is
+a small, well-known algorithm and this app already reads every one of
+those bytes during import anyway, so the check adds real confidence at
+essentially no extra cost.
+
 ## App structure decisions (made while building)
  (made while building)
 

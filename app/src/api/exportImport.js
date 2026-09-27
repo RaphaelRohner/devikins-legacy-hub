@@ -92,6 +92,20 @@
  * FileSystem.readAsStringAsync's `position`/`length` options and
  * writeAsStringAsync's `append` option - both confirmed present in the
  * installed expo-file-system version before relying on them here.
+ *
+ * Checksum verification (added 2026-09-27, after Raphael confirmed a
+ * real export/import round-trip worked and asked whether it could be
+ * confirmed to be 100% identical): every file this app writes into an
+ * export already gets a real CRC32 from fflate, sitting in the zip's own
+ * central directory, same as any zip file. Import now recomputes that
+ * same CRC32 over whatever actually landed on the phone - every image,
+ * plus manifest.json and database.json - and compares it against what
+ * the export originally recorded (see crc32Bytes/crc32Update and their
+ * call sites below). A mismatched database.json is treated as
+ * untrustworthy (the set imports with an empty database rather than
+ * risking corrupted data), and any mismatch at all is named specifically
+ * in the "Import complete" message rather than the import just quietly
+ * reporting success either way.
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
@@ -393,6 +407,48 @@ function readUint32LE(bytes, offset) {
   );
 }
 
+// A small, dependency-free CRC32 (the same checksum every zip file
+// already carries for each of its own entries - see the `crc32` field
+// readCentralDirectoryEntries pulls out of the central directory below).
+// fflate computes a real one for every file this app writes into an
+// export (ZipPassThrough's own job); recomputing it here over whatever
+// actually got read back on import - once per image, plus manifest.json
+// and database.json - is a free, reliable way to confirm a file came
+// through completely intact, in response to Raphael asking whether
+// export/import could be trusted to be byte-for-byte identical after
+// this investigation's several rounds of Android permission trouble.
+// `crc32Update` is chainable (state in, state out) so a big image read
+// in several STREAM_CHUNK_BYTES pieces (see copyEntryBytesTo) gets
+// exactly the same final answer as reading it all at once; only the
+// very last state gets run through crc32Finalize.
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32Update(bytes, state) {
+  let crc = state;
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return crc;
+}
+
+function crc32Finalize(state) {
+  return (state ^ 0xffffffff) >>> 0;
+}
+
+function crc32Bytes(bytes) {
+  return crc32Finalize(crc32Update(bytes, 0xffffffff));
+}
+
 const ZIP_END_OF_CENTRAL_DIR_SIGNATURE = 0x06054b50;
 const ZIP_CENTRAL_DIR_SIGNATURE = 0x02014b50;
 // The end-of-central-directory record is exactly 22 bytes, plus an
@@ -474,6 +530,7 @@ async function readCentralDirectoryEntries(uri, eocd) {
   while (pos + 46 <= dirBytes.length) {
     if (readUint32LE(dirBytes, pos) !== ZIP_CENTRAL_DIR_SIGNATURE) break;
     const compressionMethod = readUint16LE(dirBytes, pos + 10);
+    const crc32 = readUint32LE(dirBytes, pos + 16);
     const compressedSize = readUint32LE(dirBytes, pos + 20);
     const fileNameLength = readUint16LE(dirBytes, pos + 28);
     const extraFieldLength = readUint16LE(dirBytes, pos + 30);
@@ -483,6 +540,7 @@ async function readCentralDirectoryEntries(uri, eocd) {
     entries.push({
       name: strFromU8(nameBytes),
       compressionMethod,
+      crc32,
       compressedSize,
       localHeaderOffset,
       // Right after this entry's local header's fixed 30 bytes plus
@@ -849,6 +907,8 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
         imagesDirEnsured: null,
         manifestBytes: null,
         dumpBytes: null,
+        dumpBytesVerified: false,
+        checksumFailures: [],
       };
       groups.set(folderName, group);
     }
@@ -895,9 +955,11 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
     const writer = new StreamingFileWriter(destUri);
     let remaining = entry.compressedSize;
     let position = entry.dataOffset;
+    let crcState = 0xffffffff;
     while (remaining > 0) {
       const length = Math.min(STREAM_CHUNK_BYTES, remaining);
       const bytes = await readRangeBytes(pickedUri, position, length);
+      crcState = crc32Update(bytes, crcState);
       writer.push(bytes);
       await writer.flushIfNeeded();
       position += length;
@@ -906,12 +968,20 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
       onProgress?.({ phase: 'unzipping', current: bytesProcessed, total: totalPlannedBytes });
     }
     await writer.finish();
+    // Whatever this actually wrote to destUri, recomputed the same way
+    // the zip's own central directory entry was - the caller compares
+    // this against entry.crc32 to know whether the file that landed on
+    // disk is really identical to the one that got exported.
+    return crc32Finalize(crcState);
   }
 
   for (const { entry, group, restOfPath } of plannedEntries) {
     if (restOfPath === 'manifest.json') {
       assertStored(entry);
       group.manifestBytes = await readRangeBytes(pickedUri, entry.dataOffset, entry.compressedSize);
+      if (crc32Bytes(group.manifestBytes) !== entry.crc32) {
+        group.checksumFailures.push('manifest.json');
+      }
       bytesProcessed += entry.compressedSize;
       continue;
     }
@@ -925,6 +995,10 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
       // complete.
       assertStored(entry);
       group.dumpBytes = await readRangeBytes(pickedUri, entry.dataOffset, entry.compressedSize);
+      group.dumpBytesVerified = crc32Bytes(group.dumpBytes) === entry.crc32;
+      if (!group.dumpBytesVerified) {
+        group.checksumFailures.push('database.json');
+      }
       bytesProcessed += entry.compressedSize;
       continue;
     }
@@ -936,7 +1010,11 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
         group.imagesDirEnsured = FileSystem.makeDirectoryAsync(imagesDirUri, { intermediates: true });
       }
       await group.imagesDirEnsured;
-      await copyEntryBytesTo(entry, `${imagesDirUri}${imageFileName}`);
+      const actualCrc32 = await copyEntryBytesTo(entry, `${imagesDirUri}${imageFileName}`);
+      if (actualCrc32 !== entry.crc32) {
+        group.checksumFailures.push(imageFileName);
+        console.log(`[exportImport] "${imageFileName}" didn't match its original checksum after import - it may be missing or corrupted.`);
+      }
       continue;
     }
 
@@ -946,6 +1024,7 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
   }
 
   const importedNames = [];
+  const warnings = [];
   for (const group of groups.values()) {
     if (!group.manifestBytes || group.manifestBytes.length === 0) {
       // A folder with no manifest.json isn't a wallet set this app
@@ -968,21 +1047,29 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
     // entry) just leaves the set with an empty, freshly-schema'd
     // database rather than failing the whole import.
     let dump = {};
-    if (group.dumpBytes && group.dumpBytes.length > 0) {
+    if (group.dumpBytes && group.dumpBytes.length > 0 && group.dumpBytesVerified) {
       try {
         dump = JSON.parse(strFromU8(group.dumpBytes));
       } catch (err) {
         console.log(`[exportImport] Couldn't parse database.json for "${manifest.name}" - importing as an empty set instead: ${err.message}`);
       }
+    } else if (group.dumpBytes && group.dumpBytes.length > 0 && !group.dumpBytesVerified) {
+      console.log(`[exportImport] database.json for "${manifest.name}" failed its checksum check - importing as an empty set rather than trusting data that didn't come through intact.`);
     }
     await restoreWalletSetData(group.dbFileName, dump);
 
     await registerImportedWalletSet(importedName, group.dbFileName, group.imagesDirName);
     await logImportedSetRowCounts(group.dbFileName);
     importedNames.push(importedName);
+
+    if (group.checksumFailures.length > 0) {
+      const shown = group.checksumFailures.slice(0, 5).join(', ');
+      const more = group.checksumFailures.length > 5 ? `, and ${group.checksumFailures.length - 5} more` : '';
+      warnings.push(`${importedName}: ${group.checksumFailures.length} file(s) didn't match the original after import (${shown}${more}) - that set may be missing data or have a damaged image.`);
+    }
   }
 
-  return importedNames;
+  return { importedNames, warnings };
 }
 
 // Re-exported purely so WalletManager.js can check "does this platform

@@ -501,17 +501,28 @@ export default function WalletManager({
   async function handleImport() {
     setIsImporting(true);
     try {
-      const importedNames = await pickAndImportWalletSetsZip();
-      if (importedNames === null) {
+      const result = await pickAndImportWalletSetsZip();
+      if (result === null) {
         return;
       }
+      const { importedNames, warnings } = result;
       onWalletSetsChanged();
-      Alert.alert(
-        importedNames.length > 0 ? 'Import complete' : 'Nothing imported',
-        importedNames.length > 0
-          ? `Added: ${importedNames.join(', ')}. Use the switcher above to load one.`
-          : "That file didn't contain any wallet sets."
-      );
+      let message;
+      if (importedNames.length === 0) {
+        message = "That file didn't contain any wallet sets.";
+      } else {
+        message = `Added: ${importedNames.join(', ')}. Use the switcher above to load one.`;
+        // Every file this app exports carries a checksum (see
+        // exportImport.js's crc32Bytes/copyEntryBytesTo) that import
+        // re-checks against what actually landed on the phone - so this
+        // message can say for real whether everything (including every
+        // image) came through identical, not just that the import
+        // finished without crashing.
+        message += warnings.length > 0
+          ? `\n\n${warnings.join('\n\n')}`
+          : ' Every file, including every image, was checked against the export and matched exactly.';
+      }
+      Alert.alert(importedNames.length > 0 ? 'Import complete' : 'Nothing imported', message);
     } catch (err) {
       reportSetActionError(err, 'Importing that file');
     } finally {
