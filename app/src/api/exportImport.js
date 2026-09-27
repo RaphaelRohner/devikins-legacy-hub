@@ -1063,7 +1063,9 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
     // button's progress label would sit frozen at "100% read" for that
     // whole stretch, looking stuck rather than still working.
     onProgress?.({ phase: 'restoring', setName: manifest.name });
-    await restoreWalletSetData(group.dbFileName, dump);
+    await restoreWalletSetData(group.dbFileName, dump, (rowProgress) => {
+      onProgress?.({ phase: 'restoring', setName: manifest.name, current: rowProgress.current, total: rowProgress.total });
+    });
 
     await registerImportedWalletSet(importedName, group.dbFileName, group.imagesDirName);
     await logImportedSetRowCounts(group.dbFileName);

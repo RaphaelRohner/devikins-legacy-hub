@@ -418,7 +418,16 @@ export default function WalletManager({
     // distinct label rather than leaving "Reading files..." sitting at
     // 100% while it happens.
     if (progress.phase === 'restoring') {
-      return progress.setName ? `Rebuilding "${progress.setName}"...` : 'Rebuilding data...';
+      // Raphael's own report: this used to just sit on a bare
+      // "Rebuilding ..." for however long a big set's row-by-row
+      // restore took, with nothing telling him where it actually was -
+      // see restoreWalletSetData's own onProgress in database.js for
+      // the row count this now carries.
+      const label = progress.setName ? `Rebuilding "${progress.setName}"...` : 'Rebuilding data...';
+      if (progress.current != null && progress.total) {
+        return `${label} ${progress.current}/${progress.total}`;
+      }
+      return label;
     }
     return null;
   }

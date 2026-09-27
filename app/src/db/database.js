@@ -1324,10 +1324,29 @@ export async function dumpWalletSetData(dbFileName) {
 // set), but INSERT OR REPLACE is used anyway - same defensive spirit as
 // upsertNft above - purely so re-running an import that failed partway
 // through is safe to just try again.
-export async function restoreWalletSetData(dbFileName, dump) {
+// `onProgress`, added 2026-09-27: Raphael's own report - once the zip's
+// been fully read, this is the one remaining step with no status at all
+// (imported row by row via individual INSERTs below, since restoring
+// from a plain data dump - see this function's own header comment - has
+// no faster bulk-load option), and for a set with thousands of rows
+// that's a real, silent stretch with no way to tell how far along it
+// is. Reports { current, total } in ROWS across every table combined
+// (matching the item-count style "Reading images... X/Y" already uses
+// elsewhere, rather than bytes - there's no meaningful byte size for a
+// row count to convert to here). Throttled to roughly 50 updates across
+// the whole restore rather than one per row - calling back (and
+// re-rendering a button) thousands of times over would add real
+// overhead to the exact operation it's trying to report on.
+export async function restoreWalletSetData(dbFileName, dump, onProgress) {
   const db = await SQLite.openDatabaseAsync(dbFileName);
   try {
     await createSchemaOnDatabase(db);
+
+    const restoredTables = [...Object.keys(TRAIT_COLUMNS), 'wallets', 'settings', 'nft_history'];
+    const totalRows = restoredTables.reduce((sum, table) => sum + (dump[table]?.length || 0), 0);
+    const progressEvery = Math.max(1, Math.floor(totalRows / 50));
+    let rowsDone = 0;
+    onProgress?.({ current: 0, total: totalRows });
 
     async function insertRows(table, rows) {
       for (const row of rows || []) {
@@ -1338,6 +1357,10 @@ export async function restoreWalletSetData(dbFileName, dump) {
           `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`,
           columns.map((column) => row[column])
         );
+        rowsDone += 1;
+        if (rowsDone % progressEvery === 0 || rowsDone === totalRows) {
+          onProgress?.({ current: rowsDone, total: totalRows });
+        }
       }
     }
 
