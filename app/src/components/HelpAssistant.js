@@ -107,6 +107,14 @@ const FAQ_ENTRIES = [
       "At the top of the Wallets screen, above your wallet list, is a switcher for wallet sets - completely separate, independently saved collections of wallets and their fetched NFTs. Handy if two people share the app (each gets their own set), or if you want to peek at a friend's collection without mixing it into your own. Tap + New set to start one; tap any set's name to load it. Rename any set any time. Delete removes a set for good, including its downloaded images.",
   },
   {
+    id: 'export-import-sets',
+    topic: 'wallets',
+    question: 'How do I back up or transfer a wallet set?',
+    keywords: ['export', 'import', 'backup', 'back up', 'transfer', 'move', 'zip', 'restore', 'save file'],
+    answer:
+      "Each wallet set has its own Export button (next to its name on the Wallets screen), which saves everything in that set - wallets, fetched NFTs, and every downloaded image - into a single zip file you can share or save wherever you like. \"Export all sets\" does the same for every set at once. Import (also on the Wallets screen) reads one of those zip files back in as a new set. Every file it writes is checked against the zip's own checksum afterward, so you'll be warned if anything didn't come through intact. While an export or import is running, everything else on the Wallets screen - switching sets, adding or editing wallets, Delete, Reset All Data, even leaving the screen - is locked until it finishes, since those all touch the same files the export or import is actively working with.",
+  },
+  {
     id: 'fetch-update',
     topic: 'wallets',
     question: 'What does Fetch/Update do?',
