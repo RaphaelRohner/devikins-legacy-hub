@@ -129,8 +129,15 @@ async function ensureColumn(db, table, columnName, columnType) {
   }
 }
 
-export async function initDatabase() {
-  const db = await getDatabase();
+/**
+ * Creates every table (and every column added to them since) that one
+ * wallet set's database needs - pulled out of initDatabase() below
+ * (2026-09-27) so it can be run against ANY database handle, not just
+ * the currently-active connection getDatabase() hands back. That's what
+ * makes restoreWalletSetData below possible: importing a set no longer
+ * needs to make it active first just to give it a schema.
+ */
+async function createSchemaOnDatabase(db) {
   for (const kind of Object.keys(TRAIT_COLUMNS)) {
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS ${kind} (
@@ -284,6 +291,11 @@ export async function initDatabase() {
   // phones, so it goes through the same safe/no-op-if-already-there
   // ensureColumn helper as the NFT tables' own added-later columns do.
   await ensureColumn(db, 'wallets', 'alias', 'TEXT');
+}
+
+export async function initDatabase() {
+  const db = await getDatabase();
+  await createSchemaOnDatabase(db);
 
   // One-time migration: before this multi-wallet feature existed, the app
   // only ever remembered a single address (in the settings table above,
@@ -1264,6 +1276,78 @@ export async function checkpointWalletSetForExport(dbFileName) {
     await tempDb.closeAsync();
   } catch (err) {
     console.log(`[database] Couldn't checkpoint ${dbFileName} before export: ${err.message}`);
+  }
+}
+
+// V3.2 (2026-09-27): reads every row of one wallet set's own tables -
+// used for export INSTEAD OF copying the database FILE's raw bytes (the
+// original approach - see exportImport.js's own header comment and
+// NOTES.md's write-up for the long story). That approach hit a real
+// Android permission wall this project could never get fully past, even
+// after three rounds of fixes each backed by reading the actual native
+// source involved. Reading the data out through SQLite's own query API
+// instead is the exact same, always-reliable way this app already shows
+// Raphael his NFTs every day - it never touches the database file at
+// the byte level at all, so that whole wall simply doesn't apply here.
+// Runs createSchemaOnDatabase first (cheap, idempotent CREATE TABLE IF
+// NOT EXISTS calls) so this also works on a set that was registered by
+// an import but never actually loaded yet, and so has no schema of its
+// own on disk - see registerImportedWalletSet's own comment below on
+// why that's a real, if unusual, state a set can be in.
+export async function dumpWalletSetData(dbFileName) {
+  const isActiveConnection = dbFileName === activeDatabaseFileName && !!databaseConnectionPromise;
+  const db = isActiveConnection ? await databaseConnectionPromise : await SQLite.openDatabaseAsync(dbFileName);
+  try {
+    await createSchemaOnDatabase(db);
+    const dump = {};
+    for (const kind of Object.keys(TRAIT_COLUMNS)) {
+      dump[kind] = await db.getAllAsync(`SELECT * FROM ${kind}`);
+    }
+    dump.wallets = await db.getAllAsync(`SELECT * FROM wallets`);
+    dump.settings = await db.getAllAsync(`SELECT * FROM settings`);
+    dump.nft_history = await db.getAllAsync(`SELECT * FROM nft_history`);
+    return dump;
+  } finally {
+    if (!isActiveConnection) {
+      await db.closeAsync();
+    }
+  }
+}
+
+// V3.2 (2026-09-27): the import-side counterpart to dumpWalletSetData
+// above - creates dbFileName fresh and writes every row from `dump`
+// (exactly as dumpWalletSetData produced it) back in, all through
+// SQLite's own insert API rather than copying a file's raw bytes.
+// `dbFileName` is always a brand-new, never-before-used filename here
+// (see exportImport.js's import code, which generates one per imported
+// set), but INSERT OR REPLACE is used anyway - same defensive spirit as
+// upsertNft above - purely so re-running an import that failed partway
+// through is safe to just try again.
+export async function restoreWalletSetData(dbFileName, dump) {
+  const db = await SQLite.openDatabaseAsync(dbFileName);
+  try {
+    await createSchemaOnDatabase(db);
+
+    async function insertRows(table, rows) {
+      for (const row of rows || []) {
+        const columns = Object.keys(row);
+        if (columns.length === 0) continue;
+        const placeholders = columns.map(() => '?').join(', ');
+        await db.runAsync(
+          `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`,
+          columns.map((column) => row[column])
+        );
+      }
+    }
+
+    for (const kind of Object.keys(TRAIT_COLUMNS)) {
+      await insertRows(kind, dump[kind]);
+    }
+    await insertRows('wallets', dump.wallets);
+    await insertRows('settings', dump.settings);
+    await insertRows('nft_history', dump.nft_history);
+  } finally {
+    await db.closeAsync();
   }
 }
 

@@ -3440,16 +3440,52 @@ SQLite.openDatabaseAsync finds it again later through its own,
 completely separate path resolution regardless of which literal string
 was used to write it.
 
-Not yet retested on Raphael's phone as of this writing (fourth time -
-this saga has now survived a genuine ZIP-corruption bug, a
-DocumentPicker timing race, and two back-to-back path/permission
-issues that each needed the ACTUAL underlying native source read
-before the real fix was clear) - next step. If this holds: the export
-diagnostic should show a real read succeeding (with or without the
-retry line appearing), the manifest should say `hasDatabase: true`,
-the import's own DIAG should show the write landing real bytes, and -
-the actual test that matters - real NFTs should show up in the
-imported copy.
+Retested - and both of the two path forms got refused for a real read,
+not just the "/data/data/" one: `readAsStringAsync` threw the exact
+same "isn't readable" IOException against `file:///data/user/0/...`
+too. That ruled out round 3's fallback fix as well - whatever's
+denying access, it isn't specific to which of Android's two internal
+forms is used, so trying both was never going to help.
+
+**The pivot (2026-09-27):** rather than chase this permission wall
+through a FOURTH round of "read the native source, guess again,"
+stopped trying to copy the database FILE's raw bytes at all. Every
+attempt so far (round 1's missing scheme, rounds 2 and 3's path-form
+theories) was solving pieces of the same underlying problem - Android
+denying `expo-file-system` real read/write access to expo-sqlite's own
+storage folder - without ever being sure the fix actually addressed
+the true cause, since Expo Go doesn't allow adding real native
+debug logging to check. Instead of continuing to guess at an Android
+permission internals problem this project has no way to directly
+observe, the export/import feature now reads and writes wallet-set
+data the exact same way the rest of the app already does, every single
+day, completely reliably: through SQLite's own query API
+(`getAllAsync`/`runAsync`), never touching the database file at the
+byte level at all. `dumpWalletSetData` (database.js) reads every row
+of every table (devikin/weapon/equipment/wallets/settings/nft_history)
+into a plain JSON object; the export writes that as `database.json`
+inside the zip (replacing `database.db`'s raw bytes - export format
+bumped to v3). `restoreWalletSetData` is the import-side counterpart:
+creates the new set's database fresh (schema only, via a
+`createSchemaOnDatabase` helper split out of `initDatabase()` for
+exactly this reason) and re-inserts every row from the dump. Neither
+function goes anywhere near `expo-file-system` for the database part -
+only images still do, which have never had any permission trouble.
+
+This is a genuine architecture change, not just another patch on the
+same approach - and arguably a more robust one regardless of whether
+the byte-copy approach could ever have been made to work: a SQL-level
+dump doesn't care about SQLite file-format compatibility across
+library versions the way raw bytes would, and it can't ever be
+"correct file, but the permission check said no" again, because there's
+no file-level permission check left to fail.
+
+Not yet retested on Raphael's phone as of this writing - next step. If
+this holds: the export should complete with no permission errors at
+all, the imported set's manifest.json should show `hasDatabase: true`
+with a real row of data behind it, `logImportedSetRowCounts` should
+show real non-zero counts instead of "no such table," and - the actual
+test that matters - real NFTs should show up in the imported copy.
 
 ## App structure decisions (made while building)
  (made while building)

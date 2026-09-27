@@ -71,7 +71,7 @@
  * Export format (changed in this same revision): single-set and
  * "export all" zips now share exactly one shape - a top-level
  * `export-manifest.json` plus one `set-<id>-<name>/` folder per
- * included set (manifest.json/database.db/images/ underneath) - rather
+ * included set (manifest.json/database.json/images/ underneath) - rather
  * than single-set exports being a special flat case. This isn't just
  * tidiness: it lets the streaming importer below use one code path for
  * both instead of two, which matters a lot more once the "read
@@ -99,8 +99,7 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { Platform } from 'react-native';
 import { Zip, ZipPassThrough, strToU8, strFromU8 } from 'fflate';
-import { getWalletSetDatabasePath, resolveExistingWalletSetDatabasePath, alternateWalletSetDatabasePathForm } from './storageStats';
-import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSetRowCounts } from '../db/database';
+import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSetRowCounts, dumpWalletSetData, restoreWalletSetData } from '../db/database';
 
 // Bumped only if a future change to what's INSIDE an export (the shape
 // of manifest.json, what folders/files exist) would need the import
@@ -108,7 +107,7 @@ import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSet
 // the app's own version number in app.json/package.json - this only
 // describes the export FILE FORMAT, which can easily stay stable across
 // several app versions in a row.
-const EXPORT_FORMAT_VERSION = 2;
+const EXPORT_FORMAT_VERSION = 3;
 
 // How much raw data to buffer in memory, on either side, before
 // actually reading from or writing to disk - see this file's header
@@ -194,8 +193,10 @@ function concatUint8Arrays(a, b) {
  * ever holding more than STREAM_CHUNK_BYTES or so of un-written data in
  * memory at once. Used both as the final output stage for
  * StreamingZipWriter below (writing the zip container itself) and
- * directly by the importer (writing each extracted file straight to its
- * real destination - a set's database.db or one of its images).
+ * directly by the importer (writing each extracted image file straight
+ * to its real destination - the database is no longer written as a raw
+ * file at all as of 2026-09-27, see restoreWalletSetData in
+ * database.js).
  *
  * Base64 works in fixed 3-byte-in/4-character-out groups, so a chunk
  * boundary that doesn't line up with a multiple of 3 bytes would
@@ -495,48 +496,28 @@ async function readCentralDirectoryEntries(uri, eocd) {
 }
 
 /**
- * Streams one wallet set's database file, every image, and a
- * manifest.json into `writer` under `pathPrefix` (always
- * `set-<id>-<name>/` - see this file's own header comment on why every
- * export now uses this same folder shape, single-set exports included).
- * Only ever holds ONE file's raw bytes in memory at a time (whatever
- * readFileBytes just returned) - `writer` itself is what keeps the
- * actual zip-building/disk-writing side bounded, per its own comment.
+ * Streams one wallet set's data (a SQL-level dump - see
+ * dumpWalletSetData's own comment in database.js, not the database
+ * FILE's raw bytes), every image, and a manifest.json into `writer`
+ * under `pathPrefix` (always `set-<id>-<name>/` - see this file's own
+ * header comment on why every export now uses this same folder shape,
+ * single-set exports included). Only ever holds ONE file's worth of
+ * bytes in memory at a time - `writer` itself is what keeps the actual
+ * zip-building/disk-writing side bounded, per its own comment.
  */
 async function streamWalletSetIntoWriter(writer, walletSet, pathPrefix, onProgress, stats) {
   await checkpointWalletSetForExport(walletSet.db_file_name);
 
-  const dbPath = await resolveExistingWalletSetDatabasePath(walletSet.db_file_name);
-  const dbInfo = await FileSystem.getInfoAsync(dbPath, { size: true });
-  // TEMPORARY diagnostic, added 2026-09-26 - confirms the real fix
-  // (resolveExistingWalletSetDatabasePath in storageStats.js - see its
-  // own long comment for the "/data/data/" vs "/data/user/0/" story)
-  // actually finds the file this time, for a set already proven to have
-  // real data.
-  console.log(
-    `[exportImport] DIAG export "${walletSet.name}" (db_file_name=${walletSet.db_file_name}): ` +
-    `resolved dbPath=${dbPath}, exists=${dbInfo.exists}, size=${dbInfo.exists ? dbInfo.size : 'n/a'}`
-  );
-  if (dbInfo.exists) {
-    let dbBytes;
-    try {
-      dbBytes = await readFileBytes(dbPath);
-    } catch (err) {
-      const altPath = alternateWalletSetDatabasePathForm(dbPath);
-      if (!altPath) throw err;
-      // TEMPORARY diagnostic, added 2026-09-26 - see
-      // alternateWalletSetDatabasePathForm's own comment in
-      // storageStats.js for why getInfoAsync succeeding here didn't
-      // guarantee a real read would too.
-      console.log(
-        `[exportImport] DIAG primary db path wasn't actually readable ` +
-        `(${err.message}) - retrying via ${altPath}`
-      );
-      dbBytes = await readFileBytes(altPath);
-    }
-    if (stats) stats.totalRawBytes += dbBytes.length;
-    await writer.addFile(`${pathPrefix}database.db`, dbBytes);
-  }
+  // 2026-09-27: no longer reads the database FILE's raw bytes at all -
+  // see dumpWalletSetData's own comment in database.js for the full
+  // story on why (a real Android permission wall this project could
+  // never fully get past, across three separate rounds of fixes).
+  // Reading the set's data out through SQLite's own query API instead
+  // sidesteps that wall entirely.
+  const dataDump = await dumpWalletSetData(walletSet.db_file_name);
+  const dumpBytes = strToU8(JSON.stringify(dataDump));
+  if (stats) stats.totalRawBytes += dumpBytes.length;
+  await writer.addFile(`${pathPrefix}database.json`, dumpBytes);
 
   const imagesDirUri = `${FileSystem.documentDirectory}${walletSet.images_dir_name}/`;
   const imagesDirInfo = await FileSystem.getInfoAsync(imagesDirUri);
@@ -557,7 +538,10 @@ async function streamWalletSetIntoWriter(writer, walletSet, pathPrefix, onProgre
     formatVersion: EXPORT_FORMAT_VERSION,
     exportedAt: new Date().toISOString(),
     name: walletSet.name,
-    hasDatabase: dbInfo.exists,
+    // Always true from here on - dumpWalletSetData above can't fail to
+    // produce a (possibly empty) dump, unlike the old file-existence
+    // check this replaced.
+    hasDatabase: true,
     imageCount,
   };
   await writer.addFile(`${pathPrefix}manifest.json`, strToU8(JSON.stringify(manifest, null, 2)));
@@ -844,23 +828,22 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
   const eocd = await findEndOfCentralDirectory(pickedUri, totalBytes);
   const centralEntries = await readCentralDirectoryEntries(pickedUri, eocd);
 
-  // TEMPORARY diagnostics, added 2026-09-26 after the central-directory
-  // rewrite still showed no data once imported ("no such table:
-  // wallets" straight from SQLite - i.e. the copied database.db wasn't
-  // real database content at all). Logs exactly what parsing the zip's
-  // central directory found, and directly verifies the one thing the
-  // whole rewrite depends on: that a local file header really does
-  // start at the byte offset the central directory says it does. If
-  // that check fails, the offsets themselves are wrong (something off
-  // in how this zip's central directory is being read); if it passes
-  // but the resulting file still isn't valid SQLite, the bug is in the
-  // actual byte copy instead, not the offset math.
+  // TEMPORARY diagnostics, added 2026-09-26 while chasing what turned
+  // out to be three separate bugs in this feature (see NOTES.md for the
+  // full story) - kept on since they're cheap and still catch real
+  // problems early: logs exactly what parsing the zip's central
+  // directory found, and directly verifies that a local file header
+  // really does start at the byte offset the central directory says it
+  // does. `database.json` replaced `database.db` on 2026-09-27 (see
+  // dumpWalletSetData/restoreWalletSetData in database.js) once copying
+  // the database FILE's raw bytes turned out to hit a real Android
+  // permission wall - this check now watches that entry instead.
   console.log(
     `[exportImport] DIAG zip: totalBytes=${totalBytes}, centralDirOffset=${eocd.centralDirOffset}, ` +
     `centralDirSize=${eocd.centralDirSize}, entries found=${centralEntries.length}`
   );
   for (const entry of centralEntries) {
-    if (entry.name.endsWith('database.db') || entry.name.endsWith('manifest.json')) {
+    if (entry.name.endsWith('database.json') || entry.name.endsWith('manifest.json')) {
       const sigBytes = await readRangeBytes(pickedUri, entry.localHeaderOffset, 4);
       const sig = readUint32LE(sigBytes, 0);
       const sigOk = sig === 0x04034b50;
@@ -892,6 +875,7 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
         imagesDirName: `nft-images-import-${suffix}`,
         imagesDirEnsured: null,
         manifestBytes: null,
+        dumpBytes: null,
       };
       groups.set(folderName, group);
     }
@@ -959,38 +943,16 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
       continue;
     }
 
-    if (restOfPath === 'database.db') {
-      const primaryDestPath = getWalletSetDatabasePath(group.dbFileName);
-      let destPath = primaryDestPath;
-      try {
-        await copyEntryBytesTo(entry, primaryDestPath);
-      } catch (err) {
-        const altPath = alternateWalletSetDatabasePathForm(primaryDestPath);
-        if (!altPath) throw err;
-        // TEMPORARY diagnostic, added 2026-09-26 - same permission-wall
-        // story as the export side's own DIAG above, just for writing
-        // instead of reading. Whichever of Android's two equivalent
-        // forms the OS actually grants access through lands the exact
-        // same real file - SQLite.openDatabaseAsync always finds it
-        // again later through its OWN path resolution, independent of
-        // which literal string we used to write the bytes here.
-        console.log(
-          `[exportImport] DIAG primary db path wasn't actually writable ` +
-          `(${err.message}) - retrying via ${altPath}`
-        );
-        await copyEntryBytesTo(entry, altPath);
-        destPath = altPath;
-      }
-      // TEMPORARY - see this function's own DIAG comment above.
-      try {
-        const writtenInfo = await FileSystem.getInfoAsync(destPath, { size: true });
-        console.log(
-          `[exportImport] DIAG wrote ${destPath} - expected ${entry.compressedSize} bytes, ` +
-          `actually on disk: ${writtenInfo.exists ? writtenInfo.size : '(missing!)'}`
-        );
-      } catch (err) {
-        console.log(`[exportImport] DIAG couldn't stat ${destPath} after writing: ${err.message}`);
-      }
+    if (restOfPath === 'database.json') {
+      // 2026-09-27: no longer a file to copy at all - see
+      // restoreWalletSetData's own comment in database.js. Just read the
+      // dump's bytes into memory now, exactly like manifest.json above;
+      // the actual database gets built from this JSON further down,
+      // once every entry has been read and every group's data is known
+      // complete.
+      assertStored(entry);
+      group.dumpBytes = await readRangeBytes(pickedUri, entry.dataOffset, entry.compressedSize);
+      bytesProcessed += entry.compressedSize;
       continue;
     }
 
@@ -1031,6 +993,23 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
     // even for a zip exported before this diagnostic existed.
     console.log(`[exportImport] DIAG manifest for "${manifest.name}": ${JSON.stringify(manifest)}`);
     const importedName = `${manifest.name || 'Imported set'} (imported)`;
+
+    // 2026-09-27: rebuild the set's actual data from database.json's
+    // dump (see restoreWalletSetData's own comment in database.js) -
+    // an export with no dump at all (an old-format zip, or one this
+    // folder's manifest.json didn't actually pair with a database.json
+    // entry) just leaves the set with an empty, freshly-schema'd
+    // database rather than failing the whole import.
+    let dump = {};
+    if (group.dumpBytes && group.dumpBytes.length > 0) {
+      try {
+        dump = JSON.parse(strFromU8(group.dumpBytes));
+      } catch (err) {
+        console.log(`[exportImport] DIAG couldn't parse database.json for "${manifest.name}": ${err.message}`);
+      }
+    }
+    await restoreWalletSetData(group.dbFileName, dump);
+
     await registerImportedWalletSet(importedName, group.dbFileName, group.imagesDirName);
     await logImportedSetRowCounts(group.dbFileName);
     importedNames.push(importedName);
