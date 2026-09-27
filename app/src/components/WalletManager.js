@@ -605,231 +605,241 @@ export default function WalletManager({
         Fetch/Update pulls Devikins, Weapons, and Equipment from every wallet in your active wallet set below - not every wallet across every set.
       </Text>
 
-      {/* Wallet set switcher - see this file's own header comment for
-          the full reasoning. Everything below this section (the Add
-          row, the wallet list, and every per-wallet action) is always
-          scoped to whichever set is active here, same as this whole
-          screen already worked before sets existed. */}
-      <View style={styles.setSwitcherSection}>
-        <Text style={[styles.setSwitcherTitle, { color: colors.text }]}>Wallet sets</Text>
-        <Text style={[styles.setSwitcherHint, { color: colors.secondaryText }]}>
-          Switch between separate, independently saved collections of wallets - useful for a second player in the household, or checking a friend's collection without touching your own.
-        </Text>
-
-        <Text style={[styles.setSwitcherStorageTotal, { color: colors.secondaryText }]}>
-          {isCalculatingStorage
-            ? 'Calculating storage used...'
-            : `Total storage used: ${formatBytes(totalStorageBytes ?? 0)} across ${walletSets.length} set${walletSets.length === 1 ? '' : 's'}`}
-        </Text>
-
-        {isCreatingSet ? (
-          <View style={styles.addRow}>
-            <TextInput
-              style={[styles.addInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-              placeholder="Name this set (e.g. My Wallets)"
-              placeholderTextColor={colors.secondaryText}
-              value={newSetNameInput}
-              onChangeText={setNewSetNameInput}
-              autoCapitalize="words"
-              autoFocus
-            />
-            <TouchableOpacity
-              style={[styles.addButton, { backgroundColor: colors.primary }]}
-              onPress={handleCreateSet}
-            >
-              <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Create</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
-              onPress={handleCancelCreateSet}
-            >
-              <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={[styles.newSetButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
-            onPress={() => setIsCreatingSet(true)}
-          >
-            <Text style={[styles.newSetButtonText, { color: colors.text }]}>+ New set</Text>
-          </TouchableOpacity>
-        )}
-
-        <View style={styles.backupRow}>
-          {!isImporting ? (
-            <TouchableOpacity
-              style={[
-                styles.rowButton,
-                styles.backupButton,
-                { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
-                (isExportingId !== null || walletSets.length === 0) && { opacity: 0.5 },
-              ]}
-              onPress={handleExportAllSets}
-              disabled={isExportingId !== null || isImporting || walletSets.length === 0}
-            >
-              <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
-                {isExportingId === 'all' ? (exportProgressLabel || 'Exporting...') : 'Export all sets'}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
-          {isExportingId !== 'all' ? (
-            <TouchableOpacity
-              style={[
-                styles.rowButton,
-                styles.backupButton,
-                { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
-                (isImporting || isExportingId !== null) && { opacity: 0.5 },
-              ]}
-              onPress={handleImport}
-              disabled={isImporting || isExportingId !== null}
-            >
-              <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
-                {isImporting ? (importProgressLabel || 'Importing...') : 'Import a set'}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        {walletSets.map((set) => {
-          const isActive = set.id === activeWalletSetId;
-          const isThisSetExporting = isExportingId === set.id;
-          return (
-            <View
-              key={set.id}
-              style={[styles.setRow, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }]}
-            >
-              {renamingSetId === set.id ? (
-                <>
-                  <TextInput
-                    style={[styles.editInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
-                    value={renameSetInput}
-                    onChangeText={setRenameSetInput}
-                    autoCapitalize="words"
-                  />
-                  <View style={styles.walletRowButtons}>
-                    <TouchableOpacity
-                      style={[
-                        styles.rowButton,
-                        { backgroundColor: colors.primary },
-                        renameSetInput.trim().length === 0 && { backgroundColor: colors.primaryDisabled },
-                      ]}
-                      onPress={() => handleSaveRenameSet(set.id)}
-                      disabled={renameSetInput.trim().length === 0}
-                    >
-                      <Text style={[styles.rowButtonText, { color: colors.primaryText }]}>Save</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
-                      onPress={handleCancelRenameSet}
-                    >
-                      <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              ) : (
-                <>
-                  <TouchableOpacity
-                    style={[styles.setNameButton, isThisSetExporting && styles.setNameButtonCompact]}
-                    onPress={() => handleSwitchSet(set.id)}
-                  >
-                    <Text style={[styles.setNameText, { color: colors.text }]} numberOfLines={1}>
-                      {set.name}
-                    </Text>
-                    <Text style={[styles.setActiveBadge, { color: isActive ? colors.primary : colors.secondaryText }]}>
-                      {isActive ? 'Active - loaded now' : 'Tap to load'}
-                    </Text>
-                    <Text style={[styles.setStorageText, { color: colors.secondaryText }]}>
-                      {isCalculatingStorage ? '...' : formatBytes(storageBytesById[set.id] ?? 0)}
-                    </Text>
-                  </TouchableOpacity>
-                  <View style={[styles.walletRowButtons, isThisSetExporting && styles.walletRowButtonsExporting]}>
-                    {!isThisSetExporting ? (
-                      <TouchableOpacity
-                        style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
-                        onPress={() => handleStartRenameSet(set)}
-                      >
-                        <Text style={[styles.rowButtonText, { color: colors.text }]}>Rename</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                    <TouchableOpacity
-                      style={[
-                        styles.rowButton,
-                        { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
-                        isExportingId !== null && { opacity: 0.5 },
-                        isThisSetExporting && styles.rowButtonFullWidth,
-                      ]}
-                      onPress={() => handleExportSet(set)}
-                      disabled={isExportingId !== null || isImporting}
-                    >
-                      <Text
-                        style={[styles.rowButtonText, { color: colors.text }, isThisSetExporting && styles.rowButtonTextCentered]}
-                        numberOfLines={1}
-                      >
-                        {isExportingId === set.id ? (exportProgressLabel || 'Exporting...') : 'Export'}
-                      </Text>
-                    </TouchableOpacity>
-                    {!isThisSetExporting ? (
-                      <TouchableOpacity
-                        style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }]}
-                        onPress={() => handleDeleteSet(set)}
-                      >
-                        <Text style={[styles.rowButtonText, { color: colors.cancelText }]}>Delete</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                </>
-              )}
-            </View>
-          );
-        })}
-
-      </View>
-
-      {activeWalletSetId ? (
-        <>
-          <Text style={[styles.activeSetHeadline, { color: colors.text }]}>
-            Wallets in "{activeSetName}"
+      {/* Raphael's own report: with enough wallet sets on screen (six
+          or seven, in his case), the set switcher below used to be tall
+          enough on its own to push "Wallets in <set>" and its address
+          list completely off screen, with no way to scroll down to
+          reach them - this whole section used to sit above the
+          ScrollView, fixed, while only the address list scrolled inside
+          it. Moving the ScrollView's start up to here (everything from
+          the set switcher down to Danger zone, all one continuous
+          scroll region) fixes that - only the back button/title/
+          subtitle above stay fixed. */}
+      <ScrollView contentContainerStyle={styles.listContent}>
+        {/* Wallet set switcher - see this file's own header comment for
+            the full reasoning. Everything below this section (the Add
+            row, the wallet list, and every per-wallet action) is always
+            scoped to whichever set is active here, same as this whole
+            screen already worked before sets existed. */}
+        <View style={styles.setSwitcherSection}>
+          <Text style={[styles.setSwitcherTitle, { color: colors.text }]}>Wallet sets</Text>
+          <Text style={[styles.setSwitcherHint, { color: colors.secondaryText }]}>
+            Switch between separate, independently saved collections of wallets - useful for a second player in the household, or checking a friend's collection without touching your own.
           </Text>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+
+          <Text style={[styles.setSwitcherStorageTotal, { color: colors.secondaryText }]}>
+            {isCalculatingStorage
+              ? 'Calculating storage used...'
+              : `Total storage used: ${formatBytes(totalStorageBytes ?? 0)} across ${walletSets.length} set${walletSets.length === 1 ? '' : 's'}`}
+          </Text>
+
+          {isCreatingSet ? (
             <View style={styles.addRow}>
               <TextInput
                 style={[styles.addInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-                placeholder="Paste a Klever wallet address (klv1...)"
+                placeholder="Name this set (e.g. My Wallets)"
                 placeholderTextColor={colors.secondaryText}
-                value={newAddressInput}
-                onChangeText={setNewAddressInput}
-                autoCapitalize="none"
-                autoCorrect={false}
+                value={newSetNameInput}
+                onChangeText={setNewSetNameInput}
+                autoCapitalize="words"
+                autoFocus
               />
               <TouchableOpacity
-                style={[styles.scanButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
-                onPress={() => setIsScannerVisible(true)}
+                style={[styles.addButton, { backgroundColor: colors.primary }]}
+                onPress={handleCreateSet}
               >
-                <Text style={styles.scanButtonIcon}>📷</Text>
+                <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Create</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.addButton,
-                  { backgroundColor: colors.primary },
-                  newAddressInput.trim().length === 0 && { backgroundColor: colors.primaryDisabled },
-                ]}
-                onPress={handleAdd}
-                disabled={newAddressInput.trim().length === 0}
+                style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+                onPress={handleCancelCreateSet}
               >
-                <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Add</Text>
+                <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
               </TouchableOpacity>
             </View>
-          </KeyboardAvoidingView>
+          ) : (
+            <TouchableOpacity
+              style={[styles.newSetButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+              onPress={() => setIsCreatingSet(true)}
+            >
+              <Text style={[styles.newSetButtonText, { color: colors.text }]}>+ New set</Text>
+            </TouchableOpacity>
+          )}
 
-          <QrScannerModal
-            visible={isScannerVisible}
-            onScanned={handleScanned}
-            onClose={() => setIsScannerVisible(false)}
-          />
-        </>
-      ) : null}
+          <View style={styles.backupRow}>
+            {!isImporting ? (
+              <TouchableOpacity
+                style={[
+                  styles.rowButton,
+                  styles.backupButton,
+                  { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+                  (isExportingId !== null || walletSets.length === 0) && { opacity: 0.5 },
+                ]}
+                onPress={handleExportAllSets}
+                disabled={isExportingId !== null || isImporting || walletSets.length === 0}
+              >
+                <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
+                  {isExportingId === 'all' ? (exportProgressLabel || 'Exporting...') : 'Export all sets'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+            {isExportingId !== 'all' ? (
+              <TouchableOpacity
+                style={[
+                  styles.rowButton,
+                  styles.backupButton,
+                  { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+                  (isImporting || isExportingId !== null) && { opacity: 0.5 },
+                ]}
+                onPress={handleImport}
+                disabled={isImporting || isExportingId !== null}
+              >
+                <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
+                  {isImporting ? (importProgressLabel || 'Importing...') : 'Import a set'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
 
-      <ScrollView contentContainerStyle={styles.listContent}>
+          {walletSets.map((set) => {
+            const isActive = set.id === activeWalletSetId;
+            const isThisSetExporting = isExportingId === set.id;
+            return (
+              <View
+                key={set.id}
+                style={[styles.setRow, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }]}
+              >
+                {renamingSetId === set.id ? (
+                  <>
+                    <TextInput
+                      style={[styles.editInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
+                      value={renameSetInput}
+                      onChangeText={setRenameSetInput}
+                      autoCapitalize="words"
+                    />
+                    <View style={styles.walletRowButtons}>
+                      <TouchableOpacity
+                        style={[
+                          styles.rowButton,
+                          { backgroundColor: colors.primary },
+                          renameSetInput.trim().length === 0 && { backgroundColor: colors.primaryDisabled },
+                        ]}
+                        onPress={() => handleSaveRenameSet(set.id)}
+                        disabled={renameSetInput.trim().length === 0}
+                      >
+                        <Text style={[styles.rowButtonText, { color: colors.primaryText }]}>Save</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+                        onPress={handleCancelRenameSet}
+                      >
+                        <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.setNameButton, isThisSetExporting && styles.setNameButtonCompact]}
+                      onPress={() => handleSwitchSet(set.id)}
+                    >
+                      <Text style={[styles.setNameText, { color: colors.text }]} numberOfLines={1}>
+                        {set.name}
+                      </Text>
+                      <Text style={[styles.setActiveBadge, { color: isActive ? colors.primary : colors.secondaryText }]}>
+                        {isActive ? 'Active - loaded now' : 'Tap to load'}
+                      </Text>
+                      <Text style={[styles.setStorageText, { color: colors.secondaryText }]}>
+                        {isCalculatingStorage ? '...' : formatBytes(storageBytesById[set.id] ?? 0)}
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={[styles.walletRowButtons, isThisSetExporting && styles.walletRowButtonsExporting]}>
+                      {!isThisSetExporting ? (
+                        <TouchableOpacity
+                          style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+                          onPress={() => handleStartRenameSet(set)}
+                        >
+                          <Text style={[styles.rowButtonText, { color: colors.text }]}>Rename</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                      <TouchableOpacity
+                        style={[
+                          styles.rowButton,
+                          { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+                          isExportingId !== null && { opacity: 0.5 },
+                          isThisSetExporting && styles.rowButtonFullWidth,
+                        ]}
+                        onPress={() => handleExportSet(set)}
+                        disabled={isExportingId !== null || isImporting}
+                      >
+                        <Text
+                          style={[styles.rowButtonText, { color: colors.text }, isThisSetExporting && styles.rowButtonTextCentered]}
+                          numberOfLines={1}
+                        >
+                          {isExportingId === set.id ? (exportProgressLabel || 'Exporting...') : 'Export'}
+                        </Text>
+                      </TouchableOpacity>
+                      {!isThisSetExporting ? (
+                        <TouchableOpacity
+                          style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }]}
+                          onPress={() => handleDeleteSet(set)}
+                        >
+                          <Text style={[styles.rowButtonText, { color: colors.cancelText }]}>Delete</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  </>
+                )}
+              </View>
+            );
+          })}
+
+        </View>
+
+        {activeWalletSetId ? (
+          <>
+            <Text style={[styles.activeSetHeadline, { color: colors.text }]}>
+              Wallets in "{activeSetName}"
+            </Text>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+              <View style={styles.addRow}>
+                <TextInput
+                  style={[styles.addInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                  placeholder="Paste a Klever wallet address (klv1...)"
+                  placeholderTextColor={colors.secondaryText}
+                  value={newAddressInput}
+                  onChangeText={setNewAddressInput}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity
+                  style={[styles.scanButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+                  onPress={() => setIsScannerVisible(true)}
+                >
+                  <Text style={styles.scanButtonIcon}>📷</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.addButton,
+                    { backgroundColor: colors.primary },
+                    newAddressInput.trim().length === 0 && { backgroundColor: colors.primaryDisabled },
+                  ]}
+                  onPress={handleAdd}
+                  disabled={newAddressInput.trim().length === 0}
+                >
+                  <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Add</Text>
+                </TouchableOpacity>
+              </View>
+            </KeyboardAvoidingView>
+
+            <QrScannerModal
+              visible={isScannerVisible}
+              onScanned={handleScanned}
+              onClose={() => setIsScannerVisible(false)}
+            />
+          </>
+        ) : null}
+
         {!activeWalletSetId ? (
           <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
             No wallet set is loaded right now - load one above, or create a new one to start adding wallet addresses.
@@ -1113,16 +1123,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   listContent: {
-    padding: 12,
+    paddingTop: 12,
     paddingBottom: 24,
   },
   emptyText: {
     textAlign: 'center',
     marginTop: 24,
+    marginHorizontal: 12,
   },
   walletRow: {
     borderRadius: 10,
     padding: 12,
+    marginHorizontal: 12,
     marginBottom: 10,
     shadowOpacity: 0.06,
     shadowRadius: 4,
@@ -1203,6 +1215,7 @@ const styles = StyleSheet.create({
   },
   dangerZone: {
     marginTop: 20,
+    marginHorizontal: 12,
     paddingTop: 16,
     borderTopWidth: 1,
   },
