@@ -85,6 +85,7 @@ import {
   Platform,
   Alert,
   Switch,
+  BackHandler,
 } from 'react-native';
 import {
   addWallet,
@@ -180,6 +181,38 @@ export default function WalletManager({
   const [exportProgressLabel, setExportProgressLabel] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importProgressLabel, setImportProgressLabel] = useState('');
+
+  // Raphael's own call after testing this for real: "forcing the user
+  // to just let an export or import finish is probably the safest
+  // approach" - switching sets, deleting a set, editing a wallet, and
+  // Reset All Data all touch the very same underlying files/database an
+  // export or import is actively reading or writing. isBusy (further
+  // down, right before the JSX that uses it) is what the render logic
+  // checks to gray out and disable every one of those actions while
+  // either is running - this effect handles the one path plain
+  // `disabled` props can't reach: Android's hardware Back button/
+  // gesture. Same shape as CollectionView.js's own hardwareBackPress
+  // listener - React Native calls the most-recently-registered listener
+  // first, and this component is mounted deeper in the tree than
+  // App.js's own listener, so returning true here (while busy) reaches
+  // the user and stops App.js from ever navigating away, without this
+  // file needing to know anything about App.js's own screen-switching
+  // logic.
+  useEffect(() => {
+    function handleBackPress() {
+      if (isExportingId !== null || isImporting) {
+        Alert.alert(
+          'Please wait',
+          'An export or import is still running - leaving now would lose its progress. Give it a moment to finish first.'
+        );
+        return true; // handled - swallow the press, don't let App.js navigate away
+      }
+      return false; // nothing running here - let App.js's own listener handle Back as usual
+    }
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+    return () => subscription.remove();
+  }, [isExportingId, isImporting]);
 
   useEffect(() => {
     let cancelled = false;
@@ -597,14 +630,28 @@ export default function WalletManager({
   // this headline only ever actually shows while activeWalletSetId is
   // set, so this is just a defensive fallback, not something that
   // should normally happen.
+  // Everything below except the export/import buttons themselves reads
+  // this - see the hardwareBackPress effect above for the full
+  // reasoning behind locking the screen this way.
+  const isBusy = isExportingId !== null || isImporting;
+
   const activeSet = walletSets.find((set) => set.id === activeWalletSetId);
   const activeSetName = activeSet ? activeSet.name : '';
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <TouchableOpacity
-        style={[styles.backButton, { backgroundColor: colors.primary }]}
-        onPress={onClose}
+        style={[styles.backButton, { backgroundColor: colors.primary }, isBusy && { opacity: 0.5 }]}
+        onPress={() => {
+          if (isBusy) {
+            Alert.alert(
+              'Please wait',
+              'An export or import is still running - leaving now would lose its progress. Give it a moment to finish first.'
+            );
+            return;
+          }
+          onClose();
+        }}
       >
         <Text style={[styles.backButtonText, { color: colors.primaryText }]}>‹</Text>
       </TouchableOpacity>
@@ -613,6 +660,11 @@ export default function WalletManager({
       <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
         Fetch/Update pulls Devikins, Weapons, and Equipment from every wallet in your active wallet set below - not every wallet across every set.
       </Text>
+      {isBusy ? (
+        <Text style={[styles.busyBanner, { color: colors.secondaryText }]}>
+          An export or import is running - everything below is disabled until it finishes.
+        </Text>
+      ) : null}
 
       {/* Raphael's own report: with enough wallet sets on screen (six
           or seven, in his case), the set switcher below used to be tall
@@ -652,24 +704,28 @@ export default function WalletManager({
                 onChangeText={setNewSetNameInput}
                 autoCapitalize="words"
                 autoFocus
+                editable={!isBusy}
               />
               <TouchableOpacity
-                style={[styles.addButton, { backgroundColor: colors.primary }]}
+                style={[styles.addButton, { backgroundColor: colors.primary }, isBusy && { opacity: 0.5 }]}
                 onPress={handleCreateSet}
+                disabled={isBusy}
               >
                 <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Create</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+                style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
                 onPress={handleCancelCreateSet}
+                disabled={isBusy}
               >
                 <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity
-              style={[styles.newSetButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+              style={[styles.newSetButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
               onPress={() => setIsCreatingSet(true)}
+              disabled={isBusy}
             >
               <Text style={[styles.newSetButtonText, { color: colors.text }]}>+ New set</Text>
             </TouchableOpacity>
@@ -725,22 +781,24 @@ export default function WalletManager({
                       value={renameSetInput}
                       onChangeText={setRenameSetInput}
                       autoCapitalize="words"
+                      editable={!isBusy}
                     />
                     <View style={styles.walletRowButtons}>
                       <TouchableOpacity
                         style={[
                           styles.rowButton,
                           { backgroundColor: colors.primary },
-                          renameSetInput.trim().length === 0 && { backgroundColor: colors.primaryDisabled },
+                          (isBusy || renameSetInput.trim().length === 0) && { backgroundColor: colors.primaryDisabled },
                         ]}
                         onPress={() => handleSaveRenameSet(set.id)}
-                        disabled={renameSetInput.trim().length === 0}
+                        disabled={isBusy || renameSetInput.trim().length === 0}
                       >
                         <Text style={[styles.rowButtonText, { color: colors.primaryText }]}>Save</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+                        style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
                         onPress={handleCancelRenameSet}
+                        disabled={isBusy}
                       >
                         <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
                       </TouchableOpacity>
@@ -749,8 +807,9 @@ export default function WalletManager({
                 ) : (
                   <>
                     <TouchableOpacity
-                      style={[styles.setNameButton, isThisSetExporting && styles.setNameButtonCompact]}
+                      style={[styles.setNameButton, isThisSetExporting && styles.setNameButtonCompact, isBusy && { opacity: 0.5 }]}
                       onPress={() => handleSwitchSet(set.id)}
+                      disabled={isBusy}
                     >
                       <Text style={[styles.setNameText, { color: colors.text }]} numberOfLines={1}>
                         {set.name}
@@ -765,8 +824,9 @@ export default function WalletManager({
                     <View style={[styles.walletRowButtons, isThisSetExporting && styles.walletRowButtonsExporting]}>
                       {!isThisSetExporting ? (
                         <TouchableOpacity
-                          style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+                          style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
                           onPress={() => handleStartRenameSet(set)}
+                          disabled={isBusy}
                         >
                           <Text style={[styles.rowButtonText, { color: colors.text }]}>Rename</Text>
                         </TouchableOpacity>
@@ -790,8 +850,9 @@ export default function WalletManager({
                       </TouchableOpacity>
                       {!isThisSetExporting ? (
                         <TouchableOpacity
-                          style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }]}
+                          style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }, isBusy && { opacity: 0.5 }]}
                           onPress={() => handleDeleteSet(set)}
+                          disabled={isBusy}
                         >
                           <Text style={[styles.rowButtonText, { color: colors.cancelText }]}>Delete</Text>
                         </TouchableOpacity>
@@ -820,10 +881,12 @@ export default function WalletManager({
                   onChangeText={setNewAddressInput}
                   autoCapitalize="none"
                   autoCorrect={false}
+                  editable={!isBusy}
                 />
                 <TouchableOpacity
-                  style={[styles.scanButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+                  style={[styles.scanButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
                   onPress={() => setIsScannerVisible(true)}
+                  disabled={isBusy}
                 >
                   <Text style={styles.scanButtonIcon}>📷</Text>
                 </TouchableOpacity>
@@ -831,10 +894,10 @@ export default function WalletManager({
                   style={[
                     styles.addButton,
                     { backgroundColor: colors.primary },
-                    newAddressInput.trim().length === 0 && { backgroundColor: colors.primaryDisabled },
+                    (isBusy || newAddressInput.trim().length === 0) && { backgroundColor: colors.primaryDisabled },
                   ]}
                   onPress={handleAdd}
-                  disabled={newAddressInput.trim().length === 0}
+                  disabled={isBusy || newAddressInput.trim().length === 0}
                 >
                   <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Add</Text>
                 </TouchableOpacity>
@@ -871,6 +934,7 @@ export default function WalletManager({
                     onChangeText={setEditAddressInput}
                     autoCapitalize="none"
                     autoCorrect={false}
+                    editable={!isBusy}
                   />
                   {/* Optional friendly name - "Main", "Trading", etc. -
                       shown next to the Edit/Delete buttons once saved
@@ -882,22 +946,24 @@ export default function WalletManager({
                     value={editAliasInput}
                     onChangeText={setEditAliasInput}
                     autoCapitalize="words"
+                    editable={!isBusy}
                   />
                   <View style={styles.walletRowButtons}>
                     <TouchableOpacity
                       style={[
                         styles.rowButton,
                         { backgroundColor: colors.primary },
-                        editAddressInput.trim().length === 0 && { backgroundColor: colors.primaryDisabled },
+                        (isBusy || editAddressInput.trim().length === 0) && { backgroundColor: colors.primaryDisabled },
                       ]}
                       onPress={() => handleSaveEdit(wallet.id)}
-                      disabled={editAddressInput.trim().length === 0}
+                      disabled={isBusy || editAddressInput.trim().length === 0}
                     >
                       <Text style={[styles.rowButtonText, { color: colors.primaryText }]}>Save</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+                      style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
                       onPress={handleCancelEdit}
+                      disabled={isBusy}
                     >
                       <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
                     </TouchableOpacity>
@@ -914,14 +980,16 @@ export default function WalletManager({
                   <View style={styles.walletRowBottom}>
                     <View style={styles.walletRowButtons}>
                       <TouchableOpacity
-                        style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+                        style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
                         onPress={() => handleStartEdit(wallet)}
+                        disabled={isBusy}
                       >
                         <Text style={[styles.rowButtonText, { color: colors.text }]}>Edit</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }]}
+                        style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }, isBusy && { opacity: 0.5 }]}
                         onPress={() => handleDelete(wallet.id)}
+                        disabled={isBusy}
                       >
                         <Text style={[styles.rowButtonText, { color: colors.cancelText }]}>Delete</Text>
                       </TouchableOpacity>
@@ -960,8 +1028,9 @@ export default function WalletManager({
                 Wipes every wallet set, every saved wallet, and every stored NFT (and their downloaded images) - useful for testing the app again from a fresh start. Your actual NFTs on the blockchain are never affected. To clear out just one set instead, use its own Delete button above.
               </Text>
               <TouchableOpacity
-                style={[styles.resetButton, { backgroundColor: colors.statusFailedBackground }]}
+                style={[styles.resetButton, { backgroundColor: colors.statusFailedBackground }, isBusy && { opacity: 0.5 }]}
                 onPress={handleResetAllData}
+                disabled={isBusy}
               >
                 <Text style={[styles.resetButtonText, { color: colors.cancelText }]}>Reset All Data</Text>
               </TouchableOpacity>
@@ -1001,6 +1070,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginHorizontal: 12,
     marginTop: 4,
+    marginBottom: 16,
+  },
+  busyBanner: {
+    fontSize: 13,
+    fontWeight: '600',
+    fontStyle: 'italic',
+    marginHorizontal: 12,
+    marginTop: -12,
     marginBottom: 16,
   },
   setSwitcherSection: {
