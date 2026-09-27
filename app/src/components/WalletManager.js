@@ -1019,6 +1019,13 @@ const styles = StyleSheet.create({
   backupButton: {
     flex: 1,
     alignItems: 'center',
+    // Same "flex item won't shrink below its own text" issue as
+    // rowButtonFullWidth above - "Export all sets" shows this exact
+    // growing progress label too, just wrapping onto a second line
+    // (numberOfLines={2}) rather than overflowing sideways today, which
+    // is closer to luck than a real guarantee. Cheap to close off here
+    // too rather than wait for Raphael to hit it from this side.
+    minWidth: 0,
   },
   newSetButton: {
     borderWidth: 1,
@@ -1125,6 +1132,16 @@ const styles = StyleSheet.create({
   // the text can change, never the border.
   walletRowButtonsExporting: {
     flex: 1,
+    // React Native flex items default to a minimum width of "however
+    // wide my content naturally wants to be," same long-standing quirk
+    // as CSS flexbox on the web - so without this, the Export button's
+    // own constantly-growing progress text ("Reading images...
+    // 235/438") was winning a tug-of-war with flex:1 and pushing this
+    // whole row wider than the tile itself, right off the edge of the
+    // screen (Raphael's own report, screenshot in hand). minWidth: 0
+    // is what actually lets this container shrink to fit the row
+    // instead of the row stretching to fit it.
+    minWidth: 0,
   },
   rowButton: {
     borderRadius: 8,
@@ -1134,6 +1151,11 @@ const styles = StyleSheet.create({
   rowButtonFullWidth: {
     flex: 1,
     alignItems: 'center',
+    // Same fix as walletRowButtonsExporting's own comment just above,
+    // one level down - the button itself also needs permission to
+    // shrink below its text's natural width, or numberOfLines={1}'s
+    // ellipsis never actually gets a chance to kick in.
+    minWidth: 0,
   },
   rowButtonText: {
     fontWeight: '600',
