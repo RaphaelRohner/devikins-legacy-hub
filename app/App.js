@@ -620,8 +620,18 @@ function AppContent() {
       try {
         await startScanNotification();
       } catch (err) {
-        // Ignore - see comment above.
+        // TEMPORARY DIAGNOSTIC (2026-09-28) - the scan notification never
+        // appeared on a real device (Moto G54 5G) despite permission being
+        // granted, and there's no other way to see a native-module error
+        // without a debugger attached. Surface it on-screen instead of
+        // swallowing it, just for this test round - remove once the real
+        // cause is found and revert to the silent best-effort behavior.
+        Alert.alert('Scan notification failed to start', String((err && err.message) || err));
       }
+    } else {
+      // Same temporary diagnostic - distinguishes "permission check itself
+      // said no" from "start blew up" above, since they need different fixes.
+      Alert.alert('Scan notification permission not granted', 'ensureNotificationPermission() returned false.');
     }
 
     // Filled in as fetchAllForWallets' onProgress reports a 'truncated'
