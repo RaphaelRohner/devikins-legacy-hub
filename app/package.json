@@ -1,6 +1,6 @@
 {
   "name": "app",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "main": "index.js",
   "dependencies": {
     "@react-native-picker/picker": "2.11.4",
