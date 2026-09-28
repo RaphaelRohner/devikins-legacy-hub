@@ -3591,6 +3591,44 @@ large scan, background the app for an extended stretch, and confirm
 the notification stays up and the scan is still progressing when you
 come back.
 
+## Legacy Hub: scan notification confirmed working - the real bug was a string vs. enum mismatch
+
+First real-device test (Moto G54 5G), after the compileSdk fix above:
+permission prompt appeared and was granted, but the notification itself
+never showed - no status bar icon, nothing in the shade - and a
+backgrounded scan just paused/resumed exactly like the feature wasn't
+there. Root-caused by temporarily replacing the silent try/catch around
+`startScanNotification()` in `handleFetchPress` with an on-screen Alert
+of the actual error, then rebuilding and testing again (real bug, not a
+device/OEM battery-management issue, which was the other live theory at
+the time).
+
+The error: `notifee.displayNotification(*) 'notification.android.
+foregroundServiceTypes' invalid array value, expected an
+AndroidForegroundServiceType value.` `scanNotificationService.js` was
+passing the plain string `'dataSync'` - correct for `app.json`'s
+react-native-notify-kit config plugin (which wants a string for the
+Android manifest declaration), but wrong for the JS runtime call, which
+needs the actual `AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_
+DATA_SYNC` enum member instead. Since the error was caught and
+swallowed by design (best-effort - see the file's own comment), the
+scan just silently ran unprotected every time, with no visible sign
+anything had failed.
+
+Fixed by importing `AndroidForegroundServiceType` from
+`react-native-notify-kit` and using the real enum value in both
+`startScanNotification()` and `updateScanNotification()`. Confirmed
+working on the real device immediately after: the notification now
+appears. Diagnostic Alert reverted back to the original silent
+best-effort catch now that the real cause is known.
+
+Also switched to `eas build --local` for this whole debugging round,
+specifically to avoid burning through EAS's 15-free-builds/month queue
+on repeated fix-and-test cycles - required installing Android Studio's
+SDK platform 36 + NDK/CMake, and swapping Java from Android Studio's
+bundled JDK 25 (too new, broke the native CMake configure step for
+expo-modules-core) to Java 17 via Homebrew (`temurin@17`) instead.
+
 ## Legacy Hub: first real build failed - compileSdk 35 was too low for expo-camera
 
 The first EAS build after adding the foreground-service notification
