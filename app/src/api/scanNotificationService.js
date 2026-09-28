@@ -20,6 +20,7 @@
  */
 import notifee, {
   AndroidColor,
+  AndroidForegroundServiceType,
   AndroidImportance,
   AuthorizationStatus,
 } from 'react-native-notify-kit';
@@ -79,7 +80,7 @@ export async function startScanNotification() {
       // Matches the "dataSync" foregroundServiceType declared via the
       // react-native-notify-kit config plugin in app.json - Android 14+
       // requires the two to agree.
-      foregroundServiceTypes: ['dataSync'],
+      foregroundServiceTypes: [AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_DATA_SYNC],
       ongoing: true,
       // Only the very first display of this notification ID should
       // make a sound/vibrate - every update after that (as progress
@@ -116,7 +117,7 @@ export async function updateScanNotification(progress) {
       android: {
         channelId: CHANNEL_ID,
         asForegroundService: true,
-        foregroundServiceTypes: ['dataSync'],
+        foregroundServiceTypes: [AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_DATA_SYNC],
         ongoing: true,
         onlyAlertOnce: true,
         progress: hasTotal
