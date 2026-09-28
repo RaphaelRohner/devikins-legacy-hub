@@ -58,7 +58,7 @@ import { useTheme } from '../context/ThemeContext';
 // for why this changed from a "+" alias of his primary address.
 const FEEDBACK_EMAIL = 'chibitales2@gmail.com';
 
-const APP_NAME = 'Devikins Legacy Companion';
+const APP_NAME = 'Devikins Legacy Hub';
 
 // The three feedback categories - a name key/store id (used internally
 // and in the email body) and a friendlier label. Shown as a dropdown
