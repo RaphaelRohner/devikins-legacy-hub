@@ -3631,6 +3631,20 @@ still intact; it was just the "stops immediately on swipe" detail that
 didn't end up matching the shipped implementation, and that's now the
 accepted, documented behavior rather than an oversight.
 
+**Full end-to-end real-world confirmation, same day:** Raphael created
+a brand-new wallet set, started a fetch, and swiped the app away while
+it was still running - the closest real test yet to the original
+"what happens if I close the app mid-scan" question that started this
+whole feature. Watched the notification's progress number from the
+status bar without reopening the app; it briefly sat at 401/402 (one
+slower item near the end, not a stall), then disappeared on its own
+once the scan actually finished - exactly the "no explicit 'done'
+notification, it just tears itself down" behavior described above, not
+a silent failure. Confirmed genuinely successful (not just an error
+path hitting the same `finally` block) by reopening the app afterward
+and checking the new set directly: the Devikins collection and their
+images were all there.
+
 ## Legacy Hub: scan notification confirmed working - the real bug was a string vs. enum mismatch
 
 First real-device test (Moto G54 5G), after the compileSdk fix above:
