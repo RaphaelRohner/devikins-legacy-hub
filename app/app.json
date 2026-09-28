@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Devikins Legacy Companion",
-    "slug": "devikins-legacy",
+    "name": "Devikins Legacy Hub",
+    "slug": "devikins-legacy-hub",
     "version": "3.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -16,7 +16,7 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.raphaelrohner.devikinslegacy"
+      "package": "com.raphaelrohner.devikinslegacyhub"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -26,7 +26,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Devikins Legacy Companion to access your camera to scan a wallet address QR code."
+          "cameraPermission": "Allow Devikins Legacy Hub to access your camera to scan a wallet address QR code."
         }
       ],
       "expo-sharing",
@@ -52,11 +52,6 @@
           }
         }
       ]
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "c01dbeee-0729-4ec0-b643-b9cfdfae3a5d"
-      }
-    }
+    ]
   }
 }
