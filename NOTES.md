@@ -3591,6 +3591,46 @@ large scan, background the app for an extended stretch, and confirm
 the notification stays up and the scan is still progressing when you
 come back.
 
+## Legacy Hub: confirmed - the scan survives being fully swiped away, not just backgrounded
+
+Raphael tested the real edge case directly: started a scan, then
+swiped the Hub away from Recents entirely (not just Home/lock - a full
+close), and the scan kept running with the notification still visible
+and updating.
+
+Worth writing down precisely, since the original 2026-09-25 planning
+discussion (see `claude/v3-feature-ideas.md`'s "background scan
+discussed, deliberately deferred" section) assumed the foreground
+service would stop itself via Android's `onTaskRemoved` callback the
+moment the app was swiped away, matching Raphael's stated boundary at
+the time ("fine with it doing its stuff while still open in the
+background," but not wanting the app to "activate itself"). That
+`onTaskRemoved` handling was never actually added anywhere in this
+codebase (checked `index.js` and `scanNotificationService.js` directly
+- neither has one) - so what actually ships is the plain, standard
+Android foreground-service behavior: the service is a separate
+component from the app's Activity/task, and it only stops when the app
+itself calls `stopForegroundService()`, which `stopScanNotification()`
+does from `handleFetchPress`'s `finally` block once the scan actually
+finishes (or errors, or is cancelled) - not when the task gets swiped.
+Exactly the same mechanism a music player or a download manager uses to
+keep working after you leave the app.
+
+**Raphael reviewed this real behavior and confirmed it's what he
+wants, not a bug** - "I would consider that a feature... I just don't
+want the app to start up on its own." The distinction that matters:
+this never cold-launches anything - it only ever continues a scan
+already started while the app was open, and it always tears itself
+down (service + notification) once that scan is done, regardless of
+whether the app is still open or was swiped away in the meantime.
+There's still no `expo-background-fetch`/`expo-task-manager` anywhere
+in this codebase - the actual mechanism that would let Android wake
+the app on its own schedule independent of anything Raphael started -
+so the "never self-reactivates" boundary he originally asked for is
+still intact; it was just the "stops immediately on swipe" detail that
+didn't end up matching the shipped implementation, and that's now the
+accepted, documented behavior rather than an oversight.
+
 ## Legacy Hub: scan notification confirmed working - the real bug was a string vs. enum mismatch
 
 First real-device test (Moto G54 5G), after the compileSdk fix above:
