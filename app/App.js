@@ -72,6 +72,12 @@ import {
   checkImageFreshnessForWallets,
   estimateNewNftCountForWallets,
 } from './src/api/fetchAllForWallet';
+import {
+  ensureNotificationPermission,
+  startScanNotification,
+  updateScanNotification,
+  stopScanNotification,
+} from './src/api/scanNotificationService';
 import { AVERAGE_BYTES_PER_NFT, STORAGE_WARNING_THRESHOLD_BYTES, formatBytes } from './src/api/storageStats';
 import { COLLECTIONS, getSortableFieldNames } from './src/constants/schema';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -603,6 +609,21 @@ function AppContent() {
     nextRetryAtRef.current = 0;
     setIsFetching(true);
 
+    // Best-effort: keeps this scan alive if the user backgrounds the
+    // app partway through (see scanNotificationService.js's own file
+    // comment for why). If the permission is declined or anything
+    // about the notification fails, the scan still runs exactly as
+    // before - this just won't be protected from Android killing it
+    // during a long background stretch.
+    const notificationsAllowed = await ensureNotificationPermission();
+    if (notificationsAllowed) {
+      try {
+        await startScanNotification();
+      } catch (err) {
+        // Ignore - see comment above.
+      }
+    }
+
     // Filled in as fetchAllForWallets' onProgress reports a 'truncated'
     // collection (see fetchAllForWallet.js/kleverApi.js - most likely
     // Klever's own 10,000-item pagination ceiling, occasionally a real
@@ -681,6 +702,7 @@ Continue anyway?`
       await fetchAllForWallets(walletAddresses, {
         onProgress: (nextProgress) => {
           setProgress(nextProgress);
+          updateScanNotification(nextProgress);
 
           // Record any collection that hit a real limit partway through
           // listing (see truncationNotices' own comment above) - it
@@ -717,6 +739,7 @@ Continue anyway?`
       setIsFetching(false);
       setIsCancelling(false);
       setRefreshKey((key) => key + 1);
+      stopScanNotification();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallets]);
