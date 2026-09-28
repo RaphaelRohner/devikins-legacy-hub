@@ -3745,6 +3745,24 @@ anything original, so there's a legal/IP question worth revisiting if
 this app ever stops being a private, undistributed repo. Not a blocker
 today, just noted for later.
 
+## Devi: FAQ updated to match the confirmed swipe-away scan behavior
+
+Once Raphael had run the real end-to-end test (a fresh wallet set,
+2128 Weapons + 2239 Equipment + 131 Devikins, app swiped away entirely
+partway through), the existing `scan-notification` FAQ entry
+(`app/src/components/HelpAssistant.js`) was out of date against what's
+actually confirmed: it only mentioned surviving a switch-apps or
+lock-screen, not a full close from Recents. Per this file's own "keep
+Devi in sync" rule (see the very first section), updated the entry to
+say plainly that a Fetch/Update keeps going even if you close the app
+entirely, so you're free to walk away or browse elsewhere while a big
+scan runs - framed as the actual feature it is, not just a side effect.
+Also restated the one boundary that never changes alongside it: only a
+fetch you started keeps running this way, the app never wakes itself up
+on its own. Added matching keywords (`swipe`, `close app`, `closed`,
+`walk away`, `leave app`, `background scan`) so those phrasings surface
+the same answer. No other FAQ entries changed.
+
 ## App structure decisions (made while building)
  (made while building)
 

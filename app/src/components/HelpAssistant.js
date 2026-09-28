@@ -126,9 +126,9 @@ const FAQ_ENTRIES = [
     id: 'scan-notification',
     topic: 'wallets',
     question: "Why does a notification appear while I'm fetching?",
-    keywords: ['notification', 'background', 'scan running', 'foreground service', 'switch apps', 'lock screen'],
+    keywords: ['notification', 'background', 'scan running', 'foreground service', 'switch apps', 'lock screen', 'swipe', 'close app', 'closed', 'walk away', 'leave app', 'background scan'],
     answer:
-      "That's what lets a Fetch/Update keep going after you switch to another app or lock your phone, instead of risking Android killing it partway through a big scan. It shows live progress and clears itself automatically once the fetch finishes, is cancelled, or hits an error - it isn't something you need to tap or dismiss yourself. If you decline the notification permission, Fetch/Update still works exactly the same, it just won't be protected if you leave the app for a long stretch.",
+      "That's what lets a Fetch/Update keep going even if you switch to another app, lock your phone, or close the app entirely by swiping it away from Recents - confirmed on a real device, a big fetch keeps right on running and the notification keeps updating with live progress, so you're free to walk away or browse elsewhere instead of having to sit and watch it finish. It clears itself automatically the moment the fetch finishes, is cancelled, or hits an error - it isn't something you need to tap or dismiss yourself. One thing that never changes: only a fetch you actually started keeps going this way - the app never wakes itself up or starts a fetch on its own, closed or not. If you decline the notification permission, Fetch/Update still works exactly the same, it just won't be protected if you leave the app for a long stretch.",
   },
   {
     id: 'deleted',
