@@ -3523,6 +3523,74 @@ a small, well-known algorithm and this app already reads every one of
 those bytes during import anyway, so the check adds real confidence at
 essentially no extra cost.
 
+## Legacy Hub: a scan now survives being backgrounded
+
+The first feature built in this private Hub fork (as opposed to the
+public devikins-app repo): a wallet scan no longer gets killed by
+Android if you switch away to another app for a while.
+
+Some background first, from testing 3.1.0 with a ~9,000-NFT wallet: the
+app never had any code that paused a scan when backgrounded - normal
+JS execution just keeps running whether the app is in the foreground or
+not, so switching away never interrupted a fetch by itself. But Android
+itself will eventually kill a backgrounded app's whole process outright
+to reclaim memory or battery, if nothing tells it not to - and once
+that happens, the scan doesn't pause and resume, it just stops dead,
+and you have to come back and tap Fetch again (which does correctly
+pick up wherever it left off, since a scan only ever fetches what's
+still missing).
+
+The fix is a real Android foreground service: while a scan is running,
+the app now shows an ongoing "Devikins scan running" notification with
+a live progress bar, and that notification is what tells Android this
+is active work that shouldn't be reclaimed. This is the standard way
+any Android app (downloaders, music players, fitness trackers) keeps
+real work going in the background - there's no lighter-weight way to
+get the same guarantee.
+
+This meant leaving Expo Go for good (a foreground service needs real
+native Android code, which Expo Go can't run) - already the plan for
+this Hub fork regardless, since KLV wallet integration and the rest of
+the roadmap need native code too. From here on, testing this fork means
+a real EAS build (`eas build --profile preview`, the same command
+already used for devikins-app's APKs), not `expo start` + Expo Go.
+
+New dependency: `react-native-notify-kit`. The original, well-known
+library for this is `@notifee/react-native`, but that repository is
+archived on GitHub (no longer maintained) - `react-native-notify-kit`
+is an actively maintained fork with the exact same API (still imported
+as `notifee`), so the switch is a drop-in one, not a rewrite. Also
+added: `expo-build-properties`, purely to pin the Android
+compileSdk/targetSdk/minSdk versions the notification library asks for
+(35/35/24) - Expo SDK 57 likely already defaults close to these, but
+pinning them explicitly avoids relying on an assumption.
+
+How it's wired in: `src/api/scanNotificationService.js` is a small
+wrapper around the library (asking for the Android 13+ notification
+permission, starting/updating/stopping the foreground service
+notification), and `App.js`'s `handleFetchPress` calls it around the
+existing fetch: request permission and start the notification right
+after `setIsFetching(true)`, update it on every `onProgress` tick
+alongside the existing progress state, and stop it in the same
+`finally` block that already resets `busyRef`/`isFetching` - so it's
+torn down whether the scan finished normally, was cancelled, or hit an
+error. The foreground-service handler itself has to be registered
+outside the app's component tree, at the very top of `index.js`, per
+the library's own setup requirement.
+
+Everything here is deliberately best-effort: if the user declines the
+notification permission, or the service fails to start for any reason,
+the scan still runs exactly as it always did - it just won't be
+protected from an Android-initiated kill during a long background
+stretch. Declining the permission (or a failure) never blocks the
+actual fetch.
+
+Not yet real-device tested as of writing this - the next step is an
+EAS build and testing the exact scenario that motivated this: start a
+large scan, background the app for an extended stretch, and confirm
+the notification stays up and the scan is still progressing when you
+come back.
+
 ## App structure decisions (made while building)
  (made while building)
 

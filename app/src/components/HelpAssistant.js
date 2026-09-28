@@ -123,6 +123,14 @@ const FAQ_ENTRIES = [
       "It asks the Klever blockchain which Devikins, Weapons, and Equipment your wallet(s) hold, then downloads each one's details and picture. The first fetch takes the longest since nothing's cached yet - after that, it's much faster. There's no automatic background fetching - it only ever runs when you tap Fetch/Update yourself, so if anything's stuck, just tap it again.",
   },
   {
+    id: 'scan-notification',
+    topic: 'wallets',
+    question: "Why does a notification appear while I'm fetching?",
+    keywords: ['notification', 'background', 'scan running', 'foreground service', 'switch apps', 'lock screen'],
+    answer:
+      "That's what lets a Fetch/Update keep going after you switch to another app or lock your phone, instead of risking Android killing it partway through a big scan. It shows live progress and clears itself automatically once the fetch finishes, is cancelled, or hits an error - it isn't something you need to tap or dismiss yourself. If you decline the notification permission, Fetch/Update still works exactly the same, it just won't be protected if you leave the app for a long stretch.",
+  },
+  {
     id: 'deleted',
     topic: 'browsing',
     question: "What does marking something 'Deleted' do?",

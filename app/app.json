@@ -29,7 +29,29 @@
           "cameraPermission": "Allow Devikins Legacy Companion to access your camera to scan a wallet address QR code."
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 24
+          }
+        }
+      ],
+      [
+        "react-native-notify-kit",
+        {
+          "android": {
+            "foregroundService": {
+              "types": [
+                "dataSync"
+              ]
+            }
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
