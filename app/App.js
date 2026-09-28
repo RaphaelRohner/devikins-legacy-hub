@@ -957,7 +957,7 @@ Continue anyway?`
       <SafeAreaView style={[styles.centeredContainer, { backgroundColor: colors.background }]}>
         <Text style={[styles.splashTitleLine, { color: colors.primary }]}>Devikins</Text>
         <Text style={[styles.splashTitleLine, { color: colors.primary }]}>Legacy</Text>
-        <Text style={[styles.splashTagline, { color: colors.primary }]}>Companion</Text>
+        <Text style={[styles.splashTagline, { color: colors.primary }]}>Hub</Text>
         <Text style={[styles.splashSubtitle, { color: colors.secondaryText }]}>Setting up local database...</Text>
         <View style={[styles.splashVersionWrap, { bottom: insets.bottom + 16 }]}>
           <Text style={[styles.splashVersion, { color: colors.secondaryText }]}>v{APP_VERSION}</Text>
