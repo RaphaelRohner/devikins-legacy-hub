@@ -3655,6 +3655,42 @@ satisfied too). `minSdkVersion` (24) was untouched - nothing in the
 error was about which devices can install the app, only what API level
 it's compiled against.
 
+## Hub: gave the app its own icon and splash character, separate from Companion
+
+With both the public Companion app and this private Hub installed on
+the same phone at once, they were impossible to tell apart at a glance
+- identical icon artwork, and names too long to read fully under the
+launcher icon. Two fixes, done together:
+
+- `app.json`'s `expo.name` shortened from "Devikins Legacy Hub" to
+  "DLH" (also fixes the launcher label, Recents, and Settings > Apps,
+  since Expo drives all three off the one field), and the in-app splash
+  screen's stale "Companion" tagline (inherited unchanged from the
+  Companion fork) corrected to "Hub".
+- New icon/splash artwork: Raphael sent a screenshot of devikins.com's
+  homepage character-group art and asked for just the central
+  devil-horned character, cropped, used as the app icon and also shown
+  on the splash screen. Cropped that character out, then chroma-keyed
+  the screenshot's solid black background away (it was pure `(0,0,0)`,
+  so this gives real alpha transparency rather than a hard rectangle)
+  and applied a soft elliptical fade so the neighboring characters that
+  bled into the crop's edges fade out instead of leaving a visible cut
+  line. That same real alpha cutout also gave a much cleaner
+  `android-icon-monochrome.png` (a plain white silhouette) than an
+  earlier brightness-as-alpha attempt did, which came out washed-out
+  and unusable. Produced `icon.png`, `android-icon-foreground.png`,
+  `splash-icon.png`, `android-icon-monochrome.png`, `favicon.png`, and
+  a separate trimmed `splash-character.png` rendered above the
+  "Devikins / Legacy / Hub" title text in `App.js`'s splash screen
+  component (a new `<Image>` import + `styles.splashImage`).
+
+Two caveats worth remembering, per Raphael: the source screenshot is
+fairly low-resolution, so the art is noticeably softer than a proper
+vector icon would be; and it's the studio's own official artwork, not
+anything original, so there's a legal/IP question worth revisiting if
+this app ever stops being a private, undistributed repo. Not a blocker
+today, just noted for later.
+
 ## App structure decisions (made while building)
  (made while building)
 
