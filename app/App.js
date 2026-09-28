@@ -46,6 +46,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -955,6 +956,11 @@ Continue anyway?`
   if (!isDatabaseReady) {
     return (
       <SafeAreaView style={[styles.centeredContainer, { backgroundColor: colors.background }]}>
+        <Image
+          source={require('./assets/splash-character.png')}
+          style={styles.splashImage}
+          resizeMode="contain"
+        />
         <Text style={[styles.splashTitleLine, { color: colors.primary }]}>Devikins</Text>
         <Text style={[styles.splashTitleLine, { color: colors.primary }]}>Legacy</Text>
         <Text style={[styles.splashTagline, { color: colors.primary }]}>Hub</Text>
@@ -1310,6 +1316,15 @@ const styles = StyleSheet.create({
   // The loading/splash screen's "Devikins" / "Legacy" title, and the
   // smaller status line underneath it - see the !isDatabaseReady check
   // above.
+  // The cropped character image shown above the "Devikins" / "Legacy" /
+  // "Hub" title on the splash screen (see the !isDatabaseReady check
+  // above). Sized well below the full centeredContainer so the title
+  // text and version number underneath still have room to breathe.
+  splashImage: {
+    width: 160,
+    height: 160,
+    marginBottom: 8,
+  },
   splashTitleLine: {
     fontSize: 36,
     fontWeight: '700',
