@@ -3591,6 +3591,32 @@ large scan, background the app for an extended stretch, and confirm
 the notification stays up and the scan is still progressing when you
 come back.
 
+## Legacy Hub: first real build failed - compileSdk 35 was too low for expo-camera
+
+The first EAS build after adding the foreground-service notification
+failed during `:app:checkReleaseAarMetadata`, with 10 near-identical
+errors, all boiling down to the same thing: several of expo-camera's
+own CameraX dependencies (`androidx.camera:camera-core` and friends,
+`androidx.core:core-ktx`) have been updated upstream to require
+compiling against Android API 36, but this project was compiling
+against 35.
+
+The 35 wasn't the default - it's what got explicitly set when adding
+react-native-notify-kit two commits ago, following that library's own
+install guide (which asks for compileSdk/targetSdk 35 as a minimum).
+Gradle's own build log showed buildTools already defaulting to 36.0.0
+even with compileSdk pinned to 35, which in hindsight was a sign
+something in the dependency tree already expected 36 - expo-camera's
+CameraX libraries, as it turned out, just hadn't hit that requirement
+yet when notify-kit's docs were written.
+
+Fixed by bumping both `compileSdkVersion` and `targetSdkVersion` to 36
+in the `expo-build-properties` plugin config in `app.json` (still well
+above notify-kit's own stated minimum of 35, so that requirement stays
+satisfied too). `minSdkVersion` (24) was untouched - nothing in the
+error was about which devices can install the app, only what API level
+it's compiled against.
+
 ## App structure decisions (made while building)
  (made while building)
 
