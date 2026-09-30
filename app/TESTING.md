@@ -305,6 +305,27 @@ For **each** of Devikins, Weapons, and Equipment:
   that the "‹" back button (top-left corner) returns you to whichever
   tab you were on.
 
+### 12. KLV Signer (test) (4.1.0)
+
+Needs the KLV Signer app installed, with a wallet set up that has testnet
+KLV (see that project's TESTING.md).
+
+- Menu → **KLV Signer (test)** opens the screen; "‹" and Android's Back
+  button return to the collection you were on.
+- **Connect KLV Signer** opens the Signer; the first time it asks "Allow
+  this app?" showing DLH and `com.raphaelrohner.devikinslegacyhub`. Allow →
+  back in the Hub with the Signer's address and testnet balance shown.
+  Leave the screen and come back: the address is remembered.
+- Enter a receiver (type it, or **Scan** a QR code) and an amount, tap
+  **Send with KLV Signer**: the Signer shows exactly that amount and
+  receiver, "Requested by DLH". Approve with the Signer password → back in
+  the Hub with "✔ Sent to the testnet" and a Kleverscan link that shows the
+  transfer. The balance updates after a few seconds.
+- Reject in the Signer → the Hub says "Cancelled in the KLV Signer - nothing
+  was sent."
+- Invalid receiver or amount → a plain message, the Signer isn't opened.
+- Devi: asking "how do I send" or "what is klv signer" finds the new entry.
+
 ## When to test
 
 - **Quick pass**: after a small visual/wording tweak, or a change scoped

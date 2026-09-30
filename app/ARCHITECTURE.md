@@ -625,6 +625,26 @@ notes below.
   matches (`FALLBACK_ANSWER`) - it should never seem more capable than
   it is.
 
+## KLV Signer (test): signing through a separate app (added in 4.1.0)
+
+The Hub never holds a wallet's private key. To *send* something on the
+Klever chain, it asks the separate **KLV Signer** app (its own project,
+`Documents/KLV Signer App`), which shows the user the transaction, asks for
+the Signer's password and signs. Testnet only for now.
+
+- `src/components/SignerTestView.js`: the "KLV Signer (test)" screen
+  (menu → KLV Signer (test)). Connect, show testnet balance, send.
+- `src/api/klvSigner.js`: asks the Signer (`getSignerAddress`,
+  `signWithSigner`) using Android's "start activity for result" via
+  `expo-intent-launcher`. Answers are "ok" with values, or an Error with a
+  plain-English message and a `code` (e.g. `USER_REJECTED`, `NOT_INSTALLED`).
+  The rules are the Signer project's `SIGNER-PROTOCOL.md`.
+- `src/api/kleverTx.js`: `buildTransfer` (a Klever testnet node prepares the
+  unsigned transaction), `broadcastSigned`, `getKlvBalance`, `klvToUnits`
+  (exact, 6 decimals), `explorerUrl`.
+- `plugins/withKlvSigner.js`: config plugin adding the Signer to the
+  manifest's `<queries>` (Android 11+ package visibility).
+
 ## Where the traits actually came from
 
 The exact list of every trait we found per collection, with min/max

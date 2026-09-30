@@ -1,14 +1,17 @@
 {
   "name": "app",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "main": "index.js",
   "dependencies": {
+    "@klever/connect-provider": "0.2.2",
+    "@klever/connect-transactions": "0.1.8",
     "@react-native-picker/picker": "2.11.4",
     "expo": "~57.0.23",
     "expo-build-properties": "~57.0.22",
     "expo-camera": "~57.0.5",
     "expo-document-picker": "~57.0.2",
     "expo-file-system": "~57.0.7",
+    "expo-intent-launcher": "~57.0.1",
     "expo-sharing": "~57.0.22",
     "expo-sqlite": "~57.0.3",
     "expo-status-bar": "~57.0.1",

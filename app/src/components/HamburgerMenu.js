@@ -9,7 +9,7 @@
  * This REPLACES the old TabBar.js (Devikins/Weapons/Equipment tab row)
  * and the old Fetch/Update + Wallets buttons that used to sit above the
  * tabs - all of that is now reached from here instead, as one consistent
- * list of nine entries:
+ * list of ten entries:
  *
  *   1. Wallets (x)   - opens the Wallets management screen
  *   2. Fetch/Update  - starts a new scan (doesn't change screens)
@@ -18,8 +18,10 @@
  *   5. Equipment     - opens the Equipment overview
  *   6. Breeding Helper - opens the Devikins breeding-partner finder
  *   7. Kleverscan      - opens an in-app browser tab on Kleverscan
- *   8. Feedback      - opens the feedback form
- *   9. Ask Devi (Help) - opens the offline in-app FAQ helper
+ *   8. KLV Signer (test) - sends testnet KLV/NFTs, signed by the separate
+ *                        KLV Signer app (see SignerTestView.js)
+ *   9. Feedback      - opens the feedback form
+ *  10. Ask Devi (Help) - opens the offline in-app FAQ helper
  *
  * Kleverscan sits right after Breeding Helper rather than at the very
  * end (where it first landed) per feedback once it was in daily use -
@@ -105,6 +107,12 @@ export default function HamburgerMenu({
       label: 'Kleverscan',
       screen: 'kleverscan',
       onPress: () => onSelectScreen('kleverscan'),
+    },
+    {
+      key: 'signer',
+      label: 'KLV Signer (test)',
+      screen: 'signer',
+      onPress: () => onSelectScreen('signer'),
     },
     {
       key: 'feedback',
