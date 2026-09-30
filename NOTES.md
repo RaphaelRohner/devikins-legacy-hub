@@ -3763,6 +3763,53 @@ on its own. Added matching keywords (`swipe`, `close app`, `closed`,
 `walk away`, `leave app`, `background scan`) so those phrasings surface
 the same answer. No other FAQ entries changed.
 
+## Hub 4.1.0: KLV Signer (test) - first step towards sending, without ever holding a key
+
+**Done in a separate chat (the "KLV Signer App" project), with Raphael's OK
+to change the Hub. If you're the Claude working on the Hub: read this before
+touching any of the files named here.**
+
+Goal: let the Hub *do* things on the Klever chain (send, later sell/rent
+NFTs), not just look. Decision: the Hub never holds a private key. Keys live
+in a separate app, the **KLV Signer** (project folder `Documents/KLV Signer
+App`, GitHub `RaphaelRohner/klv-signer`), which any Android app can ask to
+sign a transaction. The user sees the transaction there and approves it
+with the Signer's own password. The exact rules for asking are in that
+project's `SIGNER-PROTOCOL.md`.
+
+What was added to the Hub (nothing existing was removed or restructured):
+
+- **Menu entry "KLV Signer (test)"** (`HamburgerMenu.js`, now ten entries)
+  opening **`src/components/SignerTestView.js`** (new screen, same
+  full-screen-takeover pattern as Kleverscan; `currentScreen === 'signer'`,
+  also added to App.js's Back-button list). It connects to the Signer
+  (remembers its address in `global_settings` as `klvSignerAddress`), shows
+  the testnet KLV balance, and sends KLV / tokens / NFTs.
+- **`src/api/klvSigner.js`** (new): the handoff to the Signer, via
+  `expo-intent-launcher` ("start activity for result"). Always names the
+  Signer exactly (package + class).
+- **`src/api/kleverTx.js`** (new): prepares unsigned transfers with a Klever
+  testnet node, sends signed ones, reads the balance. Uses Klever's SDK
+  `@klever/connect-provider` 0.2.2 + `@klever/connect-transactions` 0.1.8
+  (pinned exactly). Quirk: `sendRawTransaction(hex)` is broken in 0.2.2, so
+  signed transactions are sent in JSON form.
+- **`plugins/withKlvSigner.js`** (new config plugin, listed in app.json's
+  plugins): adds `<package android:name="com.raphaelrohner.klvsigner"/>` to
+  the manifest's `<queries>`. Without it Android 11+ hides the Signer from
+  the Hub.
+- New dependencies: `expo-intent-launcher`, and the two Klever SDK packages.
+  **Run `npm install` in `app/` before the next build.** The new native
+  module (intent-launcher) means a real rebuild, not just a reload.
+- Devi: new FAQ entry `klv-signer` (topic "Other tools").
+- Version bumped to **4.1.0**.
+
+**TESTNET ONLY, on purpose.** Everything in this screen runs on Klever's
+practice network. The Signer refuses mainnet transactions until it's been
+reviewed further. That's also why this is a separate test screen and not yet
+a "Send" button on each NFT: the Devikins the Hub shows live on mainnet.
+
+Not changed: the scanning/fetching, database schema, collections, filters.
+
 ## App structure decisions (made while building)
  (made while building)
 

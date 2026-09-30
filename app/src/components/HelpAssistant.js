@@ -195,6 +195,14 @@ const FAQ_ENTRIES = [
       "Open the ☰ menu and tap Kleverscan for a small built-in browser pointed straight at the Devikins collection's Holders list on kleverscan.org, Klever's own block explorer - no typing in a search box needed. Handy for checking who's holding what, and it's also a good way to find your own wallet address if you don't have it handy: if you know roughly how many Devikins you hold, you can browse the holder list and spot yourself.",
   },
   {
+    id: 'klv-signer',
+    topic: 'tools',
+    question: 'What is KLV Signer (test)?',
+    keywords: ['signer', 'klv signer', 'send', 'transfer', 'sign', 'signature', 'testnet', 'private key', 'transaction'],
+    answer:
+      "Open the ☰ menu and tap KLV Signer (test) to send KLV, tokens or NFTs on Klever's testnet - the practice network, where nothing has real value. It needs the separate KLV Signer app on your phone: Devikins Legacy Hub never holds your wallet's private key. Tap Connect KLV Signer once (the Signer asks whether to allow the Hub), then enter a receiver and an amount and tap Send with KLV Signer. The Signer shows you exactly what will be sent and only signs after you enter your Signer password; the Hub then sends it to the testnet and gives you a Kleverscan link. It's testnet-only for now because the Signer is still being tested - sending your real Devikins will come later.",
+  },
+  {
     id: 'breeding-helper',
     topic: 'tools',
     question: 'What does Breeding Helper do?',
