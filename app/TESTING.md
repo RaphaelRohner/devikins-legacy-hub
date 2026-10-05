@@ -325,6 +325,8 @@ KLV (see that project's TESTING.md).
   was sent."
 - Invalid receiver or amount → a plain message, the Signer isn't opened.
 - Devi: asking "how do I send" or "what is klv signer" finds the new entry.
+- (4.1.2) Sending works exactly as before: the Hub now checks the Signer's
+  answer is exactly its transaction plus the signature (silent when all is well).
 - (4.1.1) **Seal check:** with the official KLV Signer installed, Connect
   and Send work exactly as above (the check is silent when all is well).
   Optional (uninstalling the Signer deletes its wallet; only with a test

@@ -651,6 +651,9 @@ the Signer's password and signs. Testnet only for now.
   to send anything to a Signer with another seal (`SIGNER_NOT_OFFICIAL`) or
   when the check can't run (`SIGNER_CHECK_FAILED`). Expo links it
   automatically because it sits in `modules/`.
+- (4.1.2) `signWithSigner` checks the Signer's answer with `signedMatches`:
+  the signed transaction must be exactly the unsigned one the Hub prepared
+  plus the 64-byte signature, or nothing is sent (`SIGNED_MISMATCH`).
 
 ## Where the traits actually came from
 

@@ -117,10 +117,35 @@ export async function getSignerAddress() {
 }
 
 /**
+ * signedMatches - is the signed transaction exactly the one we prepared,
+ * plus the signature? The Signer returns our unsigned bytes unchanged with
+ * the 64-byte signature appended as field 2 ("12 40" + 128 hex characters).
+ * Anything else is refused before it reaches the network (third AI review
+ * of the Signer, 5 Oct 2026, A9).
+ */
+export function signedMatches(unsignedHex, signedHex) {
+  const unsigned = String(unsignedHex || '').toLowerCase();
+  const signed = String(signedHex || '').toLowerCase();
+  return /^[0-9a-f]+$/.test(signed)
+    && unsigned.length > 0
+    && signed.length === unsigned.length + 4 + 128
+    && signed.startsWith(unsigned)
+    && signed.slice(unsigned.length, unsigned.length + 4) === '1240';
+}
+
+/**
  * Asks the Signer to sign an unsigned transaction (hex). The Signer shows
  * the user what it does, asks for their password, and signs - or says no.
- * Returns { signedTransaction, transactionHash, signature, address, network }.
+ * Returns { signedTransaction, transactionHash, signature, address, network },
+ * after checking the signed transaction is exactly ours plus the signature.
  */
 export async function signWithSigner(unsignedHex) {
-  return askSigner(ACTION.SIGN_TRANSACTION, { transaction: unsignedHex });
+  const answer = await askSigner(ACTION.SIGN_TRANSACTION, { transaction: unsignedHex });
+  if (!signedMatches(unsignedHex, answer.signedTransaction)) {
+    throw Object.assign(
+      new Error("The KLV Signer's answer doesn't match the transaction the Hub prepared, so nothing was sent."),
+      { code: 'SIGNED_MISMATCH' },
+    );
+  }
+  return answer;
 }
