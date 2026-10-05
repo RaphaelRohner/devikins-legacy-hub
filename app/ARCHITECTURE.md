@@ -644,6 +644,13 @@ the Signer's password and signs. Testnet only for now.
   (exact, 6 decimals), `explorerUrl`.
 - `plugins/withKlvSigner.js`: config plugin adding the Signer to the
   manifest's `<queries>` (Android 11+ package visibility).
+- `modules/klv-signer-check/` (4.1.1): the Hub's only native code, a tiny
+  local Expo module. `signerStatus()` asks Android whether the app installed
+  as the Signer carries the official Signer seal (signing certificate).
+  `klvSigner.js` calls it (`verifySigner`) before every request and refuses
+  to send anything to a Signer with another seal (`SIGNER_NOT_OFFICIAL`) or
+  when the check can't run (`SIGNER_CHECK_FAILED`). Expo links it
+  automatically because it sits in `modules/`.
 
 ## Where the traits actually came from
 

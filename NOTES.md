@@ -3810,6 +3810,31 @@ a "Send" button on each NFT: the Devikins the Hub shows live on mainnet.
 
 Not changed: the scanning/fetching, database schema, collections, filters.
 
+## Hub 4.1.1: only the real KLV Signer gets requests (seal check)
+
+**Done from the "KLV Signer App" project chat, with Raphael's OK (5 Oct 2026).**
+
+Why: the Hub always addressed the Signer by exact name, but a fake app
+installed under the Signer's name (from an unofficial source) would still
+have received the Hub's requests. Every Android app carries a seal (its
+signing certificate) that nobody else can copy, so the Hub now asks Android
+before **every** request whether the installed Signer carries the official
+seal (`82:D0:9D:…:7E:86:11`, published in the Signer's README). Not official,
+or the check can't run → nothing is sent, with a plain message.
+
+- **`modules/klv-signer-check/`** (new): a tiny local Expo module, the Hub's
+  first own native code (Kotlin, `signerStatus(package, certSha256)` via
+  `PackageManager.hasSigningCertificate`). Read-only, no permission needed.
+  Expo links it automatically from `modules/`.
+- **`src/api/klvSigner.js`**: `OFFICIAL_SIGNER_CERT_SHA256` and
+  `verifySigner()`, called first in every request. New error codes
+  `SIGNER_NOT_OFFICIAL` and `SIGNER_CHECK_FAILED`.
+- Devi's `klv-signer` answer mentions the check. TESTING.md section 12 has
+  the test. Version **4.1.1**.
+- **No `npm install` needed**, but it's native code, so a new build (not a
+  reload in Expo Go; in Expo Go the check can't run and the Hub refuses to
+  talk to the Signer, on purpose).
+
 ## App structure decisions (made while building)
  (made while building)
 
