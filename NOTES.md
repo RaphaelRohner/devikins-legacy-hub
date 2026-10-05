@@ -3835,6 +3835,16 @@ or the check can't run → nothing is sent, with a plain message.
   reload in Expo Go; in Expo Go the check can't run and the Hub refuses to
   talk to the Signer, on purpose).
 
+## Hub 4.1.2: the Signer's answer is checked before sending
+
+**Done from the "KLV Signer App" project chat, with Raphael's OK (5 Oct 2026).**
+
+From the Signer's third AI review (A9): `signWithSigner` in
+`src/api/klvSigner.js` now checks that the signed transaction is exactly the
+unsigned one the Hub prepared, plus the signature (`signedMatches`). If
+anything else comes back, nothing is broadcast and the user sees a plain
+message (`SIGNED_MISMATCH`). Version **4.1.2**. No `npm install`; a new build.
+
 ## App structure decisions (made while building)
  (made while building)
 
