@@ -327,8 +327,9 @@ KLV (see that project's TESTING.md).
 - Devi: asking "how do I send" or "what is klv signer" finds the new entry.
 - (4.1.1) **Seal check:** with the official KLV Signer installed, Connect
   and Send work exactly as above (the check is silent when all is well).
-  Uninstall the Signer → Connect says "The KLV Signer app is not installed on
-  this phone." (A Signer with a different seal would get "isn't the official
+  Optional (uninstalling the Signer deletes its wallet; only with a test
+  wallet whose recovery words you have): uninstall the Signer → Connect says
+  "The KLV Signer app is not installed on this phone." (A Signer with a different seal would get "isn't the official
   one … sent it nothing"; that needs a specially built fake, so it isn't part
   of the normal test.)
 
