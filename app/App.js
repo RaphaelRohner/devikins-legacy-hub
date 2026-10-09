@@ -91,6 +91,7 @@ import HelpAssistant from './src/components/HelpAssistant';
 import BreedingHelper from './src/components/BreedingHelper';
 import KleverscanView from './src/components/KleverscanView';
 import SignerTestView from './src/components/SignerTestView';
+import DonateView from './src/components/DonateView';
 import SortPickerModal from './src/components/SortPickerModal';
 import { humanizeColumnName } from './src/components/FilterPanel';
 import appConfig from './app.json';
@@ -1054,6 +1055,17 @@ Continue anyway?`
   // Signer app doing the signing (the Hub never holds a private key). See
   // SignerTestView.js's own file comment, and src/api/klvSigner.js /
   // src/api/kleverTx.js. Same full-screen-takeover pattern as above.
+  // Donate - shows the donation address (see DonateView.js and
+  // src/constants/donation.js). Same full-screen-takeover pattern.
+  if (currentScreen === 'donate') {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <DonateView onClose={() => goToScreen(lastCollectionScreen)} />
+      </SafeAreaView>
+    );
+  }
+
   if (currentScreen === 'signer') {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>

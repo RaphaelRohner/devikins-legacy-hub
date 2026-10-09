@@ -44,7 +44,7 @@ import { WebView } from 'react-native-webview';
 import { useTheme } from '../context/ThemeContext';
 import { COLLECTIONS } from '../constants/schema';
 
-const KLEVERSCAN_URL = `https://kleverscan.org/asset/${COLLECTIONS.devikin.assetId}?tab=Holders`;
+export const KLEVERSCAN_URL = `https://kleverscan.org/asset/${COLLECTIONS.devikin.assetId}?tab=Holders`;
 
 export default function KleverscanView({ onClose }) {
   const { colors } = useTheme();

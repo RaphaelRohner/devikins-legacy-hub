@@ -22,6 +22,11 @@
  *                        KLV Signer app (see SignerTestView.js)
  *   9. Feedback      - opens the feedback form
  *  10. Ask Devi (Help) - opens the offline in-app FAQ helper
+ *  11. Donate        - shows the donation address (only once one is set in
+ *                      src/constants/donation.js)
+ *
+ * On the website, Kleverscan opens in a new browser tab and the KLV Signer
+ * entry is hidden (both need Android features).
  *
  * Kleverscan sits right after Breeding Helper rather than at the very
  * end (where it first landed) per feedback once it was in daily use -
@@ -37,7 +42,15 @@
  * calling back up to App.js to say what was tapped.
  */
 
-import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, Platform, Linking } from 'react-native';
+import { KLEVERSCAN_URL } from './KleverscanView';
+import { DONATION_ADDRESS } from '../constants/donation';
+
+// The website version can't embed Kleverscan or talk to the KLV Signer
+// (an Android app), so on the web Kleverscan opens in a new browser tab
+// and the Signer entry is left out. The Donate entry appears only once a
+// donation address is set in src/constants/donation.js.
+const IS_WEB = Platform.OS === 'web';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 
@@ -106,7 +119,12 @@ export default function HamburgerMenu({
       key: 'kleverscan',
       label: 'Kleverscan',
       screen: 'kleverscan',
-      onPress: () => onSelectScreen('kleverscan'),
+      onPress: IS_WEB
+        ? () => {
+            onClose();
+            Linking.openURL(KLEVERSCAN_URL);
+          }
+        : () => onSelectScreen('kleverscan'),
     },
     {
       key: 'signer',
@@ -126,7 +144,17 @@ export default function HamburgerMenu({
       screen: 'help',
       onPress: () => onSelectScreen('help'),
     },
-  ];
+    {
+      key: 'donate',
+      label: 'Donate',
+      screen: 'donate',
+      onPress: () => onSelectScreen('donate'),
+    },
+  ].filter((entry) => {
+    if (entry.key === 'signer') return !IS_WEB;
+    if (entry.key === 'donate') return DONATION_ADDRESS !== '';
+    return true;
+  });
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
