@@ -39,7 +39,18 @@
  * short within a fraction of a second of the user tapping Stop.
  */
 
-const METADATA_API_BASE = 'https://1fl8e08843.execute-api.us-east-1.amazonaws.com';
+import { Platform } from 'react-native';
+
+// On the phone the app asks Moonlabs' server directly. A website can't:
+// browsers refuse to read that server because it doesn't say "websites
+// may read me" (no CORS header). So the web version goes through our own
+// small relay on Cloudflare, which fetches exactly the same data and adds
+// that permission. The relay's code lives in relay/worker.js at the top
+// of this repo; it only passes through /devikin, /weapon and /equipment
+// requests and refuses everything else.
+const MOONLABS_METADATA_API = 'https://1fl8e08843.execute-api.us-east-1.amazonaws.com';
+const WEB_RELAY = 'https://devi-hub-relay.raphaelrohner.workers.dev';
+const METADATA_API_BASE = Platform.OS === 'web' ? WEB_RELAY : MOONLABS_METADATA_API;
 
 // "Exponential backoff" means each retry waits longer than the last -
 // giving a struggling server progressively more breathing room instead of

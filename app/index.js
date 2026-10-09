@@ -1,5 +1,7 @@
 import { registerRootComponent } from 'expo';
+import { Platform } from 'react-native';
 import notifee from 'react-native-notify-kit';
+import './src/web/alertForWeb'; // website only: makes pop-up messages work in the browser
 
 import App from './App';
 
@@ -12,9 +14,12 @@ import App from './App';
 // service stays running until scanNotificationService.js's
 // stopScanNotification() calls notifee.stopForegroundService()
 // directly, once a scan finishes, is cancelled, or errors out.
-notifee.registerForegroundService(() => {
-  return new Promise(() => {});
-});
+// (Phone only - a browser has no foreground services.)
+if (Platform.OS !== 'web') {
+  notifee.registerForegroundService(() => {
+    return new Promise(() => {});
+  });
+}
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);
 // It also ensures that whether you load the app in Expo Go or in a native build,

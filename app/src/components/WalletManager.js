@@ -99,6 +99,11 @@ import {
 } from '../db/database';
 import { useTheme } from '../context/ThemeContext';
 import QrScannerModal from './QrScannerModal';
+
+// Exporting and importing wallet sets uses the phone's file system and
+// share sheet, which the website doesn't have yet - so on the web those
+// buttons are hidden for now. Everything else works the same.
+const IS_WEB = Platform.OS === 'web';
 import { getStorageBytesForSets, formatBytes } from '../api/storageStats';
 import {
   exportWalletSet,
@@ -731,40 +736,42 @@ export default function WalletManager({
             </TouchableOpacity>
           )}
 
-          <View style={styles.backupRow}>
-            {!isImporting ? (
-              <TouchableOpacity
-                style={[
-                  styles.rowButton,
-                  styles.backupButton,
-                  { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
-                  (isExportingId !== null || walletSets.length === 0) && { opacity: 0.5 },
-                ]}
-                onPress={handleExportAllSets}
-                disabled={isExportingId !== null || isImporting || walletSets.length === 0}
-              >
-                <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
-                  {isExportingId === 'all' ? (exportProgressLabel || 'Exporting...') : 'Export all sets'}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            {isExportingId !== 'all' ? (
-              <TouchableOpacity
-                style={[
-                  styles.rowButton,
-                  styles.backupButton,
-                  { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
-                  (isImporting || isExportingId !== null) && { opacity: 0.5 },
-                ]}
-                onPress={handleImport}
-                disabled={isImporting || isExportingId !== null}
-              >
-                <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
-                  {isImporting ? (importProgressLabel || 'Importing...') : 'Import a set'}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
+          {!IS_WEB ? (
+            <View style={styles.backupRow}>
+              {!isImporting ? (
+                <TouchableOpacity
+                  style={[
+                    styles.rowButton,
+                    styles.backupButton,
+                    { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+                    (isExportingId !== null || walletSets.length === 0) && { opacity: 0.5 },
+                  ]}
+                  onPress={handleExportAllSets}
+                  disabled={isExportingId !== null || isImporting || walletSets.length === 0}
+                >
+                  <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
+                    {isExportingId === 'all' ? (exportProgressLabel || 'Exporting...') : 'Export all sets'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              {isExportingId !== 'all' ? (
+                <TouchableOpacity
+                  style={[
+                    styles.rowButton,
+                    styles.backupButton,
+                    { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+                    (isImporting || isExportingId !== null) && { opacity: 0.5 },
+                  ]}
+                  onPress={handleImport}
+                  disabled={isImporting || isExportingId !== null}
+                >
+                  <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
+                    {isImporting ? (importProgressLabel || 'Importing...') : 'Import a set'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
 
           {walletSets.map((set) => {
             const isActive = set.id === activeWalletSetId;
@@ -831,23 +838,25 @@ export default function WalletManager({
                           <Text style={[styles.rowButtonText, { color: colors.text }]}>Rename</Text>
                         </TouchableOpacity>
                       ) : null}
+                      {!IS_WEB ? (
                       <TouchableOpacity
-                        style={[
-                          styles.rowButton,
-                          { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
-                          isExportingId !== null && { opacity: 0.5 },
-                          isThisSetExporting && styles.rowButtonFullWidth,
-                        ]}
-                        onPress={() => handleExportSet(set)}
-                        disabled={isExportingId !== null || isImporting}
-                      >
-                        <Text
-                          style={[styles.rowButtonText, { color: colors.text }, isThisSetExporting && styles.rowButtonTextCentered]}
-                          numberOfLines={1}
+                          style={[
+                            styles.rowButton,
+                            { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+                            isExportingId !== null && { opacity: 0.5 },
+                            isThisSetExporting && styles.rowButtonFullWidth,
+                          ]}
+                          onPress={() => handleExportSet(set)}
+                          disabled={isExportingId !== null || isImporting}
                         >
-                          {isExportingId === set.id ? (exportProgressLabel || 'Exporting...') : 'Export'}
-                        </Text>
-                      </TouchableOpacity>
+                          <Text
+                            style={[styles.rowButtonText, { color: colors.text }, isThisSetExporting && styles.rowButtonTextCentered]}
+                            numberOfLines={1}
+                          >
+                            {isExportingId === set.id ? (exportProgressLabel || 'Exporting...') : 'Export'}
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
                       {!isThisSetExporting ? (
                         <TouchableOpacity
                           style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }, isBusy && { opacity: 0.5 }]}
