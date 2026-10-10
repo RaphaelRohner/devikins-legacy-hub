@@ -101,13 +101,20 @@
  */
 
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, Image, Switch, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, Image, Switch, StyleSheet, Platform } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../context/ThemeContext';
 import { queryNfts, getDistinctColumnValues, getColumnRange, getBreedingCandidates } from '../db/database';
 import { RARITY_ORDER } from '../constants/schema';
 import { estimateBreedingCost } from '../constants/breedingRules';
 import { NO_FILTER } from './FilterPanel';
+
+// Website only: in the browser a dropdown becomes a normal <select>, which
+// keeps a white background unless told otherwise - with the app's light
+// text colour that made the choices unreadable in dark mode. Give it the
+// app's own surface colour there (the phone draws dropdowns its own way).
+const WEB_SELECT_STYLE = (colors) =>
+  Platform.OS === 'web' ? { backgroundColor: colors.surface, borderWidth: 0, padding: 8, fontSize: 15 } : null;
 
 // Five of Devikins' six Affinity columns (see schema.js's
 // TRAIT_COLUMNS.devikin) - every stat EXCEPT Overall Affinity, which
@@ -425,7 +432,7 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
           <Picker
             selectedValue={rarityFilter}
             onValueChange={setRarityFilter}
-            style={{ color: colors.text }}
+            style={[{ color: colors.text }, WEB_SELECT_STYLE(colors)]}
             dropdownIconColor={colors.text}
           >
             <Picker.Item label="All (breedable rarities)" value={NO_FILTER} />
@@ -443,7 +450,7 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
             <Picker
               selectedValue={ancestryFilter}
               onValueChange={setAncestryFilter}
-              style={{ color: colors.text }}
+              style={[{ color: colors.text }, WEB_SELECT_STYLE(colors)]}
               dropdownIconColor={colors.text}
             >
               <Picker.Item label="All" value={NO_FILTER} />

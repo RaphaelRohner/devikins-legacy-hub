@@ -52,6 +52,13 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../context/ThemeContext';
 
+// Website only: in the browser a dropdown becomes a normal <select>, which
+// keeps a white background unless told otherwise - with the app's light
+// text colour that made the choices unreadable in dark mode. Give it the
+// app's own surface colour there (the phone draws dropdowns its own way).
+const WEB_SELECT_STYLE = (colors) =>
+  Platform.OS === 'web' ? { backgroundColor: colors.surface, borderWidth: 0, padding: 8, fontSize: 15 } : null;
+
 // A separate Gmail address Raphael already owns from an older game
 // project - not his primary personal address - so this app's source
 // never has to contain that one. See this file's own header comment
@@ -150,7 +157,7 @@ export default function Feedback({ appVersion, onClose }) {
             <Picker
               selectedValue={category}
               onValueChange={setCategory}
-              style={{ color: colors.text }}
+              style={[{ color: colors.text }, WEB_SELECT_STYLE(colors)]}
               dropdownIconColor={colors.text}
             >
               {CATEGORIES.map((entry) => (
