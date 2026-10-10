@@ -6,21 +6,21 @@
  * of the phone one.
  *
  * On the phone, imageStorage.js saves every NFT picture into the app's own
- * storage so it still shows when Moonlabs' image server is slow or down.
- * A website can't write files like that, and every attempt only printed a
- * warning ("getInfoAsync is not available on web"). The browser keeps its
- * own copy of pictures it has shown anyway, so on the website we simply
- * skip saving: every function here answers "nothing stored", and the app
- * shows the picture straight from Moonlabs' image server, as it always
- * does when no saved copy exists.
+ * storage. On the website, storeImage() keeps a copy in the browser's own
+ * picture store instead (see webImageCache.js), so website backups can
+ * include the pictures. It still answers "no local file" (null), so the
+ * screen keeps showing the picture from Moonlabs' image server.
  *
  * Same function names and answers as the phone file, so the rest of the
  * app doesn't need to know the difference.
  */
 
+import { ensureCachedImage } from './webImageCache';
+
 export function setActiveImagesDirName() {}
 
-export async function storeImage() {
+export async function storeImage(kind, nonce, remoteUrl) {
+  if (remoteUrl) await ensureCachedImage(remoteUrl);
   return { localImagePath: null, etag: null };
 }
 

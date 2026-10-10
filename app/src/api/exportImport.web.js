@@ -15,11 +15,12 @@
  * writes them). So:
  *   - a website export can be imported in the phone app, and
  *   - a phone export can be imported on the website.
- * The only difference: the website stores no pictures (see
- * imageStorage.web.js), so its exports contain no images/ folder, and when
- * importing a phone export the pictures in it are skipped. The phone app
- * downloads missing pictures again by itself; the website always shows
- * them straight from Moonlabs' image server.
+ * Pictures: the website keeps its copies in the browser's picture store
+ * (webImageCache.js). Export puts them into the same images/ folder the
+ * phone uses, with the phone's file names (devikin-123.png etc.), so the
+ * phone app picks them up after importing. Any picture not yet in the
+ * store is downloaded during export. Import puts a backup's pictures
+ * (phone or website) back into the browser's store.
  *
  * Export: the zip is built in memory and handed to the browser as a
  * normal download. Import: a normal "choose file" dialog; the file is
@@ -35,6 +36,10 @@ import {
   dumpWalletSetData,
   restoreWalletSetData,
 } from '../db/database';
+import { ensureCachedImage, putCachedImageBytes, extensionFromUrl } from './webImageCache';
+
+const NFT_KINDS = ['devikin', 'weapon', 'equipment'];
+const PARALLEL_DOWNLOADS = 6;
 
 // Must match exportImport.js, so both sides recognise each other's files.
 const EXPORT_FORMAT_VERSION = 3;
@@ -75,17 +80,42 @@ function crc32Bytes(bytes) {
   return (c ^ 0xffffffff) >>> 0;
 }
 
-async function addWalletSetFiles(files, walletSet) {
+async function addWalletSetFiles(files, walletSet, onProgress) {
   await checkpointWalletSetForExport(walletSet.db_file_name);
   const dataDump = await dumpWalletSetData(walletSet.db_file_name);
   const prefix = pathPrefixForSet(walletSet);
   files[`${prefix}database.json`] = strToU8(JSON.stringify(dataDump));
+
+  // Pictures, named the way the phone app names them.
+  const wanted = [];
+  for (const kind of NFT_KINDS) {
+    for (const row of dataDump[kind] || []) {
+      if (row.image) wanted.push({ name: `${kind}-${row.nonce}.${extensionFromUrl(row.image)}`, url: row.image });
+    }
+  }
+  let done = 0;
+  let imageCount = 0;
+  let next = 0;
+  async function worker() {
+    while (next < wanted.length) {
+      const item = wanted[next];
+      next += 1;
+      const bytes = await ensureCachedImage(item.url);
+      if (bytes) {
+        files[`${prefix}images/${item.name}`] = bytes;
+        imageCount += 1;
+      }
+      done += 1;
+      onProgress?.({ phase: 'reading-images', setName: walletSet.name, current: done, total: wanted.length });
+    }
+  }
+  await Promise.all(Array.from({ length: PARALLEL_DOWNLOADS }, worker));
   files[`${prefix}manifest.json`] = strToU8(JSON.stringify({
     formatVersion: EXPORT_FORMAT_VERSION,
     exportedAt: new Date().toISOString(),
     name: walletSet.name,
     hasDatabase: true,
-    imageCount: 0,
+    imageCount,
   }, null, 2));
 }
 
@@ -103,21 +133,21 @@ function buildZip(files, setSummaries) {
 }
 
 export async function exportWalletSet(walletSet, { onProgress } = {}) {
-  onProgress?.({ phase: 'writing', setName: walletSet.name });
   const files = {};
-  await addWalletSetFiles(files, walletSet);
+  await addWalletSetFiles(files, walletSet, onProgress);
+  onProgress?.({ phase: 'writing', setName: walletSet.name });
   const fileUri = buildZip(files, [{ id: walletSet.id, name: walletSet.name }]);
   return { fileUri, fileName: `devikins-${sanitizeForFileName(walletSet.name)}-${timestampForFileName()}.zip` };
 }
 
 export async function exportAllWalletSets(walletSets, { onProgress } = {}) {
-  onProgress?.({ phase: 'writing' });
   const files = {};
   const setSummaries = [];
   for (const walletSet of walletSets) {
-    await addWalletSetFiles(files, walletSet);
+    await addWalletSetFiles(files, walletSet, onProgress);
     setSummaries.push({ id: walletSet.id, name: walletSet.name });
   }
+  onProgress?.({ phase: 'writing' });
   const fileUri = buildZip(files, setSummaries);
   return { fileUri, fileName: `devikins-all-sets-${timestampForFileName()}.zip` };
 }
@@ -209,11 +239,17 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
     if (slash === -1) continue; // export-manifest.json - informational only
     const folder = entry.name.slice(0, slash);
     const rest = entry.name.slice(slash + 1);
-    if (rest !== 'manifest.json' && rest !== 'database.json') continue; // pictures are skipped on the website
+    const isImage = rest.startsWith('images/') && rest.length > 'images/'.length;
+    if (rest !== 'manifest.json' && rest !== 'database.json' && !isImage) continue;
     if (entry.method !== 0) throw new Error("That file doesn't look like a Hub export (unexpected compression).");
     const data = bytes.subarray(entry.dataOffset, entry.dataOffset + entry.size);
-    const group = groups.get(folder) || {};
-    group[rest] = { data, ok: crc32Bytes(data) === entry.crc32 };
+    const group = groups.get(folder) || { images: {} };
+    if (!group.images) group.images = {};
+    if (isImage) {
+      group.images[rest.slice('images/'.length)] = { data, ok: crc32Bytes(data) === entry.crc32 };
+    } else {
+      group[rest] = { data, ok: crc32Bytes(data) === entry.crc32 };
+    }
     groups.set(folder, group);
   }
 
@@ -240,6 +276,30 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
       }
     } else if (db && !db.ok) {
       warnings.push(`${importedName}: its data didn't match the export's checksum (the file may be damaged), so it was added as an empty set.`);
+    }
+
+    // Pictures: the phone records where it saved each picture on the
+    // phone (local_image_path). Those phone paths mean nothing in a
+    // browser, so they're cleared here - the website shows pictures from
+    // the image server and keeps its own copies in the browser's store.
+    // The backup's picture files go into that store, matched to each NFT
+    // by the phone's file name (devikin-123.png etc.).
+    let badImages = 0;
+    for (const kind of NFT_KINDS) {
+      for (const row of dump[kind] || []) {
+        if (row.local_image_path) row.local_image_path = null;
+        if (!row.image) continue;
+        const file = group.images?.[`${kind}-${row.nonce}.${extensionFromUrl(row.image)}`];
+        if (!file) continue;
+        if (!file.ok) {
+          badImages += 1;
+          continue;
+        }
+        await putCachedImageBytes(row.image, file.data, row.image.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg');
+      }
+    }
+    if (badImages > 0) {
+      warnings.push(`${importedName}: ${badImages} picture(s) didn't match the export's checksum and were skipped (they'll load from the image server instead).`);
     }
 
     counter += 1;

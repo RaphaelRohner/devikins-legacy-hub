@@ -616,7 +616,7 @@ export default function WalletManager({
         message += warnings.length > 0
           ? `\n\n${warnings.join('\n\n')}`
           : IS_WEB
-            ? ' Its data was checked against the export and matched exactly. (Pictures are not stored on the website; they load from the image server.)'
+            ? ' Its data and pictures were checked against the export and matched exactly.'
             : ' Every file, including every image, was checked against the export and matched exactly.';
       }
       Alert.alert(importedNames.length > 0 ? 'Import complete' : 'Nothing imported', message);
