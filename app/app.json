@@ -62,6 +62,9 @@
       "eas": {
         "projectId": "f77a999b-4614-4630-bce6-53a2958cfcff"
       }
+    },
+    "experiments": {
+      "baseUrl": "/devikins-legacy-hub"
     }
   }
 }
