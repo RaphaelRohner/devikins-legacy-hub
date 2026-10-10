@@ -92,6 +92,8 @@ import BreedingHelper from './src/components/BreedingHelper';
 import KleverscanView from './src/components/KleverscanView';
 import SignerTestView from './src/components/SignerTestView';
 import DonateView from './src/components/DonateView';
+import AboutView from './src/components/AboutView';
+import { pingOncePerDay } from './src/api/usage';
 import SortPickerModal from './src/components/SortPickerModal';
 import { humanizeColumnName } from './src/components/FilterPanel';
 import appConfig from './app.json';
@@ -532,6 +534,11 @@ function AppContent() {
         setCurrentScreen('wallets');
       }
       setIsDatabaseReady(true);
+
+      // Anonymous daily "hello" for the user count on the About screen
+      // (see src/api/usage.js). Runs in the background and never blocks
+      // or breaks anything if it fails.
+      pingOncePerDay(APP_VERSION);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1057,6 +1064,17 @@ Continue anyway?`
   // src/api/kleverTx.js. Same full-screen-takeover pattern as above.
   // Donate - shows the donation address (see DonateView.js and
   // src/constants/donation.js). Same full-screen-takeover pattern.
+  // About - version, anonymous user count and privacy note (see
+  // AboutView.js and src/api/usage.js). Same full-screen-takeover pattern.
+  if (currentScreen === 'about') {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <AboutView appVersion={APP_VERSION} onClose={() => goToScreen(lastCollectionScreen)} />
+      </SafeAreaView>
+    );
+  }
+
   if (currentScreen === 'donate') {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
