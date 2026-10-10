@@ -17,16 +17,18 @@
  * row's top-right corner too - see DevikinSummaryRow.js's own comment.
  */
 
-import { useEffect, useState } from 'react';
 import { Image, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import useNftImage from '../hooks/useNftImage';
 
 export default function WeaponSummaryRow({ nft, onPress, selected = false }) {
   const { colors } = useTheme();
 
   // Same "prefer the locally-saved copy" logic as NftCard.js/
   // DevikinSummaryRow.js - see src/api/imageStorage.js for why.
-  const imageSource = nft.local_image_path || nft.image;
+  // Which picture to show, and what happens if it fails to load - see
+  // src/hooks/useNftImage.js (phone) / useNftImage.web.js (website).
+  const { imageSource, imageLoadFailed, onImageError } = useNftImage(nft);
 
   // Greyed out (see styles.deletedRow) and tagged when the user has
   // marked this NFT as deleted from its detail view (see NftCard.js's
@@ -47,17 +49,13 @@ export default function WeaponSummaryRow({ nft, onPress, selected = false }) {
   // successfully caches a local copy), so a since-fixed image gets a
   // fresh chance to load instead of being stuck showing the placeholder
   // forever.
-  const [imageLoadFailed, setImageLoadFailed] = useState(false);
-  useEffect(() => {
-    setImageLoadFailed(false);
-  }, [imageSource]);
 
   const image = imageSource && !imageLoadFailed ? (
     <Image
       source={{ uri: imageSource }}
       style={styles.thumbnail}
       resizeMode="contain"
-      onError={() => setImageLoadFailed(true)}
+      onError={onImageError}
     />
   ) : (
     <View style={[styles.thumbnail, styles.thumbnailPlaceholder, { backgroundColor: colors.placeholderBackground }]}>
