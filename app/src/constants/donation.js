@@ -3,13 +3,11 @@
  *
  * The Klever wallet address shown on the "Donate" screen.
  *
- * Left empty on purpose until the donation wallet exists: while it's
- * empty, the Donate entry simply doesn't appear in the menu. To switch it
- * on, paste the address between the quotes, e.g.
- *   export const DONATION_ADDRESS = 'klv1...';
+ * If this is ever set back to '' (empty), the Donate entry disappears
+ * from the menu again.
  *
  * Use a wallet meant only for donations: anyone can look up everything a
  * wallet holds, so your own collection stays private this way.
  */
 
-export const DONATION_ADDRESS = '';
+export const DONATION_ADDRESS = 'klv170t523zjwkvc8j0k0smgysevegx0ddwjxx4nu2xpcsy7e3jvdccsh2m2sg';

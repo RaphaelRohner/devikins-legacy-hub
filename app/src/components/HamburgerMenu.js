@@ -42,7 +42,7 @@
  * calling back up to App.js to say what was tapped.
  */
 
-import { Modal, View, Text, TouchableOpacity, StyleSheet, Platform, Linking } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, Platform, Linking, ScrollView } from 'react-native';
 import { KLEVERSCAN_URL } from './KleverscanView';
 import { DONATION_ADDRESS } from '../constants/donation';
 
@@ -169,7 +169,9 @@ export default function HamburgerMenu({
           </TouchableOpacity>
         </View>
 
-        <View style={styles.entryList}>
+        {/* Scrollable, so every entry stays reachable on short screens
+            and small browser windows. */}
+        <ScrollView style={styles.entryScroll} contentContainerStyle={styles.entryList}>
           {entries.map((entry) => {
             const isActive = entry.screen !== null && entry.screen === currentScreen;
             return (
@@ -195,7 +197,7 @@ export default function HamburgerMenu({
               </TouchableOpacity>
             );
           })}
-        </View>
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -231,8 +233,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
+  entryScroll: {
+    flex: 1,
+  },
   entryList: {
     gap: 12,
+    paddingBottom: 24,
   },
   entryRow: {
     borderRadius: 12,
