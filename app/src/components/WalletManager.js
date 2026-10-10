@@ -99,11 +99,10 @@ import {
 } from '../db/database';
 import { useTheme } from '../context/ThemeContext';
 import QrScannerModal from './QrScannerModal';
-
-// Exporting and importing wallet sets uses the phone's file system and
-// share sheet, which the website doesn't have yet - so on the web those
-// buttons are hidden for now. Everything else works the same.
-const IS_WEB = Platform.OS === 'web';
+// Website only: "Connect Klever Extension" reads the address of the
+// wallet open in the Klever browser extension and adds it here, so nobody
+// has to copy and paste it. Only the public address is read.
+import { connectExtension } from '../api/kleverExtension';
 import { getStorageBytesForSets, formatBytes } from '../api/storageStats';
 import {
   exportWalletSet,
@@ -113,6 +112,11 @@ import {
   pickAndImportWalletSetsZip,
   supportsSaveToFolder,
 } from '../api/exportImport';
+
+// Exporting and importing wallet sets uses the phone's file system and
+// share sheet, which the website doesn't have yet - so on the web those
+// buttons are hidden for now. Everything else works the same.
+const IS_WEB = Platform.OS === 'web';
 
 export default function WalletManager({
   wallets,
@@ -128,6 +132,8 @@ export default function WalletManager({
   const [newAddressInput, setNewAddressInput] = useState('');
   // Whether the QR scanner overlay (QrScannerModal.js) is currently open.
   const [isScannerVisible, setIsScannerVisible] = useState(false);
+  // Website only: true while waiting for the Klever extension to answer.
+  const [isConnectingExtension, setIsConnectingExtension] = useState(false);
 
   // Which wallet row (by id) is currently being edited, if any - only one
   // at a time. While a row is being edited, its own address text is
@@ -287,6 +293,29 @@ export default function WalletManager({
         'Wallet added',
         "Next, tap Fetch/Update on the home screen to pull in its Devikins, Weapons, and Equipment. The first fetch can take a few minutes, since nothing is cached yet - after that, updates are much faster."
       );
+    }
+  }
+
+  async function handleConnectExtension() {
+    setIsConnectingExtension(true);
+    try {
+      const { address } = await connectExtension();
+      if (wallets.some((w) => w.address === address)) {
+        Alert.alert('Already added', `The wallet from your Klever extension is already in this list:\n\n${address}`);
+        return;
+      }
+      const isFirstWalletEver = wallets.length === 0;
+      await addWallet(address);
+      onWalletsChanged();
+      Alert.alert(
+        'Wallet added',
+        `${address}\n\nThis is the wallet open in your Klever extension.` +
+          (isFirstWalletEver ? ' Next, choose Fetch/Update in the menu to load its Devikins, Weapons, and Equipment.' : '')
+      );
+    } catch (err) {
+      Alert.alert('Klever extension', err?.message || String(err));
+    } finally {
+      setIsConnectingExtension(false);
     }
   }
 
@@ -911,6 +940,21 @@ export default function WalletManager({
                   <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Add</Text>
                 </TouchableOpacity>
               </View>
+              {IS_WEB ? (
+                <TouchableOpacity
+                  style={[
+                    styles.extensionButton,
+                    { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+                    (isBusy || isConnectingExtension) && { opacity: 0.5 },
+                  ]}
+                  onPress={handleConnectExtension}
+                  disabled={isBusy || isConnectingExtension}
+                >
+                  <Text style={[styles.rowButtonText, { color: colors.text }]}>
+                    {isConnectingExtension ? 'Connecting...' : 'Connect Klever Extension'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </KeyboardAvoidingView>
 
             <QrScannerModal
@@ -1208,6 +1252,13 @@ const styles = StyleSheet.create({
   },
   scanButtonIcon: {
     fontSize: 18,
+  },
+  extensionButton: {
+    marginTop: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
   },
   addButton: {
     borderRadius: 8,
