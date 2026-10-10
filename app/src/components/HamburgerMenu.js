@@ -22,7 +22,8 @@
  *                        KLV Signer app (see SignerTestView.js)
  *   9. Feedback      - opens the feedback form
  *  10. Ask Devi (Help) - opens the offline in-app FAQ helper
- *  11. Donate        - shows the donation address (only once one is set in
+ *  11. About         - version, anonymous user count, privacy note
+ *  12. Donate        - shows the donation address (only once one is set in
  *                      src/constants/donation.js)
  *
  * On the website, Kleverscan opens in a new browser tab and the KLV Signer
@@ -143,6 +144,12 @@ export default function HamburgerMenu({
       label: 'Ask Devi (Help)',
       screen: 'help',
       onPress: () => onSelectScreen('help'),
+    },
+    {
+      key: 'about',
+      label: 'About',
+      screen: 'about',
+      onPress: () => onSelectScreen('about'),
     },
     {
       key: 'donate',
