@@ -1,0 +1,61 @@
+# Builds the Hub website and publishes it on GitHub Pages
+# (https://raphaelrohner.github.io/devikins-legacy-hub/).
+#
+# Runs by itself on every push to `main`, and can also be started by hand
+# from the repo's "Actions" tab ("Run workflow").
+#
+# What it does, in plain words: takes a fresh copy of the code, installs
+# the exact packages from app/package-lock.json, builds the web version
+# (the same `npx expo export -p web` used for testing), and hands the
+# finished `app/dist` folder to GitHub Pages.
+
+name: Deploy website
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one publish at a time; a newer push replaces one still waiting.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npx expo export -p web
+      # GitHub Pages shows 404.html for any address it doesn't know; a copy
+      # of the app's page means reloading or sharing a deeper link still
+      # opens the Hub instead of an error page.
+      - run: cp dist/index.html dist/404.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
