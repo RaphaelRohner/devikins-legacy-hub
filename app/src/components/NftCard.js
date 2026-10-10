@@ -81,6 +81,7 @@ import { View, Text, Image, TextInput, StyleSheet, Modal, TouchableOpacity } fro
 import { TRAIT_COLUMNS } from '../constants/schema';
 import { setNftDeletedState, setNftCustomName, setNftStarRating } from '../db/database';
 import { useTheme } from '../context/ThemeContext';
+import useNftImage from '../hooks/useNftImage';
 import StarRating from './StarRating';
 
 // Turns a database column name like "critical_chance" into a readable
@@ -129,7 +130,9 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
   // image host being reachable right now. Older rows fetched before this
   // caching existed won't have a local_image_path yet, so they fall back
   // to the remote URL until the next time they're re-fetched.
-  const imageSource = nft.local_image_path || nft.image;
+  // Which picture to show, and what happens if it fails to load - see
+  // src/hooks/useNftImage.js (phone) / useNftImage.web.js (website).
+  const { imageSource, imageLoadFailed, onImageError } = useNftImage(nft);
 
   // Some items have an imageSource (a URL, or an old local path) that no
   // longer actually loads - most often an item fetched a while ago that
@@ -142,10 +145,6 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
   // successfully caches a local copy), so a since-fixed image gets a
   // fresh chance to load instead of being stuck showing the placeholder
   // forever.
-  const [imageLoadFailed, setImageLoadFailed] = useState(false);
-  useEffect(() => {
-    setImageLoadFailed(false);
-  }, [imageSource]);
 
   // Whether the fullscreen image viewer (see fullscreenModal below) is
   // currently open. Only ever one image showing per card, so one flag is
@@ -161,7 +160,7 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
         source={{ uri: imageSource }}
         style={styles.thumbnail}
         resizeMode="contain"
-        onError={() => setImageLoadFailed(true)}
+        onError={onImageError}
       />
     </TouchableOpacity>
   ) : (
@@ -172,7 +171,7 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
 
   // A 100%-larger version of the same image, used only in the Devikin
   // detail view's top row (per feedback) - shares imageSource/
-  // imageLoadFailed/setImageLoadFailed with `image` above rather than
+  // imageLoadFailed/onImageError with `image` above rather than
   // re-computing anything, since only one of the two is ever actually
   // rendered for a given card.
   const largeImage = hasViewableImage ? (
@@ -181,7 +180,7 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
         source={{ uri: imageSource }}
         style={styles.thumbnailLarge}
         resizeMode="contain"
-        onError={() => setImageLoadFailed(true)}
+        onError={onImageError}
       />
     </TouchableOpacity>
   ) : (

@@ -104,6 +104,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, Image, Switch, StyleSheet, Platform } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../context/ThemeContext';
+import useNftImage from '../hooks/useNftImage';
 import { queryNfts, getDistinctColumnValues, getColumnRange, getBreedingCandidates } from '../db/database';
 import { RARITY_ORDER } from '../constants/schema';
 import { estimateBreedingCost } from '../constants/breedingRules';
@@ -662,15 +663,17 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
 // behavior rather than the labeled placeholder - not worth duplicating
 // that whole state machine three times over for something this minor).
 function Thumbnail({ nft, colors }) {
-  const imageSource = nft.local_image_path || nft.image;
-  if (!imageSource) {
+  // Same picture choice as everywhere else (see src/hooks/useNftImage.js);
+  // on the website this also falls back to the browser's stored copy.
+  const { imageSource, imageLoadFailed, onImageError } = useNftImage(nft);
+  if (!imageSource || imageLoadFailed) {
     return (
       <View style={[styles.thumbnail, styles.thumbnailPlaceholder, { backgroundColor: colors.placeholderBackground }]}>
         <Text style={[styles.thumbnailPlaceholderText, { color: colors.placeholderText }]}>Unavailable</Text>
       </View>
     );
   }
-  return <Image source={{ uri: imageSource }} style={styles.thumbnail} resizeMode="contain" />;
+  return <Image source={{ uri: imageSource }} style={styles.thumbnail} resizeMode="contain" onError={onImageError} />;
 }
 
 // Step 1's row - deliberately shows Procreations Left alongside Rarity/

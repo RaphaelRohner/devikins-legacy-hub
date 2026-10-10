@@ -24,9 +24,9 @@
  * sizes its own width to match rather than a hardcoded fraction.
  */
 
-import { useEffect, useState } from 'react';
 import { Image, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import useNftImage from '../hooks/useNftImage';
 import { getTileFlexBasisPercent } from '../constants/layout';
 
 export default function NftTile({ nft, onPress, columns = 3, selected = false }) {
@@ -34,23 +34,21 @@ export default function NftTile({ nft, onPress, columns = 3, selected = false })
 
   // Same "prefer the locally-saved copy" logic as the summary rows and
   // NftCard.js - see src/api/imageStorage.js for why.
-  const imageSource = nft.local_image_path || nft.image;
+  // Which picture to show, and what happens if it fails to load - see
+  // src/hooks/useNftImage.js (phone) / useNftImage.web.js (website).
+  const { imageSource, imageLoadFailed, onImageError } = useNftImage(nft);
   const isDeleted = Boolean(nft.deleted);
 
   // Same broken-image handling as the summary rows - see their own
   // comments for the full reasoning (an old cached URL whose host has
   // since gone offline shouldn't just render a blank box).
-  const [imageLoadFailed, setImageLoadFailed] = useState(false);
-  useEffect(() => {
-    setImageLoadFailed(false);
-  }, [imageSource]);
 
   const image = imageSource && !imageLoadFailed ? (
     <Image
       source={{ uri: imageSource }}
       style={styles.thumbnail}
       resizeMode="contain"
-      onError={() => setImageLoadFailed(true)}
+      onError={onImageError}
     />
   ) : (
     <View style={[styles.thumbnail, styles.thumbnailPlaceholder, { backgroundColor: colors.placeholderBackground }]}>
