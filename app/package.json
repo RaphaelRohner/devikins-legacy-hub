@@ -29,7 +29,13 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "expo export -p web && playwright test",
+    "test:quick": "playwright test",
+    "test:report": "playwright show-report test-report"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.56.1"
+  }
 }

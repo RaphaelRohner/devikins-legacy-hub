@@ -1,14 +1,86 @@
 # TESTING.md — How to test Devikins Legacy Companion
 
-There's no automated test suite for this app (no Jest, no CI). For a
-small, personal, one-off app like this, that's the right call - setting
-up and maintaining an automated testing framework would be a lot of
-ongoing overkill for the little it would catch, versus just trying the
-real app on your real phone with your real wallets. What this file gives
-you instead is a repeatable manual checklist, split into a **quick pass**
-(a few minutes, after any small change) and a **full pass** (15-20
-minutes, before building a new APK or after a bigger change) - see
-"When to test" at the bottom for which one to reach for.
+There are two kinds of testing for this app:
+
+1. **Automatic website tests** (below): a set of checks a computer runs
+   on the website version in a few minutes, with one command. They cover
+   the parts that are easy to break without noticing - fetching, the
+   pictures, and backups.
+2. **The manual checklist** (the rest of this file): trying the real app
+   on your real phone, split into a **quick pass** (a few minutes, after
+   any small change) and a **full pass** (15-20 minutes, before building
+   a new APK or after a bigger change) - see "When to test" at the
+   bottom for which one to reach for.
+
+## Automatic website tests
+
+### What they check
+
+Each test opens the built website in a real Chrome browser (without a
+window) as a brand-new visitor:
+
+- **Start:** the first-visit hint shows, and About shows the right
+  version and the user counter.
+- **Ask Devi:** the website answers are there (browser storage, Connect
+  Klever Extension, Kleverscan in a new tab) and the app-only ones (scan
+  notification, KLV Signer) are hidden.
+- **Fetch/Update:** adding a wallet and fetching loads all Devikins,
+  Weapons and Equipment, and stores every picture in the browser.
+- **Pictures when Moonlabs is down:** the stored copies are shown; an
+  NFT without a stored copy shows "Unavailable".
+- **Backups:** a name and a 4-star rating survive Export all sets →
+  Import a set in a second, empty browser, including the pictures (with
+  the picture server down), and every file's checksum in the zip is
+  right.
+- **Damaged backups:** a backup with one changed byte in a picture is
+  noticed and reported, not silently imported.
+
+They never contact Klever, Moonlabs or the relay: every outside request
+is answered by pretend servers with six made-up NFTs
+(`tests/web/fakeServers.js`). So they work offline, always see the same
+data, and put no load on anyone's server. A test fails if the website
+tries to reach any other outside address.
+
+They cover the **website** only. Phone-only parts (the scan
+notification, saving backups to a folder, the KLV Signer) still need the
+manual checklist below.
+
+### One-time setup (on the Mac)
+
+In Terminal, in the `app` folder:
+
+```
+npm install
+npx playwright install chromium
+```
+
+The second line downloads the test browser (about 150 MB, once).
+
+### Running them
+
+```
+npm test
+```
+
+This first builds the website (about a minute), then runs all tests
+(a few minutes). Every test prints a ✓ when it passes or ✘ when it
+fails, and the last line says e.g. `6 passed`.
+
+- `npm run test:quick` runs the tests again without rebuilding - only
+  useful when nothing in the app's code changed since the last build.
+- `npm run test:report` opens a page with the results; for a failed
+  test it includes a screenshot of what the browser showed at that
+  moment.
+
+If a test fails after a change, send Claude the ✘ lines (or the report
+screenshot) - the test name says which part broke.
+
+### When to run them
+
+Before pushing changes that touch fetching, pictures, backups, the menu
+or the help text - and in any case before pushing a bigger change.
+
+## The manual checklist
 
 Whenever a change is made, ask what it touches and check just that
 section below with the quick pass in mind - you don't need to redo the

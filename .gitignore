@@ -50,3 +50,8 @@ _to_delete/
 /app/.claude/
 V2-IDEAS.md
 *.apk
+*.apk.sha256
+
+# automatic website tests: results and report (made fresh on every run)
+/app/test-results/
+/app/test-report/
