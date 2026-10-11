@@ -81,6 +81,19 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   await expect(row(page, 'Devikin #999')).toContainText('Not found on the chain');
   await expect(page.getByText(/Weapon #3265 · from klv1ssss/)).toBeVisible(); // arrivals log
 
+  // Narrow and sort: weapons still in the game, by number
+  await page.getByText('Weapons', { exact: true }).last().click();
+  await page.getByText('Still in the game', { exact: true }).click();
+  await page.getByText('Number ↑', { exact: true }).click();
+  const shown = await page.locator('div[tabindex="0"]').filter({ hasText: /^.?(Weapon|Equipment|Devikin) #\d+/ }).allInnerTexts();
+  expect(shown.map((t) => t.match(/#(\d+)/)[1])).toEqual(['1442', '1450']);
+  await page.getByText('Number ↓', { exact: true }).click();
+  await page.getByText('Anywhere', { exact: true }).click();
+  const shown2 = await page.locator('div[tabindex="0"]').filter({ hasText: /^.?(Weapon|Equipment|Devikin) #\d+/ }).allInnerTexts();
+  expect(shown2.map((t) => t.match(/#(\d+)/)[1])).toEqual(['3265', '1450', '1442']);
+  await page.getByText('All kinds', { exact: true }).click();
+  await page.getByText('Needs attention first', { exact: true }).click();
+
   // 5. 31 minutes later, #1442 still hasn't come: overdue
   await page.clock.fastForward('31:00');
   await expect(row(page, 'Weapon #1442')).toContainText('Overdue');

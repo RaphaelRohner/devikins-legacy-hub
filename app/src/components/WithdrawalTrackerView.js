@@ -95,6 +95,27 @@ const FILTERS = [
   { key: 'not-requested', label: 'Not requested' },
 ];
 
+// Narrowing the list further: which kind, where it is, and in what order.
+const KIND_FILTERS = [
+  { key: 'all', label: 'All kinds' },
+  { key: 'devikin', label: 'Devikins' },
+  { key: 'weapon', label: 'Weapons' },
+  { key: 'equipment', label: 'Equipment' },
+];
+const PLACE_FILTERS = [
+  { key: 'any', label: 'Anywhere' },
+  { key: 'game', label: 'Still in the game' }, // in-game wallet or game's main wallet
+  { key: 'in-game', label: 'In-game wallet' },
+  { key: 'main', label: "Game's main wallet" },
+  { key: 'elsewhere', label: 'Another wallet' },
+  { key: 'not-found', label: 'Not found' },
+];
+const SORTS = [
+  { key: 'attention', label: 'Needs attention first' },
+  { key: 'id-asc', label: 'Number ↑' },
+  { key: 'id-desc', label: 'Number ↓' },
+];
+
 const PASTE_KINDS = [
   { key: null, label: 'Use headings' },
   { key: 'devikin', label: 'Devikins' },
@@ -134,6 +155,9 @@ export default function WithdrawalTrackerView({ onClose }) {
   const [markOnAdd, setMarkOnAdd] = useState(false);
   const [addMessage, setAddMessage] = useState('');
   const [filter, setFilter] = useState('all');
+  const [kindFilter, setKindFilter] = useState('all');
+  const [placeFilter, setPlaceFilter] = useState('any');
+  const [sortMode, setSortMode] = useState('attention');
   const [selected, setSelected] = useState(() => new Set());
   const [shownRows, setShownRows] = useState(ROWS_PER_PAGE);
   const [checking, setChecking] = useState(false);
@@ -179,41 +203,54 @@ export default function WithdrawalTrackerView({ onClose }) {
 
   const ctx = useMemo(() => ({ fromAddress, toAddress, overdueMinutes, now }), [fromAddress, toAddress, overdueMinutes, now]);
 
-  const withStatus = useMemo(
+  const withStatus = useMemo(() => {
+    const list = items.map((item) => ({ ...item, ...statusOf(item, ctx) }));
+    const byNumber = (a, b) => KINDS.indexOf(a.kind) - KINDS.indexOf(b.kind) || a.nonce - b.nonce;
+    if (sortMode === 'id-asc') list.sort(byNumber);
+    else if (sortMode === 'id-desc') list.sort((a, b) => -byNumber(a, b));
+    else list.sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || byNumber(a, b));
+    return list;
+  }, [items, ctx, sortMode]);
+
+  // Kind and place narrow the list first; the status chips (with their
+  // counts) then work within that.
+  const narrowed = useMemo(
     () =>
-      items
-        .map((item) => ({ ...item, ...statusOf(item, ctx) }))
-        .sort(
-          (a, b) =>
-            STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) ||
-            KINDS.indexOf(a.kind) - KINDS.indexOf(b.kind) ||
-            a.nonce - b.nonce
-        ),
-    [items, ctx]
+      withStatus.filter((i) => {
+        if (kindFilter !== 'all' && i.kind !== kindFilter) return false;
+        if (placeFilter === 'any') return true;
+        if (placeFilter === 'game') return i.place === 'in-game' || i.place === 'main';
+        return i.place === placeFilter;
+      }),
+    [withStatus, kindFilter, placeFilter]
   );
 
   const counts = useMemo(() => {
-    const c = { all: withStatus.length, requested: 0, overdue: 0, arrived: 0, 'not-requested': 0 };
-    for (const i of withStatus) {
+    const c = { all: narrowed.length, requested: 0, overdue: 0, arrived: 0, 'not-requested': 0 };
+    for (const i of narrowed) {
       if (i.status === 'arrived') c.arrived += 1;
       if (i.status === 'overdue') c.overdue += 1;
       if (i.requested_at && i.status !== 'arrived') c.requested += 1;
       if (!i.requested_at && i.status !== 'arrived') c['not-requested'] += 1;
     }
     return c;
-  }, [withStatus]);
+  }, [narrowed]);
 
   const filtered = useMemo(
     () =>
-      withStatus.filter((i) => {
+      narrowed.filter((i) => {
         if (filter === 'all') return true;
         if (filter === 'arrived') return i.status === 'arrived';
         if (filter === 'overdue') return i.status === 'overdue';
         if (filter === 'requested') return i.requested_at && i.status !== 'arrived';
         return !i.requested_at && i.status !== 'arrived';
       }),
-    [withStatus, filter]
+    [narrowed, filter]
   );
+
+  // Overall overdue count (for the "copy overdue list" button), regardless
+  // of the kind/place narrowing.
+  const overdueTotal = useMemo(() => withStatus.filter((i) => i.status === 'overdue').length, [withStatus]);
 
   const walletsReady = isValidKleverAddress(fromAddress) && isValidKleverAddress(toAddress);
   const draftsChanged =
@@ -553,6 +590,29 @@ export default function WithdrawalTrackerView({ onClose }) {
             </>
           )}
 
+          {[
+            [KIND_FILTERS, kindFilter, setKindFilter],
+            [PLACE_FILTERS, placeFilter, setPlaceFilter],
+            [SORTS, sortMode, setSortMode],
+          ].map(([options, value, setValue], rowIndex) => (
+            <View key={rowIndex} style={styles.chipRow}>
+              {options.map((o) => (
+                <TouchableOpacity
+                  key={o.key}
+                  style={[styles.chipSmall, { borderColor: value === o.key ? colors.primary : colors.border }]}
+                  onPress={() => {
+                    setValue(o.key);
+                    setShownRows(ROWS_PER_PAGE);
+                  }}
+                >
+                  <Text style={{ color: value === o.key ? colors.primary : colors.secondaryText, fontSize: 12, fontWeight: value === o.key ? '700' : '400' }}>
+                    {o.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ))}
+
           <View style={styles.chipRow}>
             {FILTERS.map((f) => (
               <TouchableOpacity
@@ -570,10 +630,10 @@ export default function WithdrawalTrackerView({ onClose }) {
             ))}
           </View>
 
-          {counts.overdue > 0 ? (
+          {overdueTotal > 0 ? (
             <TouchableOpacity style={smallButton} onPress={copyOverdue}>
               <Text style={{ color: colors.cancelText, fontWeight: '700' }}>
-                {IS_WEB ? 'Copy' : 'Share'} the overdue list ({counts.overdue}) for a support ticket
+                {IS_WEB ? 'Copy' : 'Share'} the overdue list ({overdueTotal}) for a support ticket
               </Text>
             </TouchableOpacity>
           ) : null}
@@ -671,6 +731,7 @@ const styles = StyleSheet.create({
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
+  chipSmall: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 },
   buttonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   button: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center' },
   buttonText: { fontSize: 15, fontWeight: '700' },
