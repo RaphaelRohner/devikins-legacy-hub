@@ -7,12 +7,16 @@ const { TEST_WALLET } = require('./fakeServers');
 
 /** Opens the Hub and waits until the start screen is ready. Pop-up
  *  messages are recorded (and closed) so a test can check their text. */
-async function openHub(page) {
+async function openHub(page, options = {}) {
   const dialogs = [];
   page.on('dialog', async (dialog) => {
     dialogs.push(dialog.message());
     await dialog.accept();
   });
+  // Use the browser's own message boxes, which the tests read and close
+  // automatically (see src/web/alertForWeb.js). One test checks the
+  // Hub's in-page box on purpose (dialogs.spec.js).
+  if (!options.inPageDialogs) await page.addInitScript(() => { window.__HUB_NATIVE_DIALOGS = true; });
   await page.goto('./');
   await expect(page.getByText('☰').first()).toBeVisible();
   return dialogs;

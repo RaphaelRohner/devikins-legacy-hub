@@ -113,6 +113,7 @@ async function installFakeServers(context) {
   const fake = {
     picturesDown: false, // true = picture servers answer "403 access denied"
     blankPictures: new Map(), // picture URL -> 'white' | 'background' | 'missing'
+    metadataDelayMs: 0, // slow down the pretend NFT-details server
     requests: [], // every outside URL the Hub asked for, for checks
     blocked: [], // anything unexpected that was blocked
     // A tiny pretend blockchain for the withdrawal tracker:
@@ -173,6 +174,7 @@ async function installFakeServers(context) {
     if (url.hostname === 'devi-hub-relay.raphaelrohner.workers.dev') {
       const m = url.pathname.match(/^\/(devikin|weapon|equipment)\/(\d+)$/);
       if (m) {
+        if (fake.metadataDelayMs) await new Promise((resolve) => setTimeout(resolve, fake.metadataDelayMs));
         const extra = fake.extraNfts.get(`${m[1]}:${m[2]}`);
         const nft = extra ? { nonce: Number(m[2]), ...extra } : TEST_NFTS[m[1]].find((n) => n.nonce === Number(m[2]));
         if (!nft) return route.fulfill({ status: 404, contentType: 'application/json', body: '{"message":"Not Found"}' });
