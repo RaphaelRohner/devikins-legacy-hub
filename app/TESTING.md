@@ -110,6 +110,25 @@ it isn't").
   or after a bigger change, do the parts that the change touches - or
   everything.
 
+### Release routine: everything, from scratch
+
+For every release (for now), test the whole Hub the way a new user meets
+it - your data is safe thanks to the backup:
+
+1. **Back up:** Wallets → **Export all sets** (keep the zip somewhere
+   safe; on the phone, Save to a folder). This includes the Withdrawals
+   list.
+2. **Start empty:** Wallets → Danger zone → **Reset All Data**. (On the
+   website you can use a private window or a second browser instead,
+   which leaves your normal one untouched.)
+3. **Go through every part** below in order, from S1 - the Getting
+   started checklist guides you through the set-up as a new user would.
+4. **Restore:** Wallets → **Import a set** with the backup from step 1,
+   load the imported set, and check your names, stars, pictures and
+   Withdrawals list are back (that's S7, tested for real).
+5. Switch **My wallets** on again for that set if you use it (it belongs
+   to the set on this device, not to the backup).
+
 ### Before you start
 
 - **Website:** reload the page (after GitHub has published: the About
