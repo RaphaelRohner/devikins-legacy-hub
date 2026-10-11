@@ -29,7 +29,7 @@ test('a first-time visitor sees the start hint, and About shows the version', as
   await expect(page.getByText(new RegExp(`Version ${APP_VERSION.replace(/\./g, '\\.')}`))).toBeVisible();
   await expect(page.getByText('Website', { exact: false }).first()).toBeVisible();
   // The user counter comes from the (pretend) relay.
-  for (const label of ['Today', '7 days', '30 days', 'Since launch', 'People', 'Visits', '61']) {
+  for (const label of ['Today', '7 days', '30 days', 'Since launch', 'Hubs', 'Visits', '61']) {
     await expect(page.getByText(label, { exact: true })).toBeVisible();
   }
 });

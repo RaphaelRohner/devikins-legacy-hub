@@ -87,7 +87,7 @@ export default function AboutView({ appVersion, onClose }) {
                 ))}
               </View>
               <View style={styles.statRow}>
-                <Text style={[styles.rowLabel, { color: colors.text }]}>People</Text>
+                <Text style={[styles.rowLabel, { color: colors.text }]}>Hubs</Text>
                 {PERIODS.map((p) => (
                   <Text key={p.key} style={[styles.statValue, styles.statCell, { color: colors.text }]}>
                     {stats[p.key] ?? '–'}
@@ -105,10 +105,10 @@ export default function AboutView({ appVersion, onClose }) {
                 </View>
               ) : null}
               {platformLine ? (
-                <Text style={[styles.note, { color: colors.secondaryText }]}>People in the last 30 days: {platformLine}</Text>
+                <Text style={[styles.note, { color: colors.secondaryText }]}>Hubs in the last 30 days: {platformLine}</Text>
               ) : null}
               <Text style={[styles.note, { color: colors.secondaryText }]}>
-                People: how many different Hubs were used - someone using it every day this week counts once in "7 days".
+                Hubs: how many different Hubs were used - one used every day this week counts once in "7 days".
                 Visits: how often the Hub was opened. The website and the app count separately, as does each browser.
               </Text>
             </>
