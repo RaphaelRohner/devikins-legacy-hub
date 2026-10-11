@@ -16,6 +16,14 @@ const SOURCE_URL = 'https://github.com/RaphaelRohner/devikins-legacy-hub';
 
 const PLATFORM_LABEL = { web: 'Website', android: 'Android app', ios: 'iPhone app' };
 
+// The columns of the Users table; keys match the relay's /stats answer.
+const PERIODS = [
+  { key: 'today', label: 'Today' },
+  { key: 'last7Days', label: '7 days' },
+  { key: 'last30Days', label: '30 days' },
+  { key: 'total', label: 'Since launch' },
+];
+
 export default function AboutView({ appVersion, onClose }) {
   const { colors } = useTheme();
   const [stats, setStats] = useState(undefined); // undefined = loading, null = unavailable
@@ -71,19 +79,37 @@ export default function AboutView({ appVersion, onClose }) {
           ) : (
             <>
               <View style={styles.statRow}>
-                <Stat label="Today" value={stats.today} colors={colors} />
-                {stats.last7Days !== undefined ? (
-                  <Stat label="Last 7 days" value={stats.last7Days} colors={colors} />
-                ) : null}
-                <Stat label="Last 30 days" value={stats.last30Days} colors={colors} />
-                <Stat label="Since launch" value={stats.total} colors={colors} />
+                <Text style={styles.rowLabel} />
+                {PERIODS.map((p) => (
+                  <Text key={p.key} style={[styles.statLabel, styles.statCell, { color: colors.secondaryText }]}>
+                    {p.label}
+                  </Text>
+                ))}
               </View>
+              <View style={styles.statRow}>
+                <Text style={[styles.rowLabel, { color: colors.text }]}>People</Text>
+                {PERIODS.map((p) => (
+                  <Text key={p.key} style={[styles.statValue, styles.statCell, { color: colors.text }]}>
+                    {stats[p.key] ?? '–'}
+                  </Text>
+                ))}
+              </View>
+              {stats.visits ? (
+                <View style={styles.statRow}>
+                  <Text style={[styles.rowLabel, { color: colors.text }]}>Visits</Text>
+                  {PERIODS.map((p) => (
+                    <Text key={p.key} style={[styles.statValue, styles.statCell, { color: colors.text }]}>
+                      {stats.visits[p.key] ?? '–'}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
               {platformLine ? (
-                <Text style={[styles.note, { color: colors.secondaryText }]}>Last 30 days: {platformLine}</Text>
+                <Text style={[styles.note, { color: colors.secondaryText }]}>People in the last 30 days: {platformLine}</Text>
               ) : null}
               <Text style={[styles.note, { color: colors.secondaryText }]}>
-                Each number counts people, not visits: someone using the Hub on several days in a week counts once in
-                "Last 7 days". The website and the app count separately, as does each browser.
+                People: how many different Hubs were used - someone using it every day this week counts once in "7 days".
+                Visits: how often the Hub was opened. The website and the app count separately, as does each browser.
               </Text>
             </>
           )}
@@ -93,7 +119,7 @@ export default function AboutView({ appVersion, onClose }) {
           <Text style={[styles.heading, { color: colors.text }]}>Privacy</Text>
           <Text style={[styles.note, { color: colors.secondaryText }]}>
             Your wallets, NFTs, names and stars stay on this device. For the user count, once you've added a
-            wallet, the Hub sends a random ID (not linked to you or your wallets) at most once a day, together
+            wallet, the Hub sends a random ID (not linked to you or your wallets) each time it's opened, together
             with "website/app" and the version. Nothing else is sent.
           </Text>
           <View style={styles.switchRow}>
@@ -117,14 +143,6 @@ export default function AboutView({ appVersion, onClose }) {
   );
 }
 
-function Stat({ label, value, colors }) {
-  return (
-    <View style={styles.stat}>
-      <Text style={[styles.statValue, { color: colors.text }]}>{value}</Text>
-      <Text style={[styles.statLabel, { color: colors.secondaryText }]}>{label}</Text>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -137,9 +155,10 @@ const styles = StyleSheet.create({
   heading: { fontSize: 16, fontWeight: '700' },
   text: { fontSize: 15, lineHeight: 21 },
   note: { fontSize: 13, lineHeight: 18 },
-  statRow: { flexDirection: 'row', gap: 12 },
-  stat: { flex: 1, alignItems: 'center', paddingVertical: 6 },
-  statValue: { fontSize: 24, fontWeight: '700' },
+  statRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  rowLabel: { width: 56, fontSize: 13, fontWeight: '700' },
+  statCell: { flex: 1, textAlign: 'center' },
+  statValue: { fontSize: 22, fontWeight: '700' },
   statLabel: { fontSize: 12 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
   buttonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

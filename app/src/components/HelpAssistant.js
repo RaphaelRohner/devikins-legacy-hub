@@ -320,7 +320,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'What does the About screen show, and what is counted?',
     keywords: ['about', 'version', 'counter', 'users', 'statistics', 'tracking', 'count me', 'anonymous', 'privacy', 'opt out'],
     answer:
-      "About (in the ☰ menu) shows the Hub's version and how many people use it. Only people who actually use the Hub are counted: once you've added a wallet (or imported a backup), the Hub sends a random ID - not linked to you, your wallets or your device - at most once a day, together with \"website\" or \"app\" and the version. Nothing else is sent. You can switch it off with \"Count me (anonymously)\" on the About screen.",
+      "About (in the ☰ menu) shows the Hub's version, how many people use it and how often it's opened. Only people who actually use the Hub are counted: once you've added a wallet (or imported a backup), the Hub sends a random ID - not linked to you, your wallets or your device - each time it's opened, together with \"website\" or \"app\" and the version. Nothing else is sent. You can switch it off with \"Count me (anonymously)\" on the About screen.",
   },
   {
     id: 'who-are-you',

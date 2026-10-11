@@ -13,11 +13,13 @@
  *
  * USER COUNTER (added 10 Oct 2026). Each Hub (website or app) makes up a
  * random ID the first time it runs - not linked to any wallet, name or
- * device - and says "hello" with it at most once a day: POST /ping with
- * {id, platform, version}. The counter keeps one row per ID per day in a
- * small Cloudflare D1 database (bound to this Worker as "DB"); it stores
- * no IP address and nothing else. GET /stats answers with totals for the
- * About screen. Counts are approximate by nature (someone clearing their
+ * device - and says "hello" with it each time it's opened (only once a
+ * wallet has been added): POST /ping with {id, platform, version}. The
+ * counter keeps one row per ID per day in a small Cloudflare D1 database
+ * (bound to this Worker as "DB"), with how many times that Hub was opened
+ * that day ("visits", added 11 Oct 2026); it stores no IP address and
+ * nothing else. GET /stats answers with totals for the About screen:
+ * people (different IDs) and visits, for today / 7 days / 30 days / ever. Counts are approximate by nature (someone clearing their
  * browser shows up as a new user).
  *
  * Answers are kept for a while (see CACHE_*), so popular items load fast
@@ -37,6 +39,21 @@ const CACHE_404_SECONDS = 24 * 60 * 60; // "no data for this item": keep 1 day
 const PATH = /^\/(devikin|weapon|equipment)\/([0-9]{1,9})$/;
 const STATS_CACHE_SECONDS = 10 * 60; // the About screen's numbers refresh every 10 minutes
 const PLATFORMS = ['web', 'android', 'ios'];
+const MAX_VISITS_PER_DAY = 200; // per Hub; stops one stuck or misbehaving Hub from inflating the numbers
+
+// The "visits" column was added after the counter went live. The first
+// request after a deploy adds it to the existing table (all earlier rows
+// count as 1 visit each); afterwards this is a no-op.
+let visitsColumnReady = false;
+async function ensureVisitsColumn(env) {
+  if (visitsColumnReady) return;
+  try {
+    await env.DB.prepare('ALTER TABLE pings ADD COLUMN visits INTEGER NOT NULL DEFAULT 1').run();
+  } catch (e) {
+    // "duplicate column" - it's already there.
+  }
+  visitsColumnReady = true;
+}
 
 function corsHeaders(origin) {
   const h = { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Vary': 'Origin' };
@@ -114,7 +131,11 @@ async function handlePing(request, env, origin) {
     return json({ error: 'bad request' }, 400, origin);
   }
   const day = new Date().toISOString().slice(0, 10); // UTC date, e.g. 2026-10-10
-  await env.DB.prepare('INSERT OR IGNORE INTO pings (id, day, platform, version) VALUES (?, ?, ?, ?)')
+  await ensureVisitsColumn(env);
+  await env.DB.prepare(
+    `INSERT INTO pings (id, day, platform, version, visits) VALUES (?, ?, ?, ?, 1)
+     ON CONFLICT (id, day) DO UPDATE SET visits = MIN(visits + 1, ${MAX_VISITS_PER_DAY}), version = excluded.version`
+  )
     .bind(id, day, platform, version)
     .run();
   return new Response(null, { status: 204, headers: corsHeaders(origin) });
@@ -132,17 +153,25 @@ async function handleStats(env, ctx, url, origin) {
   const since30 = new Date(Date.now() - 29 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   const since7 = new Date(Date.now() - 6 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   const today = new Date().toISOString().slice(0, 10);
+  await ensureVisitsColumn(env);
+  // n = people (different IDs), v = visits (times the Hub was opened)
   const [total, last30, last7, todayRow, byPlatform] = await Promise.all([
-    env.DB.prepare('SELECT COUNT(DISTINCT id) AS n FROM pings').first(),
-    env.DB.prepare('SELECT COUNT(DISTINCT id) AS n FROM pings WHERE day >= ?').bind(since30).first(),
-    env.DB.prepare('SELECT COUNT(DISTINCT id) AS n FROM pings WHERE day >= ?').bind(since7).first(),
-    env.DB.prepare('SELECT COUNT(DISTINCT id) AS n FROM pings WHERE day = ?').bind(today).first(),
+    env.DB.prepare('SELECT COUNT(DISTINCT id) AS n, SUM(visits) AS v FROM pings').first(),
+    env.DB.prepare('SELECT COUNT(DISTINCT id) AS n, SUM(visits) AS v FROM pings WHERE day >= ?').bind(since30).first(),
+    env.DB.prepare('SELECT COUNT(DISTINCT id) AS n, SUM(visits) AS v FROM pings WHERE day >= ?').bind(since7).first(),
+    env.DB.prepare('SELECT COUNT(DISTINCT id) AS n, SUM(visits) AS v FROM pings WHERE day = ?').bind(today).first(),
     env.DB.prepare('SELECT platform, COUNT(DISTINCT id) AS n FROM pings WHERE day >= ? GROUP BY platform').bind(since30).all(),
   ]);
   const data = {
     total: total?.n ?? 0,
     last30Days: last30?.n ?? 0,
     last7Days: last7?.n ?? 0,
+    visits: {
+      today: todayRow?.v ?? 0,
+      last7Days: last7?.v ?? 0,
+      last30Days: last30?.v ?? 0,
+      total: total?.v ?? 0,
+    },
     today: todayRow?.n ?? 0,
     last30DaysByPlatform: Object.fromEntries((byPlatform?.results || []).map((r) => [r.platform, r.n])),
     updatedAt: new Date().toISOString(),

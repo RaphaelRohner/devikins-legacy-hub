@@ -93,7 +93,7 @@ import KleverscanView from './src/components/KleverscanView';
 import SignerTestView from './src/components/SignerTestView';
 import DonateView from './src/components/DonateView';
 import AboutView from './src/components/AboutView';
-import { pingOncePerDay } from './src/api/usage';
+import { countVisit } from './src/api/usage';
 import SortPickerModal from './src/components/SortPickerModal';
 import { humanizeColumnName } from './src/components/FilterPanel';
 import appConfig from './app.json';
@@ -535,10 +535,10 @@ function AppContent() {
       }
       setIsDatabaseReady(true);
 
-      // Anonymous daily "hello" for the user count on the About screen
+      // Anonymous "hello" for the people/visits count on the About screen
       // (see src/api/usage.js). Runs in the background and never blocks
       // or breaks anything if it fails.
-      pingOncePerDay(APP_VERSION);
+      countVisit(APP_VERSION);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -29,12 +29,12 @@ test('a first-time visitor sees the start hint, and About shows the version', as
   await expect(page.getByText(new RegExp(`Version ${APP_VERSION.replace(/\./g, '\\.')}`))).toBeVisible();
   await expect(page.getByText('Website', { exact: false }).first()).toBeVisible();
   // The user counter comes from the (pretend) relay.
-  for (const label of ['Today', 'Last 7 days', 'Last 30 days', 'Since launch']) {
+  for (const label of ['Today', '7 days', '30 days', 'Since launch', 'People', 'Visits', '61']) {
     await expect(page.getByText(label, { exact: true })).toBeVisible();
   }
 });
 
-test('the user counter only counts a visitor once they add a wallet', async ({ page }) => {
+test('the counter only counts a visitor once they add a wallet, then every visit', async ({ page }) => {
   const pings = () => fake.requests.filter((u) => u.endsWith('/ping')).length;
   await openHub(page);
   await openMenuEntry(page, 'About'); // just looking around
@@ -47,10 +47,11 @@ test('the user counter only counts a visitor once they add a wallet', async ({ p
   await page.getByText('Add', { exact: true }).click();
   await expect.poll(pings).toBe(1);
 
-  // At most once a day: opening the Hub again doesn't count again.
+  // Each later opening of the Hub is one more visit.
   await page.reload();
-  await page.waitForTimeout(2000);
-  expect(pings()).toBe(1);
+  await expect.poll(pings).toBe(2);
+  await page.reload();
+  await expect.poll(pings).toBe(3);
 });
 
 test('Ask Devi shows the website answers and hides app-only ones', async ({ page }) => {

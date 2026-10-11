@@ -7,11 +7,13 @@
  *   - The first time the Hub runs (website or app), it makes up a random
  *     ID, e.g. "3f9c...". It's not linked to any wallet, name, email or
  *     device, and it's only kept on this device / in this browser.
- *   - At most once a day the Hub sends that ID, plus "web"/"android"/"ios"
- *     and the Hub version, to our relay (relay/worker.js). Nothing else -
- *     no wallet addresses, no NFTs, no names.
- *   - The relay counts how many different IDs it has seen, and the About
- *     screen shows those totals.
+ *   - Each time the Hub is opened, it sends that ID, plus
+ *     "web"/"android"/"ios" and the Hub version, to our relay
+ *     (relay/worker.js). Nothing else - no wallet addresses, no NFTs, no
+ *     names.
+ *   - The relay counts how many different IDs it has seen (people) and
+ *     how often the Hub was opened (visits), and the About screen shows
+ *     both.
  *   - Only people who actually use the Hub are counted: nothing is sent
  *     until a wallet has been added (or a backup imported) on this
  *     device / in this browser. Someone who just opens the page to look,
@@ -27,7 +29,6 @@ import appConfig from '../../app.json';
 
 const RELAY = 'https://devi-hub-relay.raphaelrohner.workers.dev';
 const KEY_ID = 'usage_install_id';
-const KEY_LAST_DAY = 'usage_last_ping_day';
 const KEY_OPT_OUT = 'usage_opt_out';
 const KEY_ACTIVE = 'usage_active'; // '1' once a wallet was added or a backup imported here
 
@@ -35,10 +36,6 @@ function randomHexId() {
   let hex = '';
   for (let i = 0; i < 32; i += 1) hex += Math.floor(Math.random() * 16).toString(16);
   return hex;
-}
-
-function todayUtc() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 export async function isUsageOptedOut() {
@@ -64,39 +61,38 @@ async function isActiveUser() {
 
 /**
  * Called when someone adds a wallet or imports a backup: from now on this
- * Hub counts as "in use", and today's hello is sent straight away.
+ * Hub counts as "in use". The very first time, that also counts as this
+ * visit (the start of the Hub wasn't counted, as it wasn't in use yet).
  * Never throws.
  */
 export async function markUsageActive() {
   try {
+    if ((await getGlobalSetting(KEY_ACTIVE)) === '1') return;
     await setGlobalSetting(KEY_ACTIVE, '1');
   } catch (e) {
     return;
   }
-  await pingOncePerDay();
+  await countVisit();
 }
 
-/** Says "hello" to the counter, at most once a day, and only for Hubs
- *  that are in use (see isActiveUser). Never throws. */
-export async function pingOncePerDay(appVersion = appConfig.expo.version) {
+/** Says "hello" to the counter - once each time the Hub is opened, and
+ *  only for Hubs that are in use (see isActiveUser). Never throws. */
+export async function countVisit(appVersion = appConfig.expo.version) {
   try {
     if (await isUsageOptedOut()) return;
     if (!(await isActiveUser())) return;
-    const today = todayUtc();
-    if ((await getGlobalSetting(KEY_LAST_DAY)) === today) return;
     let id = await getGlobalSetting(KEY_ID);
     if (!id || !/^[0-9a-f]{32}$/.test(id)) {
       id = randomHexId();
       await setGlobalSetting(KEY_ID, id);
     }
-    const response = await fetch(`${RELAY}/ping`, {
+    await fetch(`${RELAY}/ping`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, platform: Platform.OS, version: String(appVersion || '') }),
     });
-    if (response.ok) await setGlobalSetting(KEY_LAST_DAY, today);
   } catch (e) {
-    // Offline or relay not reachable - simply try again next start.
+    // Offline or relay not reachable - this visit just isn't counted.
   }
 }
 
