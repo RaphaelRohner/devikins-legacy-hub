@@ -191,10 +191,20 @@ const ALL_FAQ_ENTRIES = [
   {
     id: 'kleverscan',
     topic: 'tools',
+    platform: 'app',
     question: 'What is the Kleverscan tab?',
     keywords: ['kleverscan', 'explorer', 'holders', 'block explorer', 'holder', 'browser'],
     answer:
       "Open the ☰ menu and tap Kleverscan for a small built-in browser pointed straight at the Devikins collection's Holders list on kleverscan.org, Klever's own block explorer - no typing in a search box needed. Handy for checking who's holding what, and it's also a good way to find your own wallet address if you don't have it handy: if you know roughly how many Devikins you hold, you can browse the holder list and spot yourself.",
+  },
+  {
+    id: 'kleverscan-web',
+    topic: 'tools',
+    platform: 'web',
+    question: 'What is the Kleverscan tab?',
+    keywords: ['kleverscan', 'explorer', 'holders', 'block explorer', 'holder', 'browser'],
+    answer:
+      "Open the ☰ menu and choose Kleverscan to open, in a new browser tab, the Devikins collection's Holders list on kleverscan.org, Klever's own block explorer - no typing in a search box needed. Handy for checking who's holding what, and it's also a good way to find your own wallet address if you don't have it handy: if you know roughly how many Devikins you hold, you can browse the holder list and spot yourself.",
   },
   {
     id: 'klv-signer',
