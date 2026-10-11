@@ -24,7 +24,7 @@ module.exports = defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? 'list' : [['list'], ['html', { open: 'never', outputFolder: 'test-report' }]],
+  reporter: [['list'], ['html', { open: 'never', outputFolder: 'test-report' }]],
   outputDir: 'test-results',
   use: {
     ...devices['Desktop Chrome'],
