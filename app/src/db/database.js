@@ -1978,3 +1978,24 @@ export async function getWithdrawalItem(kind, nonce) {
   const db = await getWithdrawalDb();
   return db.getFirstAsync(`SELECT * FROM withdrawal_items WHERE kind = ? AND nonce = ?`, [kind, nonce]);
 }
+
+/** For the Getting started checklist: does the active set hold any NFTs
+ *  at all, and any from the Withdrawals list ("My wallets")? */
+export async function getGuideDataFacts(idListOwner) {
+  const db = await getDatabase();
+  let anyNfts = false;
+  let anyFromIds = false;
+  for (const kind of Object.keys(TRAIT_COLUMNS)) {
+    try {
+      const row = await db.getFirstAsync(
+        `SELECT COUNT(*) AS n, SUM(CASE WHEN owner_address = ? THEN 1 ELSE 0 END) AS ids FROM ${kind}`,
+        [idListOwner]
+      );
+      if ((row?.n ?? 0) > 0) anyNfts = true;
+      if ((row?.ids ?? 0) > 0) anyFromIds = true;
+    } catch (e) {
+      // no active set / table yet
+    }
+  }
+  return { anyNfts, anyFromIds };
+}

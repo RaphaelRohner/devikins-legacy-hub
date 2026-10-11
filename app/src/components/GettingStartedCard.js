@@ -20,8 +20,8 @@
 import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { getGlobalSetting, setGlobalSetting, countWithdrawalItems } from '../db/database';
-import { MY_WALLETS_SET_KEY } from '../constants/idList';
+import { getGlobalSetting, setGlobalSetting, countWithdrawalItems, getGuideDataFacts } from '../db/database';
+import { MY_WALLETS_SET_KEY, ID_LIST_OWNER } from '../constants/idList';
 
 export const GUIDE_KEYS = {
   hidden: 'guide_hidden',
@@ -32,20 +32,23 @@ export const GUIDE_KEYS = {
 
 /** Loads what's done so far. */
 export async function loadGuideState(walletCount, activeWalletSetId) {
-  const [hidden, fetched, fetchedWithIds, backup, mySetId, idCount] = await Promise.all([
+  const [hidden, fetched, fetchedWithIds, backup, mySetId, idCount, facts] = await Promise.all([
     getGlobalSetting(GUIDE_KEYS.hidden),
     getGlobalSetting(GUIDE_KEYS.fetched),
     getGlobalSetting(GUIDE_KEYS.fetchedWithIds),
     getGlobalSetting(GUIDE_KEYS.backup),
     getGlobalSetting(MY_WALLETS_SET_KEY),
     countWithdrawalItems(),
+    activeWalletSetId != null ? getGuideDataFacts(ID_LIST_OWNER) : Promise.resolve({ anyNfts: false, anyFromIds: false }),
   ]);
   const isMySet = mySetId !== null && activeWalletSetId != null && String(mySetId) === String(activeWalletSetId);
   const steps = {
     wallets: walletCount > 0,
-    fetched: fetched === '1',
+    // Done if a fetch finished since the checklist exists - or if the set
+    // already holds NFTs (fetched before the checklist was added).
+    fetched: fetched === '1' || facts.anyNfts,
     ids: idCount > 0,
-    myWallets: isMySet && fetchedWithIds === '1',
+    myWallets: isMySet && (fetchedWithIds === '1' || facts.anyFromIds),
     backup: backup === '1',
   };
   const complete = steps.wallets && steps.fetched && steps.backup && (!steps.ids || steps.myWallets);
@@ -75,7 +78,7 @@ export default function GettingStartedCard({ state, onHide, onOpenWallets, onFet
       done: steps.fetched,
       title: 'Fetch/Update',
       text: 'Loads the Devikins, Weapons and Equipment those wallets hold.',
-      button: 'Fetch now',
+      button: isBusy ? 'Busy…' : 'Fetch now',
       onPress: onFetch,
       disabled: isBusy || !steps.wallets,
     },
@@ -96,7 +99,7 @@ export default function GettingStartedCard({ state, onHide, onOpenWallets, onFet
       text: steps.ids
         ? `Your own set then also shows the ${idCount} ID${idCount === 1 ? '' : 's'} on your list.`
         : 'Only needed if you added IDs above.',
-      button: isMySet ? 'Fetch now' : 'Wallets',
+      button: isMySet ? (isBusy ? 'Busy…' : 'Fetch now') : 'Wallets',
       onPress: isMySet ? onFetch : onOpenWallets,
       disabled: isMySet && isBusy,
     },

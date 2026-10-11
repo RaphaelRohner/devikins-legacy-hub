@@ -147,6 +147,9 @@ test('a backup keeps names, stars and pictures, and imports into a new browser',
   await expect.poll(() => dialogs.join('\n')).toMatch(/matched exactly/);
   await page2.getByText(/\(imported\)$/).first().click();
   await goBack(page2);
+  // Data that's already there counts as fetched in the Getting started
+  // checklist (no new fetch needed): wallet + fetch done, backup not yet.
+  await expect(page2.getByText(/2 of 3 done/)).toBeVisible();
 
   await expect(page2.getByText('Sir Testalot')).toBeVisible();
   await expect.poll(async () => (await shownPictureSources(page2)).filter((s) => s.startsWith('blob:')).length).toBe(2);

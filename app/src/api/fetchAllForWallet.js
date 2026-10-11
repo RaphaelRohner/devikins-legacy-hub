@@ -260,10 +260,13 @@ export async function retryPendingItems(walletAddress, { onProgress, shouldCance
       const bytes = await readStoredImageBytes(row.local_image_path, row.image);
       if (bytes) await setImageQuality(kind, row.nonce, judgeImageBytes(bytes));
       checked += 1;
-      if (checked % 10 === 0 || checked === uncheckedRows.length) {
+      if (checked % 25 === 0 || checked === uncheckedRows.length) {
         onProgress({ phase: 'fetching', kind, label: `${label} (picture check)`, completed: checked, total: uncheckedRows.length, skipped: 0 });
       }
-      await pause(5);
+      // A real break after each picture, so taps and scrolling stay
+      // responsive while hundreds of pictures are checked (11 Oct 2026:
+      // with 5 ms the website barely reacted during a 1,600-picture check).
+      await pause(40);
     }
 
     const missingImageRows = await getNoncesMissingCachedImage(kind, walletAddress);

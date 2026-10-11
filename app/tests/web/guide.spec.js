@@ -14,6 +14,10 @@ test('the Getting started checklist ticks off steps, hides, and comes back from 
   await openHub(page);
   await expect(page.getByText(/^Getting started/)).toBeVisible();
   await expect(page.getByText(/0 of 3 done/)).toBeVisible();
+  // The checklist's buttons open their screens.
+  await page.getByText('Wallets', { exact: true }).first().click();
+  await expect(page.getByPlaceholder('Paste a Klever wallet address (klv1...)')).toBeVisible();
+  await goBack(page);
 
   await addWalletAndFetch(page, fake);
   await expect(page.getByText(/2 of 3 done/)).toBeVisible();
