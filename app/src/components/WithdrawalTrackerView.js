@@ -112,8 +112,8 @@ const PLACE_FILTERS = [
 ];
 const SORTS = [
   { key: 'attention', label: 'Needs attention first' },
-  { key: 'id-asc', label: 'Number ↑' },
-  { key: 'id-desc', label: 'Number ↓' },
+  { key: 'id-asc', label: 'ID ↑' },
+  { key: 'id-desc', label: 'ID ↓' },
 ];
 
 const PASTE_KINDS = [
@@ -303,11 +303,11 @@ export default function WithdrawalTrackerView({ onClose }) {
     }
     if (unassigned.length > 0) {
       notes.push(
-        `${unassigned.length} number(s) had no kind: put a heading (Devikins / Weapons / Equipment) above them, or pick the kind above the box.`
+        `${unassigned.length} ID(s) had no kind: put a heading (Devikins / Weapons / Equipment) above them, or pick the kind above the box.`
       );
     }
-    if (ignored.length > 0) notes.push(`Skipped (not a number): ${ignored.slice(0, 5).join(', ')}${ignored.length > 5 ? ' …' : ''}`);
-    if (notes.length === 0) notes.push('No NFT numbers found in the text.');
+    if (ignored.length > 0) notes.push(`Skipped (not an ID): ${ignored.slice(0, 5).join(', ')}${ignored.length > 5 ? ' …' : ''}`);
+    if (notes.length === 0) notes.push('No NFT IDs found in the text.');
     await reload(); // first refresh the list, then say what happened
     setAddMessage(notes.join(' '));
   }
@@ -524,9 +524,9 @@ export default function WithdrawalTrackerView({ onClose }) {
 
         {/* 2. Add NFTs */}
         <View style={card}>
-          <Text style={[styles.heading, { color: colors.text }]}>2. Add NFTs to follow</Text>
+          <Text style={[styles.heading, { color: colors.text }]}>2. Add the IDs of your NFTs</Text>
           <Text style={[styles.note, { color: colors.secondaryText }]}>
-            Paste NFT numbers - separated by spaces, commas or new lines. With headings like "Devikins", "Weapons" and
+            Paste NFT IDs - separated by spaces, commas or new lines. With headings like "Devikins", "Weapons" and
             "Equipment", one paste can hold all three; otherwise pick the kind first.
           </Text>
           <View style={styles.chipRow}>

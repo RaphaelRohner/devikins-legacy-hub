@@ -96,6 +96,7 @@ import SignerTestView from './src/components/SignerTestView';
 import DonateView from './src/components/DonateView';
 import AboutView from './src/components/AboutView';
 import WithdrawalTrackerView from './src/components/WithdrawalTrackerView';
+import GettingStartedCard, { loadGuideState, setGuideHidden, GUIDE_KEYS } from './src/components/GettingStartedCard';
 import { countVisit } from './src/api/usage';
 import SortPickerModal from './src/components/SortPickerModal';
 import { humanizeColumnName } from './src/components/FilterPanel';
@@ -236,6 +237,13 @@ function AppContent() {
   // screen is simpler to reason about than several booleans that could
   // theoretically all be true/false in an invalid combination.
   const [currentScreen, setCurrentScreen] = useState(Object.keys(COLLECTIONS)[0]);
+
+  // The "Getting started" checklist (GettingStartedCard.js): what's done
+  // so far, re-read whenever something relevant may have changed.
+  // forceGuide = shown again from Help > Getting started, even if done.
+  const [guideState, setGuideState] = useState(null);
+  const [forceGuide, setForceGuide] = useState(false);
+  const [guideReloadKey, setGuideReloadKey] = useState(0);
 
   // Re-checks whether the Withdrawals list belongs in the lists (see
   // includeIdList above) whenever the loaded set changes or the user
@@ -773,6 +781,13 @@ Continue anyway?`
         shouldCancel: () => cancelRequestedRef.current,
       });
 
+      // Getting started checklist: a finished fetch ticks "Fetch/Update"
+      // (and "fetch again" once the IDs list is included).
+      if (!cancelRequestedRef.current) {
+        await setGlobalSetting(GUIDE_KEYS.fetched, '1');
+        if (includeIdList) await setGlobalSetting(GUIDE_KEYS.fetchedWithIds, '1');
+      }
+
       if (truncationNotices.length > 0) {
         Alert.alert('Some collections were larger than we could list', truncationNotices.join('\n\n'));
       }
@@ -786,7 +801,40 @@ Continue anyway?`
       stopScanNotification();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wallets, ownerAddresses]);
+  }, [wallets, ownerAddresses, includeIdList]);
+
+  useEffect(() => {
+    let alive = true;
+    loadGuideState(wallets.length, activeWalletSetId).then((state) => alive && setGuideState(state));
+    return () => {
+      alive = false;
+    };
+  }, [wallets.length, activeWalletSetId, currentScreen, isFetching, guideReloadKey]);
+
+  async function handleHideGuide() {
+    await setGuideHidden(true);
+    setForceGuide(false);
+    setGuideReloadKey((k) => k + 1);
+  }
+
+  async function handleShowGuide() {
+    await setGuideHidden(false);
+    setForceGuide(true);
+    goToScreen(lastCollectionScreen);
+    setGuideReloadKey((k) => k + 1);
+  }
+
+  const showGuide = guideState && (forceGuide || (!guideState.hidden && !guideState.complete));
+  const guideCard = showGuide ? (
+    <GettingStartedCard
+      state={guideState}
+      isBusy={isFetching || isRetrying}
+      onHide={handleHideGuide}
+      onOpenWallets={() => handleMenuSelectScreen('wallets')}
+      onOpenWithdrawals={() => handleMenuSelectScreen('withdrawals')}
+      onFetch={handleMenuSelectFetch}
+    />
+  ) : null;
 
   function handleCancelPress() {
     cancelRequestedRef.current = true;
@@ -1035,6 +1083,7 @@ Continue anyway?`
           activeWalletSetId={activeWalletSetId}
           onWalletSetsChanged={refreshWalletSetsState}
           onClose={() => goToScreen(lastCollectionScreen)}
+          onOpenWithdrawals={() => goToScreen('withdrawals')}
         />
       </SafeAreaView>
     );
@@ -1357,7 +1406,10 @@ Continue anyway?`
         onSelectWallets={() => handleMenuSelectScreen('wallets')}
         onSelectFetch={handleMenuSelectFetch}
         onSelectScreen={handleMenuSelectScreen}
+        onShowGettingStarted={handleShowGuide}
       />
+
+      {guideCard}
 
       {ownerAddresses.length > 0 ? (
         <CollectionView
@@ -1379,9 +1431,13 @@ Continue anyway?`
       ) : (
         !isFetching && (
           <View style={styles.centeredContainer}>
-            <Text style={[styles.hintText, { color: colors.secondaryText }]}>
-              First add a wallet, then scan the chain: tap the ☰ menu below, choose Wallets to add your address, then choose Fetch/Update to see your Devikins, Weapons, and Equipment.
-            </Text>
+            {/* Same advice as the Getting started checklist - only shown
+                when that checklist is hidden. */}
+            {!showGuide ? (
+              <Text style={[styles.hintText, { color: colors.secondaryText }]}>
+                First add a wallet, then scan the chain: tap the ☰ menu below, choose Wallets to add your address, then choose Fetch/Update to see your Devikins, Weapons, and Equipment.
+              </Text>
+            ) : null}
             <TouchableOpacity
               style={[styles.hamburgerButton, styles.emptyStateMenuButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
               onPress={() => setIsMenuOpen(true)}

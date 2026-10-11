@@ -19,7 +19,7 @@ There are two kinds of testing for this app:
 Each test opens the built website in a real Chrome browser (without a
 window) as a brand-new visitor:
 
-- **Start:** the first-visit hint shows, and About shows the right
+- **Start:** the Getting started checklist shows, and About shows the right
   version and the user counter.
 - **Ask Devi:** the website answers are there (browser storage, Connect
   Klever Extension, Kleverscan in a new tab) and the app-only ones (scan
@@ -32,6 +32,9 @@ window) as a brand-new visitor:
   Import a set in a second, empty browser, including the pictures (with
   the picture server down), and every file's checksum in the zip is
   right.
+- **Getting started and menu:** the start checklist ticks off steps
+  (wallet, fetch, backup), disappears when done and comes back from
+  Help > Getting started; the menu categories open and close.
 - **Message boxes:** on the website, the Hub's own message box doesn't
   pause the page - a running Fetch/Update finishes while one is open.
 - **My wallets:** the set marked "My wallets" also lists the NFTs on the
@@ -78,7 +81,7 @@ npm test
 
 This first builds the website (about a minute), then runs all tests
 (a few minutes). Every test prints a ✓ when it passes or ✘ when it
-fails, and the last line says e.g. `13 passed`.
+fails, and the last line says e.g. `15 passed`.
 
 - `npm run test:quick` runs the tests again without rebuilding - only
   useful when nothing in the app's code changed since the last build.

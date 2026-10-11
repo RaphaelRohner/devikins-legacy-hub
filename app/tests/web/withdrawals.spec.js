@@ -84,10 +84,10 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   // Narrow and sort: weapons still in the game, by number
   await page.getByText('Weapons', { exact: true }).last().click();
   await page.getByText('Still in the game', { exact: true }).click();
-  await page.getByText('Number ↑', { exact: true }).click();
+  await page.getByText('ID ↑', { exact: true }).click();
   const shown = await page.locator('div[tabindex="0"]').filter({ hasText: /^.?(Weapon|Equipment|Devikin) #\d+/ }).allInnerTexts();
   expect(shown.map((t) => t.match(/#(\d+)/)[1])).toEqual(['1442', '1450']);
-  await page.getByText('Number ↓', { exact: true }).click();
+  await page.getByText('ID ↓', { exact: true }).click();
   await page.getByText('Anywhere', { exact: true }).click();
   const shown2 = await page.locator('div[tabindex="0"]').filter({ hasText: /^.?(Weapon|Equipment|Devikin) #\d+/ }).allInnerTexts();
   expect(shown2.map((t) => t.match(/#(\d+)/)[1])).toEqual(['3265', '1450', '1442']);

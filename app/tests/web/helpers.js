@@ -26,8 +26,19 @@ async function openHub(page, options = {}) {
  *  entries carry a count once there's data, like "Wallets (1)". */
 async function openMenuEntry(page, label) {
   await page.getByText('☰').first().click();
+  // Look only inside the menu (other parts of the page, like the Getting
+  // started checklist, use some of the same words).
+  const menu = page.locator('[role="dialog"][aria-modal="true"]').filter({ hasText: 'Menu' }).last();
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  await page.getByText(new RegExp(`^${escaped}( \\(\\d+\\))?$`)).click();
+  const target = menu.getByText(new RegExp(`^${escaped}( \\(\\d+\\))?$`)).first();
+  // The menu has collapsible categories: open the one holding the entry.
+  for (const category of ['Set Up', 'Browse NFTs', 'Tools', 'Help']) {
+    if (await target.isVisible()) break;
+    const header = menu.getByText(category, { exact: true }).first();
+    await header.click();
+    if (!(await target.isVisible())) await header.click(); // not in here - close it again
+  }
+  await target.click();
 }
 
 /** Goes back from a sub-screen (the round ‹ button). */

@@ -101,6 +101,7 @@ import {
   countWithdrawalItems,
 } from '../db/database';
 import { MY_WALLETS_SET_KEY } from '../constants/idList';
+import { GUIDE_KEYS } from './GettingStartedCard';
 import { useTheme } from '../context/ThemeContext';
 import QrScannerModal from './QrScannerModal';
 // Website only: "Connect Klever Extension" reads the address of the
@@ -132,6 +133,7 @@ export default function WalletManager({
   activeWalletSetId,
   onWalletSetsChanged,
   onClose,
+  onOpenWithdrawals,
 }) {
   const { colors } = useTheme();
 
@@ -573,6 +575,7 @@ export default function WalletManager({
         onProgress: (progress) => setExportProgressLabel(describeTransferProgress(progress)),
       });
       await presentSaveOrShareChoice(fileUri, fileName);
+      setGlobalSetting(GUIDE_KEYS.backup, '1'); // Getting started: "Save a backup" done
     } catch (err) {
       reportSetActionError(err, 'Exporting that set');
     } finally {
@@ -589,6 +592,7 @@ export default function WalletManager({
         onProgress: (progress) => setExportProgressLabel(describeTransferProgress(progress)),
       });
       await presentSaveOrShareChoice(fileUri, fileName);
+      setGlobalSetting(GUIDE_KEYS.backup, '1'); // Getting started: "Save a backup" done
     } catch (err) {
       reportSetActionError(err, 'Exporting all sets');
     } finally {
@@ -965,10 +969,17 @@ export default function WalletManager({
               <Text style={[styles.myWalletsNote, { color: colors.secondaryText }]}>
                 {isMySet
                   ? withdrawalListCount > 0
-                    ? `This is your own set: it also shows the ${withdrawalListCount} NFTs on your Withdrawals list, wherever they are (e.g. still in the game's main wallet). Run Fetch/Update to load them.`
-                    : 'This is your own set. NFTs you add to the Withdrawals list will show here too, wherever they are.'
-                  : `Switch on if these are your own wallets: the set then also shows the NFTs on your Withdrawals list. Only one set can be yours${mySetName ? ` - right now it's "${mySetName}"` : ''}.`}
+                    ? `This is your own set: it also shows the ${withdrawalListCount} ID${withdrawalListCount === 1 ? '' : 's'} on your Withdrawals list, wherever those NFTs are (e.g. still in the game's main wallet). Run Fetch/Update to load them.`
+                    : 'This is your own set. IDs you add on the Withdrawals screen will show here too, wherever those NFTs are.'
+                  : `Switch on if these are your own wallets: the set then also shows the IDs on your Withdrawals list. Only one set can be yours${mySetName ? ` - right now it's "${mySetName}"` : ''}.`}
               </Text>
+              {onOpenWithdrawals ? (
+                <TouchableOpacity onPress={onOpenWithdrawals}>
+                  <Text style={[styles.myWalletsLink, { color: colors.primary }]}>
+                    {withdrawalListCount > 0 ? `Your IDs (${withdrawalListCount}) →` : 'Add the IDs of NFTs you own →'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
               <View style={styles.addRow}>
@@ -1299,6 +1310,11 @@ const styles = StyleSheet.create({
   myWalletsLabel: {
     fontSize: 14,
     fontWeight: '700',
+  },
+  myWalletsLink: {
+    fontSize: 13,
+    fontWeight: '700',
+    paddingTop: 4,
   },
   myWalletsNote: {
     fontSize: 12,

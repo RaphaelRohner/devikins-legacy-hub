@@ -24,7 +24,7 @@ test.afterEach(async () => {
 
 test('a first-time visitor sees the start hint, and About shows the version', async ({ page }) => {
   await openHub(page);
-  await expect(page.getByText(/First add a wallet, then scan the chain/)).toBeVisible();
+  await expect(page.getByText(/^Getting started/)).toBeVisible(); // the start checklist
   await openMenuEntry(page, 'About');
   await expect(page.getByText(new RegExp(`Version ${APP_VERSION.replace(/\./g, '\\.')}`))).toBeVisible();
   await expect(page.getByText('Website', { exact: false }).first()).toBeVisible();
@@ -56,7 +56,7 @@ test('the counter only counts a visitor once they add a wallet, then every visit
 
 test('Ask Devi shows the website answers and hides app-only ones', async ({ page }) => {
   await openHub(page);
-  await openMenuEntry(page, 'Ask Devi (Help)');
+  await openMenuEntry(page, 'Ask Devi');
   for (const question of [
     'Where does the website keep my data?',
     'What does "Connect Klever Extension" do?',

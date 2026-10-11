@@ -35,6 +35,7 @@ test('the set marked "My wallets" also shows the Withdrawals list NFTs, with whe
   await page.getByText('Save', { exact: true }).click();
   await page.locator('textarea').fill('W3265');
   await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText('All (1)')).toBeVisible();
   await page.getByText('Check now', { exact: true }).click();
   await expect(page.getByText(/Last check:/)).toBeVisible();
   await goBack(page);
@@ -46,7 +47,7 @@ test('the set marked "My wallets" also shows the Withdrawals list NFTs, with whe
   // Mark this set as my own, then fetch.
   await openMenuEntry(page, 'Wallets');
   await switchNear(page, 'My wallets').click();
-  await expect(page.getByText(/also shows the 1 NFTs on your Withdrawals list/)).toBeVisible();
+  await expect(page.getByText(/also shows the 1 ID on your Withdrawals list/)).toBeVisible();
   await goBack(page);
   await openMenuEntry(page, 'Fetch/Update');
   await expect(page.getByText('3 Weapons')).toBeVisible({ timeout: 60_000 });
