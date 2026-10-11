@@ -89,7 +89,7 @@ const FAQ_TOPICS = [
 // FAQ_TOPICS' own comment). This is intentionally small and specific to
 // THIS app, not general knowledge - Devi doesn't know anything it isn't
 // told here.
-const FAQ_ENTRIES = [
+const ALL_FAQ_ENTRIES = [
   {
     id: 'add-wallet',
     topic: 'wallets',
@@ -108,6 +108,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'export-import-sets',
+    platform: 'app',
     topic: 'wallets',
     question: 'How do I back up or transfer a wallet set?',
     keywords: ['export', 'import', 'backup', 'back up', 'transfer', 'move', 'zip', 'restore', 'save file'],
@@ -124,6 +125,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'scan-notification',
+    platform: 'app',
     topic: 'wallets',
     question: "Why does a notification appear while I'm fetching?",
     keywords: ['notification', 'background', 'scan running', 'foreground service', 'switch apps', 'lock screen', 'swipe', 'close app', 'closed', 'walk away', 'leave app', 'background scan'],
@@ -196,6 +198,7 @@ const FAQ_ENTRIES = [
   },
   {
     id: 'klv-signer',
+    platform: 'app',
     topic: 'tools',
     question: 'What is KLV Signer (test)?',
     keywords: ['signer', 'klv signer', 'send', 'transfer', 'sign', 'signature', 'testnet', 'private key', 'transaction'],
@@ -267,6 +270,49 @@ const FAQ_ENTRIES = [
       "Yes - open Wallets from the ☰ menu and add as many addresses as you like. Fetch/Update pulls Devikins, Weapons, and Equipment from all of them together, as long as they're in the same wallet set - a different set has its own separate wallets. You can give each wallet its own nickname from its Edit button.",
   },
   {
+    id: 'export-import-sets-web',
+    topic: 'wallets',
+    platform: 'web',
+    question: 'How do I back up or transfer a wallet set?',
+    keywords: ['export', 'import', 'backup', 'back up', 'transfer', 'move', 'zip', 'restore', 'save file', 'download'],
+    answer:
+      "On the Wallets screen, each wallet set has its own Export button, and \"Export all sets\" saves every set at once. The backup downloads as a zip file (usually into your Downloads folder) with your wallets, fetched NFTs, names, stars, comments and pictures. \"Import a set\" reads such a file back in as a new set. Backups work both ways between the website and the Android app. Every file is checked against the backup's own checksum, so you'll be warned if anything didn't come through intact.",
+  },
+  {
+    id: 'website-storage',
+    topic: 'data-feedback',
+    platform: 'web',
+    question: 'Where does the website keep my data?',
+    keywords: ['data', 'storage', 'stored', 'saved', 'browser', 'website', 'safari', 'lost', 'gone', 'privacy', 'server', 'another device', 'other browser'],
+    answer:
+      "Only in this browser on this device - nothing is uploaded anywhere. That also means it's separate per browser and device: Chrome and Safari, or your computer and your phone, each have their own copy. When you add a wallet, the Hub asks the browser to keep this data permanently (Firefox may show a small question about it - saying yes helps). Clearing this site's data (or using a private window) removes it, and Safari may delete it by itself if you don't visit the site for about 7 days (unless it's added to your Home Screen). So export a backup now and then (Wallets → Export all sets) - it takes a few seconds and can be imported again anywhere.",
+  },
+  {
+    id: 'connect-extension',
+    topic: 'wallets',
+    platform: 'web',
+    question: 'What does "Connect Klever Extension" do?',
+    keywords: ['connect', 'extension', 'klever extension', 'browser extension', 'klever wallet', 'link wallet'],
+    answer:
+      "If you use the Klever Wallet browser extension, this button (on the Wallets screen, under the address field) reads the address of the wallet that's open in the extension and adds it to your list - no copying and pasting. Only the public address is read; the Hub never sees any keys.",
+  },
+  {
+    id: 'donate',
+    topic: 'data-feedback',
+    question: 'How can I support the Hub?',
+    keywords: ['donate', 'donation', 'support', 'tip', 'pay', 'free', 'cost', 'price'],
+    answer:
+      "The Hub is free and stays free. If you'd like to support it, open Donate in the ☰ menu: you can copy the donation address and send any amount of KLV from your own wallet. On the website you can also donate directly through the Klever browser extension - it shows the transfer for you to approve, and nothing is sent unless you confirm it there. Klever adds a network fee of about 3 KLV per transfer.",
+  },
+  {
+    id: 'about-counter',
+    topic: 'data-feedback',
+    question: 'What does the About screen show, and what is counted?',
+    keywords: ['about', 'version', 'counter', 'users', 'statistics', 'tracking', 'count me', 'anonymous', 'privacy', 'opt out'],
+    answer:
+      "About (in the ☰ menu) shows the Hub's version and how many people use it. For that count, the Hub sends a random ID - not linked to you, your wallets or your device - at most once a day, together with \"website\" or \"app\" and the version. Nothing else is sent. You can switch it off with \"Count me (anonymously)\" on the About screen.",
+  },
+  {
     id: 'who-are-you',
     topic: 'data-feedback',
     question: 'Who or what are you?',
@@ -275,6 +321,14 @@ const FAQ_ENTRIES = [
       "I'm Devi - a tiny, offline helper built into this app. I'm not a real AI: I can't think, I don't learn, and I only know the handful of canned answers listed here about using this app.",
   },
 ];
+
+// Some answers only apply to the phone app ('app') or only to the website
+// ('web') - e.g. the scan notification and the KLV Signer exist only in
+// the Android app, while the browser storage answer only matters on the
+// website. Entries without a platform apply to both.
+const FAQ_ENTRIES = ALL_FAQ_ENTRIES.filter(
+  (entry) => !entry.platform || entry.platform === (Platform.OS === 'web' ? 'web' : 'app')
+);
 
 const GREETING =
   "Hi, I'm Devi! I'm a small offline helper, not a real AI - I only know a fixed set of answers about using this app. Try one of the questions below, or type your own.";

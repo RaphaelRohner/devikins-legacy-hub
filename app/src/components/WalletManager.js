@@ -103,6 +103,7 @@ import QrScannerModal from './QrScannerModal';
 // wallet open in the Klever browser extension and adds it here, so nobody
 // has to copy and paste it. Only the public address is read.
 import { connectExtension } from '../api/kleverExtension';
+import { requestPersistentStorage } from '../api/persistStorage';
 import { getStorageBytesForSets, formatBytes } from '../api/storageStats';
 import {
   exportWalletSet,
@@ -285,6 +286,10 @@ export default function WalletManager({
     // already knows what to expect.
     const isFirstWalletEver = wallets.length === 0;
 
+    // Website only: ask the browser to keep the Hub's data (see
+    // persistStorage.web.js). Not awaited - it never blocks adding.
+    requestPersistentStorage();
+
     await addWallet(trimmedAddress);
     setNewAddressInput('');
     onWalletsChanged();
@@ -299,6 +304,7 @@ export default function WalletManager({
 
   async function handleConnectExtension() {
     setIsConnectingExtension(true);
+    requestPersistentStorage();
     try {
       const { address } = await connectExtension();
       if (wallets.some((w) => w.address === address)) {
