@@ -43,6 +43,10 @@ const TEST_NFTS = {
   ],
 };
 
+function json(route, body, status = 200) {
+  return route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
+}
+
 function metadataFor(kind, nft) {
   return {
     name: nft.name,
@@ -99,6 +103,10 @@ async function installFakeServers(context) {
     picturesDown: false, // true = picture servers answer "403 access denied"
     requests: [], // every outside URL the Hub asked for, for checks
     blocked: [], // anything unexpected that was blocked
+    // A tiny pretend blockchain for the withdrawal tracker:
+    //   holders: "weapon:3265" -> address that holds it now
+    //   transfers: [{ hash, kind, nonce, from, to, timestamp (seconds) }]
+    chain: { holders: new Map(), transfers: [] },
   };
 
   await context.route('**/*', async (route) => {
@@ -106,14 +114,43 @@ async function installFakeServers(context) {
     if (url.hostname === 'localhost') return route.continue();
     fake.requests.push(url.href);
 
-    // Klever API: which NFTs a wallet holds
     if (url.hostname === 'api.mainnet.klever.org') {
-      const m = url.pathname.match(/\/address\/([^/]+)\/collection\/([^/]+)$/);
+      // Which NFTs a wallet holds
+      let m = url.pathname.match(/\/address\/([^/]+)\/collection\/([^/]+)$/);
       if (m) {
         const kind = Object.keys(COLLECTION_IDS).find((k) => COLLECTION_IDS[k] === m[2]);
         const page = Number(url.searchParams.get('page') || 1);
-        const items = m[1] === TEST_WALLET && kind && page === 1 ? TEST_NFTS[kind].map((n) => ({ nftNonce: n.nonce })) : [];
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { collection: items }, code: 'successful' }) });
+        let nonces = [];
+        if (kind && page === 1) {
+          if (m[1] === TEST_WALLET) nonces = TEST_NFTS[kind].map((n) => n.nonce);
+          else nonces = [...fake.chain.holders].filter(([k, a]) => a === m[1] && k.startsWith(kind + ':')).map(([k]) => Number(k.split(':')[1]));
+        }
+        return json(route, { data: { collection: nonces.map((nftNonce) => ({ nftNonce, balance: 1 })) }, code: 'successful' });
+      }
+      // Who holds one NFT
+      m = url.pathname.match(/\/assets\/nft\/holder\/([^/]+)\/(\d+)$/);
+      if (m) {
+        const kind = Object.keys(COLLECTION_IDS).find((k) => COLLECTION_IDS[k] === m[1]);
+        const holder = fake.chain.holders.get(`${kind}:${m[2]}`);
+        if (!holder) return json(route, { data: null, error: 'not found', code: 'internal_issue' }, 404);
+        return json(route, { data: { account: { address: holder } }, code: 'successful' });
+      }
+      // Transfers into a wallet (newest first)
+      if (url.pathname === '/v1.0/transaction/list') {
+        const to = url.searchParams.get('toAddress');
+        const txs = fake.chain.transfers
+          .filter((t) => t.to === to)
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .map((t) => ({
+            hash: t.hash,
+            sender: t.from,
+            timestamp: t.timestamp,
+            status: 'success',
+            receipts: [
+              { assetId: `${COLLECTION_IDS[t.kind]}/${t.nonce}`, assetType: 'NonFungible', collection: COLLECTION_IDS[t.kind], from: t.from, to: t.to, nonce: String(t.nonce), typeString: 'Transfer', value: 1 },
+            ],
+          }));
+        return json(route, { data: { transactions: txs }, pagination: { totalPages: 1 }, code: 'successful' });
       }
     }
 
@@ -145,4 +182,10 @@ async function installFakeServers(context) {
   return fake;
 }
 
-module.exports = { installFakeServers, TEST_WALLET, TEST_NFTS, makePng };
+/** Made-up but well-formed Klever addresses for the withdrawal tests. */
+function fakeAddress(letter) {
+  return 'klv1' + letter.repeat(58);
+}
+const GAME_MAIN_WALLET = 'klv1a35lsdqvsmk370ujzjc4js2666kvp7wukumtjejj7ze8ehde5slqe0uvpf';
+
+module.exports = { installFakeServers, TEST_WALLET, TEST_NFTS, makePng, fakeAddress, GAME_MAIN_WALLET };

@@ -117,6 +117,12 @@ export default function HamburgerMenu({
       onPress: () => onSelectScreen('breeding'),
     },
     {
+      key: 'withdrawals',
+      label: 'Withdrawals',
+      screen: 'withdrawals',
+      onPress: () => onSelectScreen('withdrawals'),
+    },
+    {
       key: 'kleverscan',
       label: 'Kleverscan',
       screen: 'kleverscan',

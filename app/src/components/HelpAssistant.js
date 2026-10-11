@@ -307,6 +307,14 @@ const ALL_FAQ_ENTRIES = [
       "If you use the Klever Wallet browser extension, this button (on the Wallets screen, under the address field) reads the address of the wallet that's open in the extension and adds it to your list - no copying and pasting. Only the public address is read; the Hub never sees any keys.",
   },
   {
+    id: 'withdrawals',
+    topic: 'tools',
+    question: 'How do I check whether my withdrawals from the game arrived?',
+    keywords: ['withdraw', 'withdrawal', 'withdrawals', 'arrived', 'arrive', 'transfer', 'in-game wallet', 'custody', 'missing', 'overdue', 'support ticket', 'tracker'],
+    answer:
+      "Open Withdrawals in the ☰ menu. Enter your in-game wallet (where the game sends from) and your own wallet (where it should arrive), then paste the numbers of the NFTs you want to follow - with headings like \"Weapons\" one paste can hold all kinds. Select the ones you've actually requested in the game and tap Mark requested. Check now asks the Klever blockchain where each one is: Arrived, still in your in-game wallet, still in the game's main wallet, or somewhere else. Anything requested that hasn't arrived after 30 minutes (you can change that) shows as Overdue, and you can copy that list for a support ticket. The arrivals log shows everything that came into your wallet, with date and sender.",
+  },
+  {
     id: 'donate',
     topic: 'data-feedback',
     question: 'How can I support the Hub?',

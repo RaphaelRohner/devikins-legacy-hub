@@ -93,6 +93,7 @@ import KleverscanView from './src/components/KleverscanView';
 import SignerTestView from './src/components/SignerTestView';
 import DonateView from './src/components/DonateView';
 import AboutView from './src/components/AboutView';
+import WithdrawalTrackerView from './src/components/WithdrawalTrackerView';
 import { countVisit } from './src/api/usage';
 import SortPickerModal from './src/components/SortPickerModal';
 import { humanizeColumnName } from './src/components/FilterPanel';
@@ -571,7 +572,7 @@ function AppContent() {
         setIsMenuOpen(false);
         return true; // handled - don't also exit the app
       }
-      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help' || currentScreen === 'breeding' || currentScreen === 'kleverscan' || currentScreen === 'signer') {
+      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help' || currentScreen === 'breeding' || currentScreen === 'kleverscan' || currentScreen === 'signer' || currentScreen === 'withdrawals' || currentScreen === 'about' || currentScreen === 'donate') {
         goToScreen(lastCollectionScreen);
         return true; // handled - don't also exit the app
       }
@@ -1071,6 +1072,17 @@ Continue anyway?`
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <AboutView appVersion={APP_VERSION} onClose={() => goToScreen(lastCollectionScreen)} />
+      </SafeAreaView>
+    );
+  }
+
+  // Withdrawals - follow NFTs requested from the game until they arrive
+  // (see WithdrawalTrackerView.js). Same full-screen-takeover pattern.
+  if (currentScreen === 'withdrawals') {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <WithdrawalTrackerView onClose={() => goToScreen(lastCollectionScreen)} />
       </SafeAreaView>
     );
   }

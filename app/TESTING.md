@@ -32,6 +32,10 @@ window) as a brand-new visitor:
   Import a set in a second, empty browser, including the pictures (with
   the picture server down), and every file's checksum in the zip is
   right.
+- **Withdrawals:** on a pretend blockchain, the tracker shows where each
+  listed NFT is (arrived, in-game wallet, game's main wallet, another
+  wallet, not found), turns a requested NFT "Overdue" after 30 minutes,
+  and shows it as arrived once it's sent.
 - **Damaged backups:** a backup with one changed byte in a picture is
   noticed and reported, not silently imported.
 
@@ -64,7 +68,7 @@ npm test
 
 This first builds the website (about a minute), then runs all tests
 (a few minutes). Every test prints a ✓ when it passes or ✘ when it
-fails, and the last line says e.g. `6 passed`.
+fails, and the last line says e.g. `8 passed`.
 
 - `npm run test:quick` runs the tests again without rebuilding - only
   useful when nothing in the app's code changed since the last build.

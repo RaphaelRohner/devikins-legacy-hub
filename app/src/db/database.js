@@ -1658,3 +1658,142 @@ export async function setGlobalSetting(key, value) {
   const registryDb = await getRegistryDatabase();
   await registryDb.runAsync(`INSERT OR REPLACE INTO global_settings (key, value) VALUES (?, ?)`, [key, value]);
 }
+
+// ---------------------------------------------------------------------------
+// Withdrawal tracker (added 11 Oct 2026 - see WithdrawalTrackerView.js and
+// src/api/withdrawalTracker.js). One tracker for the whole Hub, so its
+// tables live in the registry database next to global_settings, not in a
+// wallet set (Raphael: "only one set to track, everything else would
+// confuse"). Its two wallet addresses and the overdue minutes are stored as
+// global settings (keys starting with "withdraw_").
+//
+//   withdrawal_items     one row per NFT on the ID list: where it was last
+//                        seen, whether withdrawal was requested (and when),
+//                        and when/from where it arrived.
+//   withdrawal_arrivals  the arrivals log: every NFT transfer into the
+//                        receiving wallet that a check found.
+// ---------------------------------------------------------------------------
+
+let withdrawalTablesReadyPromise = null;
+
+async function getWithdrawalDb() {
+  await ensureRegistryTablesExist();
+  const registryDb = await getRegistryDatabase();
+  if (!withdrawalTablesReadyPromise) {
+    withdrawalTablesReadyPromise = registryDb.execAsync(`
+      CREATE TABLE IF NOT EXISTS withdrawal_items (
+        kind TEXT NOT NULL,
+        nonce INTEGER NOT NULL,
+        added_at INTEGER NOT NULL,
+        requested_at INTEGER,
+        holder TEXT,
+        previous_holder TEXT,
+        checked_at INTEGER,
+        arrived_at INTEGER,
+        arrived_from TEXT,
+        arrived_tx TEXT,
+        PRIMARY KEY (kind, nonce)
+      );
+      CREATE TABLE IF NOT EXISTS withdrawal_arrivals (
+        tx_hash TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        nonce INTEGER NOT NULL,
+        from_address TEXT,
+        timestamp INTEGER NOT NULL,
+        PRIMARY KEY (tx_hash, kind, nonce)
+      );
+    `);
+  }
+  await withdrawalTablesReadyPromise;
+  return registryDb;
+}
+
+export async function getWithdrawalItems() {
+  const db = await getWithdrawalDb();
+  return db.getAllAsync(`SELECT * FROM withdrawal_items ORDER BY kind, nonce`);
+}
+
+/** Adds NFTs to the list; ones already on it are left as they are.
+ *  Returns how many were new. */
+export async function addWithdrawalItems(items) {
+  const db = await getWithdrawalDb();
+  const now = Date.now();
+  let added = 0;
+  await db.withTransactionAsync(async () => {
+    for (const { kind, nonce } of items) {
+      const result = await db.runAsync(
+        `INSERT OR IGNORE INTO withdrawal_items (kind, nonce, added_at) VALUES (?, ?, ?)`,
+        [kind, nonce, now]
+      );
+      added += result.changes || 0;
+    }
+  });
+  return added;
+}
+
+export async function removeWithdrawalItems(items) {
+  const db = await getWithdrawalDb();
+  await db.withTransactionAsync(async () => {
+    for (const { kind, nonce } of items) {
+      await db.runAsync(`DELETE FROM withdrawal_items WHERE kind = ? AND nonce = ?`, [kind, nonce]);
+    }
+  });
+}
+
+/** Marks NFTs as "withdrawal requested" now (or clears the mark with null). */
+export async function setWithdrawalRequested(items, requestedAt) {
+  const db = await getWithdrawalDb();
+  await db.withTransactionAsync(async () => {
+    for (const { kind, nonce } of items) {
+      await db.runAsync(`UPDATE withdrawal_items SET requested_at = ? WHERE kind = ? AND nonce = ?`, [
+        requestedAt,
+        kind,
+        nonce,
+      ]);
+    }
+  });
+}
+
+/** Saves what a check found for each NFT. `updates` items:
+ *  { kind, nonce, holder, checkedAt, arrivedAt?, arrivedFrom?, arrivedTx? } */
+export async function saveWithdrawalCheckResults(updates) {
+  const db = await getWithdrawalDb();
+  await db.withTransactionAsync(async () => {
+    for (const u of updates) {
+      await db.runAsync(
+        `UPDATE withdrawal_items SET
+           previous_holder = CASE WHEN holder IS NOT NULL AND holder IS NOT ? THEN holder ELSE previous_holder END,
+           holder = ?,
+           checked_at = ?,
+           arrived_at = COALESCE(?, arrived_at),
+           arrived_from = COALESCE(?, arrived_from),
+           arrived_tx = COALESCE(?, arrived_tx)
+         WHERE kind = ? AND nonce = ?`,
+        [u.holder, u.holder, u.checkedAt, u.arrivedAt ?? null, u.arrivedFrom ?? null, u.arrivedTx ?? null, u.kind, u.nonce]
+      );
+    }
+  });
+}
+
+export async function addWithdrawalArrivals(arrivals) {
+  const db = await getWithdrawalDb();
+  await db.withTransactionAsync(async () => {
+    for (const a of arrivals) {
+      await db.runAsync(
+        `INSERT OR IGNORE INTO withdrawal_arrivals (tx_hash, kind, nonce, from_address, timestamp) VALUES (?, ?, ?, ?, ?)`,
+        [a.txHash, a.kind, a.nonce, a.from, a.timestamp]
+      );
+    }
+  });
+}
+
+export async function getWithdrawalArrivals(limit = 200) {
+  const db = await getWithdrawalDb();
+  return db.getAllAsync(`SELECT * FROM withdrawal_arrivals ORDER BY timestamp DESC, nonce DESC LIMIT ?`, [limit]);
+}
+
+/** Empties the arrivals log (e.g. after changing the receiving wallet). */
+export async function clearWithdrawalArrivals() {
+  const db = await getWithdrawalDb();
+  await db.runAsync(`DELETE FROM withdrawal_arrivals`);
+}
