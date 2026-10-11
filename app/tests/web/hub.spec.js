@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const { test, expect } = require('@playwright/test');
-const { installFakeServers, TEST_NFTS } = require('./fakeServers');
+const { installFakeServers, TEST_WALLET } = require('./fakeServers');
 const { litStarCount, openHub, openMenuEntry, goBack, addWalletAndFetch, storedPictureUrls, shownPictureSources } = require('./helpers');
 
 const APP_VERSION = require('../../app.json').expo.version;
@@ -30,6 +30,25 @@ test('a first-time visitor sees the start hint, and About shows the version', as
   await expect(page.getByText('Website', { exact: false }).first()).toBeVisible();
   // The user counter comes from the (pretend) relay.
   await expect(page.getByText('Last 30 days', { exact: true })).toBeVisible();
+});
+
+test('the user counter only counts a visitor once they add a wallet', async ({ page }) => {
+  const pings = () => fake.requests.filter((u) => u.endsWith('/ping')).length;
+  await openHub(page);
+  await openMenuEntry(page, 'About'); // just looking around
+  await page.reload();
+  await page.waitForTimeout(2000);
+  expect(pings(), 'pings before any wallet was added').toBe(0);
+
+  await openMenuEntry(page, 'Wallets');
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  await expect.poll(pings).toBe(1);
+
+  // At most once a day: opening the Hub again doesn't count again.
+  await page.reload();
+  await page.waitForTimeout(2000);
+  expect(pings()).toBe(1);
 });
 
 test('Ask Devi shows the website answers and hides app-only ones', async ({ page }) => {

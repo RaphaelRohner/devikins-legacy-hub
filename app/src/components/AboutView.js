@@ -85,9 +85,9 @@ export default function AboutView({ appVersion, onClose }) {
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={[styles.heading, { color: colors.text }]}>Privacy</Text>
           <Text style={[styles.note, { color: colors.secondaryText }]}>
-            Your wallets, NFTs, names and stars stay on this device. For the user count, the Hub sends a random
-            ID (not linked to you or your wallets) at most once a day, together with "website/app" and the
-            version. Nothing else is sent.
+            Your wallets, NFTs, names and stars stay on this device. For the user count, once you've added a
+            wallet, the Hub sends a random ID (not linked to you or your wallets) at most once a day, together
+            with "website/app" and the version. Nothing else is sent.
           </Text>
           <View style={styles.switchRow}>
             <Text style={[styles.text, { color: colors.text, flex: 1 }]}>Count me (anonymously)</Text>

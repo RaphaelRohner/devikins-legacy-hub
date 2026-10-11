@@ -104,6 +104,7 @@ import QrScannerModal from './QrScannerModal';
 // has to copy and paste it. Only the public address is read.
 import { connectExtension } from '../api/kleverExtension';
 import { requestPersistentStorage } from '../api/persistStorage';
+import { markUsageActive } from '../api/usage';
 import { getStorageBytesForSets, formatBytes } from '../api/storageStats';
 import {
   exportWalletSet,
@@ -293,6 +294,7 @@ export default function WalletManager({
     await addWallet(trimmedAddress);
     setNewAddressInput('');
     onWalletsChanged();
+    markUsageActive(); // counts this Hub as in use (anonymous user count)
 
     if (isFirstWalletEver) {
       Alert.alert(
@@ -314,6 +316,7 @@ export default function WalletManager({
       const isFirstWalletEver = wallets.length === 0;
       await addWallet(address);
       onWalletsChanged();
+      markUsageActive();
       Alert.alert(
         'Wallet added',
         `${address}\n\nThis is the wallet open in your Klever extension.` +
@@ -613,6 +616,7 @@ export default function WalletManager({
         message = "That file didn't contain any wallet sets.";
       } else {
         message = `Added: ${importedNames.join(', ')}. Use the switcher above to load one.`;
+        markUsageActive();
         // Every file this app exports carries a checksum (see
         // exportImport.js's crc32Bytes/copyEntryBytesTo) that import
         // re-checks against what actually landed on the phone - so this
