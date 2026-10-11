@@ -198,3 +198,12 @@ function readZip(buf) {
   }
   return entries;
 }
+
+test('new wallet sets are called "Wallet set 1", "Wallet set 2", ...', async ({ page }) => {
+  await openHub(page);
+  await openMenuEntry(page, 'Wallets');
+  await expect(page.getByText('Wallet set 1', { exact: true })).toBeVisible();
+  await page.getByText('+ New set', { exact: true }).click();
+  await page.getByText('Create', { exact: true }).click(); // no name typed
+  await expect(page.getByText('Wallet set 2', { exact: true })).toBeVisible();
+});

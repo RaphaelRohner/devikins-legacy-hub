@@ -78,7 +78,7 @@ npm test
 
 This first builds the website (about a minute), then runs all tests
 (a few minutes). Every test prints a ✓ when it passes or ✘ when it
-fails, and the last line says e.g. `12 passed`.
+fails, and the last line says e.g. `13 passed`.
 
 - `npm run test:quick` runs the tests again without rebuilding - only
   useful when nothing in the app's code changed since the last build.

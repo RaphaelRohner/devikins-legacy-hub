@@ -779,7 +779,7 @@ export default function WalletManager({
             <View style={styles.addRow}>
               <TextInput
                 style={[styles.addInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-                placeholder="Name this set (e.g. My Wallets)"
+                placeholder={`Name this set (or leave empty: "Wallet set ${walletSets.length + 1}")`}
                 placeholderTextColor={colors.secondaryText}
                 value={newSetNameInput}
                 onChangeText={setNewSetNameInput}

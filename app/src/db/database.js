@@ -1273,7 +1273,7 @@ async function insertDefaultWalletSet(registryDb) {
   await registryDb.runAsync(
     `INSERT INTO wallet_sets (name, db_file_name, images_dir_name, created_at, is_active)
      VALUES (?, ?, ?, ?, 1)`,
-    ['My Wallets', 'devikins.db', 'nft-images', Date.now()]
+    ['Wallet set 1', 'devikins.db', 'nft-images', Date.now()]
   );
 }
 
@@ -1605,10 +1605,24 @@ export async function getWalletSets() {
  * timestamp, which is all that's needed to guarantee they don't collide
  * with any existing (or previously deleted) set's files.
  */
+// The name a new set gets when none is typed: "Wallet set N", N being the
+// number after the sets that already exist, skipping names already taken
+// (11 Oct 2026 - was "My Wallets" / "New Set", which clashed with the
+// "My wallets" switch).
+export async function nextDefaultWalletSetName() {
+  await ensureRegistryTablesExist();
+  const registryDb = await getRegistryDatabase();
+  const rows = await registryDb.getAllAsync(`SELECT name FROM wallet_sets`);
+  const taken = new Set(rows.map((r) => String(r.name).trim().toLowerCase()));
+  let n = rows.length + 1;
+  while (taken.has(`wallet set ${n}`)) n += 1;
+  return `Wallet set ${n}`;
+}
+
 export async function createWalletSet(name) {
   await ensureRegistryTablesExist();
   const registryDb = await getRegistryDatabase();
-  const trimmedName = (name || '').trim() || 'New Set';
+  const trimmedName = (name || '').trim() || (await nextDefaultWalletSetName());
   const suffix = Date.now();
   const dbFileName = `devikins-set-${suffix}.db`;
   const imagesDirName = `nft-images-set-${suffix}`;
