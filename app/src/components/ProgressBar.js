@@ -28,6 +28,7 @@
  * most recently received - see that file for the exact shape.
  */
 
+import { ID_LIST_OWNER } from '../constants/idList';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
@@ -76,7 +77,10 @@ export default function ProgressBar({ progress, onCancel, isCancelling }) {
   // that so it's clear which wallet is currently being worked on, rather
   // than just looking like one wallet is taking a very long time.
   if (progress.walletTotal > 1 && message) {
-    message = `Wallet ${progress.walletIndex} of ${progress.walletTotal}: ${message}`;
+    message =
+      progress.walletAddress === ID_LIST_OWNER
+        ? `Withdrawals list: ${message}`
+        : `Wallet ${progress.walletIndex} of ${progress.walletTotal}: ${message}`;
   }
 
   // A short, glanceable label for which collection is currently being

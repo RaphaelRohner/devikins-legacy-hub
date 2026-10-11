@@ -119,6 +119,9 @@ async function installFakeServers(context) {
     //   holders: "weapon:3265" -> address that holds it now
     //   transfers: [{ hash, kind, nonce, from, to, timestamp (seconds) }]
     chain: { holders: new Map(), transfers: [] },
+    // Extra NFTs the pretend metadata server knows (not held by
+    // TEST_WALLET), e.g. 'weapon:3265' -> { name, attributes }
+    extraNfts: new Map(),
   };
 
   await context.route('**/*', async (route) => {
@@ -170,7 +173,8 @@ async function installFakeServers(context) {
     if (url.hostname === 'devi-hub-relay.raphaelrohner.workers.dev') {
       const m = url.pathname.match(/^\/(devikin|weapon|equipment)\/(\d+)$/);
       if (m) {
-        const nft = TEST_NFTS[m[1]].find((n) => n.nonce === Number(m[2]));
+        const extra = fake.extraNfts.get(`${m[1]}:${m[2]}`);
+        const nft = extra ? { nonce: Number(m[2]), ...extra } : TEST_NFTS[m[1]].find((n) => n.nonce === Number(m[2]));
         if (!nft) return route.fulfill({ status: 404, contentType: 'application/json', body: '{"message":"Not Found"}' });
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(metadataFor(m[1], nft)) });
       }

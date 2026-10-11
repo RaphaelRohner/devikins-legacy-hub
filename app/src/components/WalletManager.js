@@ -96,7 +96,11 @@ import {
   renameWalletSet,
   switchToWalletSet,
   deleteWalletSet,
+  getGlobalSetting,
+  setGlobalSetting,
+  countWithdrawalItems,
 } from '../db/database';
+import { MY_WALLETS_SET_KEY } from '../constants/idList';
 import { useTheme } from '../context/ThemeContext';
 import QrScannerModal from './QrScannerModal';
 // Website only: "Connect Klever Extension" reads the address of the
@@ -694,6 +698,24 @@ export default function WalletManager({
   // reasoning behind locking the screen this way.
   const isBusy = isExportingId !== null || isImporting;
 
+  // "My wallets" (see src/constants/idList.js): which set is the user's
+  // own - only one at a time. That set also shows the NFTs on the
+  // Withdrawals list.
+  const [mySetId, setMySetId] = useState(null);
+  const [withdrawalListCount, setWithdrawalListCount] = useState(0);
+  useEffect(() => {
+    getGlobalSetting(MY_WALLETS_SET_KEY).then((value) => setMySetId(value));
+    countWithdrawalItems().then(setWithdrawalListCount);
+  }, [activeWalletSetId]);
+  const isMySet = mySetId !== null && String(mySetId) === String(activeWalletSetId);
+  const mySetName = walletSets.find((set) => String(set.id) === String(mySetId))?.name;
+
+  async function handleMyWalletsChange(value) {
+    const next = value ? String(activeWalletSetId) : null;
+    await setGlobalSetting(MY_WALLETS_SET_KEY, next);
+    setMySetId(next);
+  }
+
   const activeSet = walletSets.find((set) => set.id === activeWalletSetId);
   const activeSetName = activeSet ? activeSet.name : '';
 
@@ -930,6 +952,24 @@ export default function WalletManager({
             <Text style={[styles.activeSetHeadline, { color: colors.text }]}>
               Wallets in "{activeSetName}"
             </Text>
+            <View style={[styles.myWalletsBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <View style={styles.myWalletsRow}>
+                <Text style={[styles.myWalletsLabel, { color: colors.text }]}>My wallets</Text>
+                <Switch
+                  value={isMySet}
+                  onValueChange={handleMyWalletsChange}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor={colors.surface}
+                />
+              </View>
+              <Text style={[styles.myWalletsNote, { color: colors.secondaryText }]}>
+                {isMySet
+                  ? withdrawalListCount > 0
+                    ? `This is your own set: it also shows the ${withdrawalListCount} NFTs on your Withdrawals list, wherever they are (e.g. still in the game's main wallet). Run Fetch/Update to load them.`
+                    : 'This is your own set. NFTs you add to the Withdrawals list will show here too, wherever they are.'
+                  : `Switch on if these are your own wallets: the set then also shows the NFTs on your Withdrawals list. Only one set can be yours${mySetName ? ` - right now it's "${mySetName}"` : ''}.`}
+              </Text>
+            </View>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
               <View style={styles.addRow}>
                 <TextInput
@@ -1243,6 +1283,27 @@ const styles = StyleSheet.create({
   // weight as setSwitcherTitle above, naming the active set by name so
   // it's unambiguous which set the Add row and the list beneath it
   // belong to, rather than reading as generic/unscoped.
+  myWalletsBox: {
+    marginHorizontal: 12,
+    marginBottom: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderRadius: 8,
+    gap: 4,
+  },
+  myWalletsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  myWalletsLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  myWalletsNote: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
   activeSetHeadline: {
     fontSize: 15,
     fontWeight: '700',

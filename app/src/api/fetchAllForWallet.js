@@ -34,6 +34,7 @@
 
 import { Platform } from 'react-native';
 import { COLLECTIONS } from '../constants/schema';
+import { ID_LIST_OWNER } from '../constants/idList';
 import { fetchWalletNonces } from './kleverApi';
 import { fetchNftMetadata } from './metadataApi';
 import { storeImage, fetchImageEtag } from './imageStorage';
@@ -48,6 +49,7 @@ import {
   getCachedImageRows,
   setImageQuality,
   getRowsNeedingImageCheck,
+  getWithdrawalNonces,
 } from '../db/database';
 
 const IS_WEB_PLATFORM = Platform.OS === 'web';
@@ -63,6 +65,20 @@ async function judgeStoredImage(localImagePath, remoteUrl) {
   const bytes = await readStoredImageBytes(localImagePath, remoteUrl);
   if (!bytes) return 'none';
   return judgeImageBytes(bytes);
+}
+
+/**
+ * What a "wallet" holds: for a real address, Klever's answer; for the
+ * Withdrawals list (ID_LIST_OWNER, see constants/idList.js), the numbers
+ * on that list.
+ */
+async function listNoncesForOwner(owner, assetId, kind) {
+  if (owner === ID_LIST_OWNER) {
+    const nonces = await getWithdrawalNonces(kind);
+    nonces.truncated = false;
+    return nonces;
+  }
+  return fetchWalletNonces(owner, assetId);
 }
 
 // Lets the screen breathe between picture checks (each takes a few
@@ -161,7 +177,7 @@ export async function fetchAllForWallet(walletAddress, { onProgress, shouldCance
 
     let nonces;
     try {
-      nonces = await fetchWalletNonces(walletAddress, assetId);
+      nonces = await listNoncesForOwner(walletAddress, assetId, kind);
     } catch (err) {
       // fetchWalletNonces itself shouldn't throw any more (see its own
       // comment in kleverApi.js - it returns whatever it managed to
@@ -469,7 +485,7 @@ export async function estimateNewNftCountForWallets(walletAddresses, { shouldCan
 
       let nonces;
       try {
-        nonces = await fetchWalletNonces(walletAddress, assetId);
+        nonces = await listNoncesForOwner(walletAddress, assetId, kind);
       } catch (err) {
         // fetchWalletNonces shouldn't throw any more (see its own
         // comment in kleverApi.js) - this is purely a defensive

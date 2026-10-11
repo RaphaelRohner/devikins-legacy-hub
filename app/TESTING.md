@@ -32,6 +32,9 @@ window) as a brand-new visitor:
   Import a set in a second, empty browser, including the pictures (with
   the picture server down), and every file's checksum in the zip is
   right.
+- **My wallets:** the set marked "My wallets" also lists the NFTs on the
+  Withdrawals list (fetched by number), their details say where they
+  are, and switching it off takes them out again.
 - **Hide blanks:** NFTs whose picture is missing, plain white or only the
   background disappear when the switch is on (and come back when it's
   off); the setting is remembered; Compare hides the switches.
@@ -73,7 +76,7 @@ npm test
 
 This first builds the website (about a minute), then runs all tests
 (a few minutes). Every test prints a ✓ when it passes or ✘ when it
-fails, and the last line says e.g. `10 passed`.
+fails, and the last line says e.g. `11 passed`.
 
 - `npm run test:quick` runs the tests again without rebuilding - only
   useful when nothing in the app's code changed since the last build.

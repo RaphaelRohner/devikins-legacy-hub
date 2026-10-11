@@ -66,7 +66,9 @@ import {
   getGlobalSetting,
   setGlobalSetting,
   countPendingRetries,
+  countWithdrawalItems,
 } from './src/db/database';
+import { ID_LIST_OWNER, MY_WALLETS_SET_KEY } from './src/constants/idList';
 import {
   fetchAllForWallets,
   retryPendingItemsForWallets,
@@ -215,6 +217,17 @@ function AppContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const walletAddresses = useMemo(() => wallets.map((wallet) => wallet.address), [wallets]);
 
+  // "My wallets" (see src/constants/idList.js): when the loaded set is the
+  // one marked as the user's own and the Withdrawals list has NFTs, those
+  // NFTs are included too, as a pretend wallet. `ownerAddresses` is what
+  // the lists, fetches and retries use; `walletAddresses` stays the real
+  // wallets only.
+  const [includeIdList, setIncludeIdList] = useState(false);
+  const ownerAddresses = useMemo(
+    () => (includeIdList ? [...walletAddresses, ID_LIST_OWNER] : walletAddresses),
+    [walletAddresses, includeIdList]
+  );
+
   // Which "screen" is currently showing - one of the three collection
   // kinds (devikin/weapon/equipment), 'wallets', or 'feedback'. This
   // replaced the old pair of separate flags (activeKind + a
@@ -223,6 +236,26 @@ function AppContent() {
   // screen is simpler to reason about than several booleans that could
   // theoretically all be true/false in an invalid combination.
   const [currentScreen, setCurrentScreen] = useState(Object.keys(COLLECTIONS)[0]);
+
+  // Re-checks whether the Withdrawals list belongs in the lists (see
+  // includeIdList above) whenever the loaded set changes or the user
+  // comes back from the Wallets or Withdrawals screen.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!activeWalletSetId) {
+        if (alive) setIncludeIdList(false);
+        return;
+      }
+      const mySetId = await getGlobalSetting(MY_WALLETS_SET_KEY);
+      const isMySet = mySetId !== null && String(mySetId) === String(activeWalletSetId);
+      const listed = isMySet ? await countWithdrawalItems() : 0;
+      if (alive) setIncludeIdList(isMySet && listed > 0);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [activeWalletSetId, currentScreen]);
 
   // Remembers whichever collection screen (devikin/weapon/equipment) was
   // showing right before Wallets or Feedback was opened, so their own
@@ -603,7 +636,7 @@ function AppContent() {
   }, [isMenuOpen, currentScreen, lastCollectionScreen, goToScreen]);
 
   const handleFetchPress = useCallback(async () => {
-    if (walletAddresses.length === 0 || busyRef.current) return;
+    if (ownerAddresses.length === 0 || busyRef.current) return;
 
     cancelRequestedRef.current = false;
     busyRef.current = true;
@@ -663,7 +696,7 @@ function AppContent() {
       // way. A genuinely large scan just needs one tap on Continue.
       setProgress({ phase: 'summary', label: 'Checking scan size...' });
       const { newCount: newNftCount, incomplete: estimateIncomplete, incompleteNotices: estimateIncompleteNotices } =
-        await estimateNewNftCountForWallets(walletAddresses, {
+        await estimateNewNftCountForWallets(ownerAddresses, {
           shouldCancel: () => cancelRequestedRef.current,
         });
 
@@ -710,7 +743,7 @@ Continue anyway?`
       }
 
       setProgress({ phase: 'listing', label: 'your wallet' });
-      await fetchAllForWallets(walletAddresses, {
+      await fetchAllForWallets(ownerAddresses, {
         onProgress: (nextProgress) => {
           setProgress(nextProgress);
           updateScanNotification(nextProgress);
@@ -753,7 +786,7 @@ Continue anyway?`
       stopScanNotification();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wallets]);
+  }, [wallets, ownerAddresses]);
 
   function handleCancelPress() {
     cancelRequestedRef.current = true;
@@ -811,7 +844,7 @@ Continue anyway?`
   // run one at a time, never concurrently with each other or with a
   // manual fetch - see busyRef's own comment above.
   useEffect(() => {
-    if (walletAddresses.length === 0) return undefined;
+    if (ownerAddresses.length === 0) return undefined;
 
     retryRoundRef.current = 0;
     nextRetryAtRef.current = 0;
@@ -825,7 +858,7 @@ Continue anyway?`
     async function runPendingRetryPass() {
       if (busyRef.current) return;
 
-      const pending = await countPendingRetries(walletAddresses);
+      const pending = await countPendingRetries(ownerAddresses);
 
       if (pending.total === 0) {
         // Fully caught up - reset both the round count and the pace,
@@ -860,7 +893,7 @@ Continue anyway?`
       setRetryProgress({ phase: 'summary', label: `Retrying: ${summaryParts.join(' and ')}` });
 
       try {
-        await retryPendingItemsForWallets(walletAddresses, {
+        await retryPendingItemsForWallets(ownerAddresses, {
           onProgress: setRetryProgress,
           shouldCancel: () => cancelRequestedRef.current,
         });
@@ -921,7 +954,7 @@ Continue anyway?`
         setRetryProgress({ phase: 'summary', label: 'Checking cached images for updates' });
 
         try {
-          await checkImageFreshnessForWallets(walletAddresses, {
+          await checkImageFreshnessForWallets(ownerAddresses, {
             onProgress: setRetryProgress,
             shouldCancel: () => cancelRequestedRef.current,
           });
@@ -945,7 +978,7 @@ Continue anyway?`
     // simple, reliable way to depend on "the addresses themselves changed"
     // rather than "the wallets array is a new reference".
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletAddresses.join(',')]);
+  }, [ownerAddresses.join(',')]);
 
   // react-native-safe-area-context's SafeAreaView (imported above)
   // correctly reserves space for the status bar / notch / Dynamic Island
@@ -1043,7 +1076,7 @@ Continue anyway?`
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
-        <BreedingHelper ownerAddresses={walletAddresses} onClose={() => goToScreen(lastCollectionScreen)} />
+        <BreedingHelper ownerAddresses={ownerAddresses} onClose={() => goToScreen(lastCollectionScreen)} />
       </SafeAreaView>
     );
   }
@@ -1211,7 +1244,7 @@ Continue anyway?`
           above). The star-rating filter that used to sit here too has
           moved down into each collection's own Filters panel instead -
           see FilterPanel.js. */}
-      {walletAddresses.length > 0 && (
+      {ownerAddresses.length > 0 && (
         <>
         <View style={[styles.searchRow, { backgroundColor: colors.toolbarBackground }]}>
           {/* Opens SortPickerModal below. Sits leftmost in this row now
@@ -1320,16 +1353,16 @@ Continue anyway?`
         onClose={() => setIsMenuOpen(false)}
         walletCount={wallets.length}
         currentScreen={currentScreen}
-        isBusy={isFetching || isRetrying || walletAddresses.length === 0}
+        isBusy={isFetching || isRetrying || ownerAddresses.length === 0}
         onSelectWallets={() => handleMenuSelectScreen('wallets')}
         onSelectFetch={handleMenuSelectFetch}
         onSelectScreen={handleMenuSelectScreen}
       />
 
-      {walletAddresses.length > 0 ? (
+      {ownerAddresses.length > 0 ? (
         <CollectionView
           kind={currentScreen}
-          ownerAddresses={walletAddresses}
+          ownerAddresses={ownerAddresses}
           refreshKey={refreshKey}
           searchText={searchText}
           starFilter={starFilter}

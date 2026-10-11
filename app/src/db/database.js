@@ -1945,3 +1945,22 @@ export async function getWalletsFromAllSets() {
   }
   return out;
 }
+
+/** The NFT numbers of one kind on the Withdrawals list (for "My wallets"). */
+export async function getWithdrawalNonces(kind) {
+  const db = await getWithdrawalDb();
+  const rows = await db.getAllAsync(`SELECT nonce FROM withdrawal_items WHERE kind = ? ORDER BY nonce`, [kind]);
+  return rows.map((r) => r.nonce);
+}
+
+export async function countWithdrawalItems() {
+  const db = await getWithdrawalDb();
+  const row = await db.getFirstAsync(`SELECT COUNT(*) AS n FROM withdrawal_items`);
+  return row?.n ?? 0;
+}
+
+/** One NFT's row on the Withdrawals list, or null. */
+export async function getWithdrawalItem(kind, nonce) {
+  const db = await getWithdrawalDb();
+  return db.getFirstAsync(`SELECT * FROM withdrawal_items WHERE kind = ? AND nonce = ?`, [kind, nonce]);
+}

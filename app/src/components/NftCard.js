@@ -79,7 +79,9 @@
 import { useEffect, useState } from 'react';
 import { View, Text, Image, TextInput, StyleSheet, Modal, TouchableOpacity } from 'react-native';
 import { TRAIT_COLUMNS } from '../constants/schema';
-import { setNftDeletedState, setNftCustomName, setNftStarRating } from '../db/database';
+import { setNftDeletedState, setNftCustomName, setNftStarRating, getWithdrawalItem, getGlobalSetting, WITHDRAW_SETTING_KEYS } from '../db/database';
+import { ID_LIST_OWNER } from '../constants/idList';
+import { placeInWords } from '../api/withdrawalTracker';
 import { useTheme } from '../context/ThemeContext';
 import useNftImage from '../hooks/useNftImage';
 import StarRating from './StarRating';
@@ -96,6 +98,28 @@ function humanizeColumnName(columnName) {
 
 export default function NftCard({ kind, nft, onNftUpdated }) {
   const { colors } = useTheme();
+
+  // NFTs that come from the Withdrawals list ("My wallets") aren't in one
+  // of the set's wallets, so say where they are (tracker's last check).
+  const [whereText, setWhereText] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    if (nft?.owner_address !== ID_LIST_OWNER) {
+      setWhereText(null);
+      return undefined;
+    }
+    (async () => {
+      const [item, fromAddress, toAddress] = await Promise.all([
+        getWithdrawalItem(kind, nft.nonce),
+        getGlobalSetting(WITHDRAW_SETTING_KEYS.from),
+        getGlobalSetting(WITHDRAW_SETTING_KEYS.to),
+      ]);
+      if (alive) setWhereText(placeInWords(item, { fromAddress, toAddress }));
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [kind, nft?.nonce, nft?.owner_address]);
   const traitColumns = TRAIT_COLUMNS[kind];
   const displayName = nft.name || `${kind} #${nft.nonce}`;
 
@@ -293,6 +317,12 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
   // requested order: name and rating first, then notes/delete.
   const nameAndRatingSection = (
     <View style={styles.nameAndRatingSection}>
+      {whereText ? (
+        <>
+          <Text style={[styles.deleteSectionLabel, { color: colors.secondaryText }]}>Where it is (from your Withdrawals list)</Text>
+          <Text style={{ color: colors.text, fontSize: 14, marginBottom: 12 }}>{whereText}</Text>
+        </>
+      ) : null}
       <Text style={[styles.deleteSectionLabel, { color: colors.secondaryText }]}>Name</Text>
       <TextInput
         style={[styles.nameInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}

@@ -315,6 +315,14 @@ const ALL_FAQ_ENTRIES = [
       "Open Withdrawals in the ☰ menu. Enter your in-game wallet (where the game sends from) and your own wallet (where it should arrive), then paste the numbers of the NFTs you want to follow - with headings like \"Weapons\" one paste can hold all kinds. Select the ones you've actually requested in the game and tap Mark requested. Check now asks the Klever blockchain where each one is: Arrived, still in your in-game wallet, still in the game's main wallet, or somewhere else. Anything requested that hasn't arrived after 30 minutes (you can change that) shows as Overdue, and you can copy that list for a support ticket. The arrivals log shows everything that came into your wallet, with date and sender.",
   },
   {
+    id: 'my-wallets',
+    topic: 'wallets',
+    question: 'How do I see my NFTs that are still in the game?',
+    keywords: ['my wallets', 'own', 'game wallet', 'main wallet', 'custody', 'id list', 'ids', 'not in my wallet', 'still in the game', 'missing nfts', 'withdrawals list'],
+    answer:
+      "Most game NFTs sit in the game's main wallet, not in yours, so a normal Fetch/Update can't find them. Paste their numbers into the Withdrawals screen's list, then on the Wallets screen switch on \"My wallets\" for your own set (only one set can be yours). From the next Fetch/Update on, that set also shows the NFTs on your Withdrawals list, wherever they are - each one's details say where it sits. Sets for other people's wallets keep the switch off, so they only show what those wallets hold. Moonlabs' server doesn't deliver every NFT; \"Hide blanks\" keeps incomplete ones out of view until they come through.",
+  },
+  {
     id: 'hide-blanks',
     topic: 'browsing',
     question: 'What does "Hide blanks" do?',
