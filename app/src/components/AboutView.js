@@ -71,13 +71,20 @@ export default function AboutView({ appVersion, onClose }) {
           ) : (
             <>
               <View style={styles.statRow}>
-                <Stat label="Last 30 days" value={stats.last30Days} colors={colors} />
                 <Stat label="Today" value={stats.today} colors={colors} />
+                {stats.last7Days !== undefined ? (
+                  <Stat label="Last 7 days" value={stats.last7Days} colors={colors} />
+                ) : null}
+                <Stat label="Last 30 days" value={stats.last30Days} colors={colors} />
                 <Stat label="Since launch" value={stats.total} colors={colors} />
               </View>
               {platformLine ? (
                 <Text style={[styles.note, { color: colors.secondaryText }]}>Last 30 days: {platformLine}</Text>
               ) : null}
+              <Text style={[styles.note, { color: colors.secondaryText }]}>
+                Each number counts people, not visits: someone using the Hub on several days in a week counts once in
+                "Last 7 days". The website and the app count separately, as does each browser.
+              </Text>
             </>
           )}
         </View>

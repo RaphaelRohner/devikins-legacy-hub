@@ -127,7 +127,7 @@ async function installFakeServers(context) {
       }
       if (url.pathname === '/ping') return route.fulfill({ status: 204, body: '' });
       if (url.pathname === '/stats') {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ today: 1, last30Days: 7, total: 12, last30DaysByPlatform: { web: 5, android: 2 } }) });
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ today: 1, last7Days: 4, last30Days: 7, total: 12, last30DaysByPlatform: { web: 5, android: 2 } }) });
       }
     }
 

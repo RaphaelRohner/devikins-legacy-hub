@@ -130,16 +130,19 @@ async function handleStats(env, ctx, url, origin) {
     return out;
   }
   const since30 = new Date(Date.now() - 29 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const since7 = new Date(Date.now() - 6 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   const today = new Date().toISOString().slice(0, 10);
-  const [total, last30, todayRow, byPlatform] = await Promise.all([
+  const [total, last30, last7, todayRow, byPlatform] = await Promise.all([
     env.DB.prepare('SELECT COUNT(DISTINCT id) AS n FROM pings').first(),
     env.DB.prepare('SELECT COUNT(DISTINCT id) AS n FROM pings WHERE day >= ?').bind(since30).first(),
+    env.DB.prepare('SELECT COUNT(DISTINCT id) AS n FROM pings WHERE day >= ?').bind(since7).first(),
     env.DB.prepare('SELECT COUNT(DISTINCT id) AS n FROM pings WHERE day = ?').bind(today).first(),
     env.DB.prepare('SELECT platform, COUNT(DISTINCT id) AS n FROM pings WHERE day >= ? GROUP BY platform').bind(since30).all(),
   ]);
   const data = {
     total: total?.n ?? 0,
     last30Days: last30?.n ?? 0,
+    last7Days: last7?.n ?? 0,
     today: todayRow?.n ?? 0,
     last30DaysByPlatform: Object.fromEntries((byPlatform?.results || []).map((r) => [r.platform, r.n])),
     updatedAt: new Date().toISOString(),

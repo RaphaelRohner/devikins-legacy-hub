@@ -29,7 +29,9 @@ test('a first-time visitor sees the start hint, and About shows the version', as
   await expect(page.getByText(new RegExp(`Version ${APP_VERSION.replace(/\./g, '\\.')}`))).toBeVisible();
   await expect(page.getByText('Website', { exact: false }).first()).toBeVisible();
   // The user counter comes from the (pretend) relay.
-  await expect(page.getByText('Last 30 days', { exact: true })).toBeVisible();
+  for (const label of ['Today', 'Last 7 days', 'Last 30 days', 'Since launch']) {
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
+  }
 });
 
 test('the user counter only counts a visitor once they add a wallet', async ({ page }) => {
