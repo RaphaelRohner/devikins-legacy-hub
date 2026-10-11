@@ -42,7 +42,11 @@ import {
   addWithdrawalArrivals,
   getWithdrawalArrivals,
   clearWithdrawalArrivals,
+  getWalletsFromAllSets,
+  WITHDRAW_SETTING_KEYS,
 } from '../db/database';
+import { requestPersistentStorage } from '../api/persistStorage';
+import { markUsageActive } from '../api/usage';
 import {
   KINDS,
   KIND_LABEL,
@@ -56,10 +60,10 @@ import {
 } from '../api/withdrawalTracker';
 
 const IS_WEB = Platform.OS === 'web';
-const KEY_FROM = 'withdraw_from_address';
-const KEY_TO = 'withdraw_to_address';
-const KEY_OVERDUE = 'withdraw_overdue_minutes';
-const KEY_LAST_CHECK = 'withdraw_last_check';
+const KEY_FROM = WITHDRAW_SETTING_KEYS.from;
+const KEY_TO = WITHDRAW_SETTING_KEYS.to;
+const KEY_OVERDUE = WITHDRAW_SETTING_KEYS.overdue;
+const KEY_LAST_CHECK = WITHDRAW_SETTING_KEYS.lastCheck;
 const ROWS_PER_PAGE = 100;
 
 const STATUS_TEXT = {
@@ -136,6 +140,8 @@ export default function WithdrawalTrackerView({ onClose }) {
   const [progress, setProgress] = useState('');
   const [checkMessage, setCheckMessage] = useState('');
   const [now, setNow] = useState(Date.now());
+  const [pickerFor, setPickerFor] = useState(null); // 'from' | 'to' | null
+  const [myWallets, setMyWallets] = useState(null); // null = not loaded yet
   const cancelRef = useRef(false);
 
   const reload = useCallback(async () => {
@@ -234,6 +240,10 @@ export default function WithdrawalTrackerView({ onClose }) {
     await setGlobalSetting(KEY_TO, to);
     await setGlobalSetting(KEY_OVERDUE, String(minutes));
     if (receivingChanged) await clearWithdrawalArrivals();
+    // Website: ask the browser to keep this data (see persistStorage.web.js);
+    // and someone setting up the tracker is using the Hub (user count).
+    requestPersistentStorage();
+    markUsageActive();
     setFromAddress(from);
     setToAddress(to);
     setOverdueMinutes(minutes);
@@ -261,8 +271,8 @@ export default function WithdrawalTrackerView({ onClose }) {
     }
     if (ignored.length > 0) notes.push(`Skipped (not a number): ${ignored.slice(0, 5).join(', ')}${ignored.length > 5 ? ' …' : ''}`);
     if (notes.length === 0) notes.push('No NFT numbers found in the text.');
+    await reload(); // first refresh the list, then say what happened
     setAddMessage(notes.join(' '));
-    await reload();
   }
 
   function toggleSelected(item) {
@@ -352,6 +362,43 @@ export default function WithdrawalTrackerView({ onClose }) {
     }
   }
 
+  async function openPicker(which) {
+    if (pickerFor === which) {
+      setPickerFor(null);
+      return;
+    }
+    setPickerFor(which);
+    if (myWallets === null) setMyWallets(await getWalletsFromAllSets());
+  }
+
+  function pickWallet(address) {
+    if (pickerFor === 'from') setFromDraft(address);
+    else setToDraft(address);
+    setPickerFor(null);
+  }
+
+  function renderPicker(which) {
+    if (pickerFor !== which) return null;
+    if (myWallets === null) return <ActivityIndicator color={colors.primary} />;
+    const seen = new Set();
+    const choices = myWallets.filter((w) => (seen.has(w.address) ? false : seen.add(w.address)));
+    if (choices.length === 0) {
+      return <Text style={[styles.note, { color: colors.secondaryText }]}>No wallets in your sets yet - add them on the Wallets screen, or paste the address.</Text>;
+    }
+    return (
+      <View style={[styles.pickerBox, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
+        {choices.map((w) => (
+          <TouchableOpacity key={w.address} style={styles.pickerRow} onPress={() => pickWallet(w.address)}>
+            <Text style={[styles.text, { color: colors.text }]}>{w.alias || shortAddress(w.address)}</Text>
+            <Text style={[styles.note, { color: colors.secondaryText }]}>
+              {w.alias ? `${shortAddress(w.address)} · ` : ''}set: {w.setName}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  }
+
   // A wallet address in words where we know it, otherwise shortened.
   function walletName(address) {
     if (!address) return 'unknown';
@@ -376,6 +423,7 @@ export default function WithdrawalTrackerView({ onClose }) {
     if (item.previous_holder && item.previous_holder !== item.holder) {
       parts.push(`moved from ${walletName(item.previous_holder)}`);
     }
+    if (item.checked_at) parts.push(`as of ${formatTime(item.checked_at)}`);
     return parts.join(' · ');
   }
 
@@ -418,8 +466,16 @@ export default function WithdrawalTrackerView({ onClose }) {
           </Text>
           <Text style={[styles.label, { color: colors.text }]}>Withdraw from (your in-game wallet)</Text>
           <TextInput style={input} value={fromDraft} onChangeText={setFromDraft} placeholder="klv1… (in-game wallet)" placeholderTextColor={colors.secondaryText} autoCapitalize="none" autoCorrect={false} />
+          <TouchableOpacity onPress={() => openPicker('from')}>
+            <Text style={[styles.link, { color: colors.primary }]}>{pickerFor === 'from' ? 'Close the list' : 'Choose from my wallets'}</Text>
+          </TouchableOpacity>
+          {renderPicker('from')}
           <Text style={[styles.label, { color: colors.text }]}>Receive in (your own wallet)</Text>
           <TextInput style={input} value={toDraft} onChangeText={setToDraft} placeholder="klv1… (receiving wallet)" placeholderTextColor={colors.secondaryText} autoCapitalize="none" autoCorrect={false} />
+          <TouchableOpacity onPress={() => openPicker('to')}>
+            <Text style={[styles.link, { color: colors.primary }]}>{pickerFor === 'to' ? 'Close the list' : 'Choose from my wallets'}</Text>
+          </TouchableOpacity>
+          {renderPicker('to')}
           <View style={styles.inlineRow}>
             <Text style={[styles.label, { color: colors.text, flex: 1 }]}>Overdue after (minutes)</Text>
             <TextInput style={[input, styles.minutesInput]} value={overdueDraft} onChangeText={(t) => setOverdueDraft(t.replace(/[^0-9]/g, ''))} inputMode="numeric" keyboardType="number-pad" />
@@ -621,6 +677,8 @@ const styles = StyleSheet.create({
   smallButton: { paddingVertical: 9, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, alignItems: 'center' },
   selectionBar: { borderWidth: 1, borderRadius: 10, padding: 10, gap: 8 },
   link: { fontSize: 14, fontWeight: '600', paddingVertical: 4 },
+  pickerBox: { borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
+  pickerRow: { paddingVertical: 8, paddingHorizontal: 12 },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8, paddingHorizontal: 6, borderTopWidth: 1, borderRadius: 6 },
   checkbox: { fontSize: 20, lineHeight: 22 },
   rowTitle: { fontSize: 15, fontWeight: '600' },

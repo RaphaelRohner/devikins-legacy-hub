@@ -35,6 +35,8 @@ import {
   logImportedSetRowCounts,
   dumpWalletSetData,
   restoreWalletSetData,
+  dumpWithdrawalTracker,
+  restoreWithdrawalTracker,
 } from '../db/database';
 import { ensureCachedImage, putCachedImageBytes, extensionFromUrl } from './webImageCache';
 
@@ -147,6 +149,10 @@ export async function exportAllWalletSets(walletSets, { onProgress } = {}) {
     await addWalletSetFiles(files, walletSet, onProgress);
     setSummaries.push({ id: walletSet.id, name: walletSet.name });
   }
+  // The Withdrawals tracker (one for the whole Hub) travels with the full
+  // backup only - see database.js dumpWithdrawalTracker.
+  const tracker = await dumpWithdrawalTracker();
+  if (tracker) files['withdrawals.json'] = strToU8(JSON.stringify(tracker));
   onProgress?.({ phase: 'writing' });
   const fileUri = buildZip(files, setSummaries);
   return { fileUri, fileName: `devikins-all-sets-${timestampForFileName()}.zip` };
@@ -234,8 +240,14 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
   if (bytes.length === 0) throw new Error('That file is empty - nothing to import.');
 
   const groups = new Map();
+  let trackerFile = null;
   for (const entry of readZipEntries(bytes)) {
     const slash = entry.name.indexOf('/');
+    if (entry.name === 'withdrawals.json' && entry.method === 0) {
+      const data = bytes.subarray(entry.dataOffset, entry.dataOffset + entry.size);
+      trackerFile = { data, ok: crc32Bytes(data) === entry.crc32 };
+      continue;
+    }
     if (slash === -1) continue; // export-manifest.json - informational only
     const folder = entry.name.slice(0, slash);
     const rest = entry.name.slice(slash + 1);
@@ -316,5 +328,19 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
     importedNames.push(importedName);
   }
 
-  return { importedNames, warnings };
+  // The Withdrawals tracker, if the backup has one (full backups only).
+  let withdrawalsAdded = null;
+  if (trackerFile) {
+    if (!trackerFile.ok) {
+      warnings.push("The Withdrawals tracker in this backup didn't match its checksum, so it was skipped.");
+    } else {
+      try {
+        withdrawalsAdded = (await restoreWithdrawalTracker(JSON.parse(strFromU8(trackerFile.data)))).itemsAdded;
+      } catch (e) {
+        warnings.push(`The Withdrawals tracker in this backup couldn't be read: ${e.message}`);
+      }
+    }
+  }
+
+  return { importedNames, warnings, withdrawalsAdded };
 }

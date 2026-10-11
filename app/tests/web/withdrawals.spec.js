@@ -38,10 +38,18 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   // devikin 999 doesn't exist on the chain
 
   await openHub(page);
+  // The in-game wallet is already in a wallet set, as for most users.
+  await openMenuEntry(page, 'Wallets');
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(IN_GAME);
+  await page.getByText('Add', { exact: true }).click();
+  await expect(page.getByText(IN_GAME).first()).toBeVisible();
+  await page.getByText('‹').first().click();
   await openMenuEntry(page, 'Withdrawals');
 
-  // 1. Wallets
-  await page.getByPlaceholder('klv1… (in-game wallet)').fill(IN_GAME);
+  // 1. Wallets: pick the in-game wallet from the set, paste the other
+  await page.getByText('Choose from my wallets').first().click();
+  await page.getByText(/set: /).first().click();
+  await expect(page.getByPlaceholder('klv1… (in-game wallet)')).toHaveValue(IN_GAME);
   await page.getByPlaceholder('klv1… (receiving wallet)').fill(RECEIVING);
   await page.getByText('Save', { exact: true }).click();
   await expect(page.getByText('Check now', { exact: true })).toBeVisible();
@@ -67,6 +75,7 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   await expect(row(page, 'Weapon #1442')).toContainText('Requested - waiting');
   await expect(row(page, 'Weapon #1442')).toContainText('still in your in-game wallet');
   await expect(row(page, 'Weapon #1450')).toContainText("In the game's main wallet");
+  await expect(row(page, 'Weapon #1450')).toContainText('as of Oct 11');
   await expect(row(page, 'Equipment #1022')).toContainText('In another wallet');
   await expect(row(page, 'Equipment #1022')).toContainText('held by klv1xxxx');
   await expect(row(page, 'Devikin #999')).toContainText('Not found on the chain');
@@ -91,4 +100,48 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   await page.reload();
   await openMenuEntry(page, 'Withdrawals');
   await expect(page.getByText('Arrived (2)')).toBeVisible();
+});
+
+test('the tracker travels with a full backup into a new browser', async ({ page, browser }, testInfo) => {
+  fake.chain.holders.set('weapon:3265', RECEIVING);
+  fake.chain.transfers.push({ hash: 'tx3265', kind: 'weapon', nonce: 3265, from: SELLER, to: RECEIVING, timestamp: 1791720000 });
+  fake.chain.holders.set('weapon:1442', IN_GAME);
+
+  await openHub(page);
+  await openMenuEntry(page, 'Withdrawals');
+  await page.getByPlaceholder('klv1… (in-game wallet)').fill(IN_GAME);
+  await page.getByPlaceholder('klv1… (receiving wallet)').fill(RECEIVING);
+  await page.getByText('Save', { exact: true }).click();
+  await page.locator('textarea').fill('W3265 W1442');
+  await page.locator('input[type="checkbox"], [role="switch"]').first().click(); // "I've requested these just now"
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText(/2 added - all marked as requested/)).toBeVisible();
+  await page.getByText('Check now', { exact: true }).click();
+  await expect(page.getByText('Arrived (1)')).toBeVisible();
+
+  // Full backup
+  await page.getByText('‹').first().click();
+  await openMenuEntry(page, 'Wallets');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByText('Export all sets').click()]);
+  const zipPath = testInfo.outputPath('backup.zip');
+  await download.saveAs(zipPath);
+
+  // Another browser
+  const context2 = await browser.newContext();
+  const fake2 = await installFakeServers(context2);
+  const page2 = await context2.newPage();
+  const dialogs = await openHub(page2);
+  await openMenuEntry(page2, 'Wallets');
+  const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import a set').click()]);
+  await chooser.setFiles(zipPath);
+  await expect.poll(() => dialogs.join('\n')).toMatch(/Withdrawals tracker: 2 NFT\(s\) added/);
+  await page2.getByText('‹').first().click();
+  await openMenuEntry(page2, 'Withdrawals');
+  await expect(page2.getByPlaceholder('klv1… (in-game wallet)')).toHaveValue(IN_GAME);
+  await expect(page2.getByPlaceholder('klv1… (receiving wallet)')).toHaveValue(RECEIVING);
+  await expect(page2.getByText('Arrived (1)')).toBeVisible();
+  await expect(page2.getByText('Requested (1)')).toBeVisible();
+  await expect(page2.getByText(/Weapon #3265 · from klv1ssss/)).toBeVisible();
+  expect(fake2.blocked).toEqual([]);
+  await context2.close();
 });

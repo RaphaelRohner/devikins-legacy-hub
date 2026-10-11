@@ -35,7 +35,9 @@ window) as a brand-new visitor:
 - **Withdrawals:** on a pretend blockchain, the tracker shows where each
   listed NFT is (arrived, in-game wallet, game's main wallet, another
   wallet, not found), turns a requested NFT "Overdue" after 30 minutes,
-  and shows it as arrived once it's sent.
+  and shows it as arrived once it's sent. Picking the in-game wallet
+  from a wallet set works, and the whole tracker comes along in a full
+  backup (Export all sets) into a new browser.
 - **Damaged backups:** a backup with one changed byte in a picture is
   noticed and reported, not silently imported.
 
@@ -68,7 +70,7 @@ npm test
 
 This first builds the website (about a minute), then runs all tests
 (a few minutes). Every test prints a ✓ when it passes or ✘ when it
-fails, and the last line says e.g. `8 passed`.
+fails, and the last line says e.g. `9 passed`.
 
 - `npm run test:quick` runs the tests again without rebuilding - only
   useful when nothing in the app's code changed since the last build.

@@ -113,7 +113,7 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { Platform } from 'react-native';
 import { Zip, ZipPassThrough, strToU8, strFromU8 } from 'fflate';
-import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSetRowCounts, dumpWalletSetData, restoreWalletSetData } from '../db/database';
+import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSetRowCounts, dumpWalletSetData, restoreWalletSetData, dumpWithdrawalTracker, restoreWithdrawalTracker } from '../db/database';
 
 // Bumped only if a future change to what's INSIDE an export (the shape
 // of manifest.json, what folders/files exist) would need the import
@@ -686,6 +686,11 @@ export async function exportAllWalletSets(walletSets, { onProgress } = {}) {
     setSummaries.push({ id: walletSet.id, name: walletSet.name });
   }
 
+  // The Withdrawals tracker (one for the whole Hub) travels with the full
+  // backup only - see database.js dumpWithdrawalTracker.
+  const tracker = await dumpWithdrawalTracker();
+  if (tracker) await writer.addFile('withdrawals.json', strToU8(JSON.stringify(tracker)));
+
   await writer.addFile('export-manifest.json', strToU8(JSON.stringify(
     { formatVersion: EXPORT_FORMAT_VERSION, exportedAt: new Date().toISOString(), sets: setSummaries },
     null,
@@ -921,8 +926,13 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
   // folder-name grouping, just done from a known-complete list instead
   // of discovering folders as they streamed past.
   const plannedEntries = [];
+  let trackerEntry = null;
   for (const entry of centralEntries) {
     const slashIndex = entry.name.indexOf('/');
+    if (entry.name === 'withdrawals.json') {
+      trackerEntry = entry;
+      continue;
+    }
     if (slashIndex === -1) continue; // export-manifest.json at the zip root - informational only
     const folderName = entry.name.slice(0, slashIndex);
     const restOfPath = entry.name.slice(slashIndex + 1);
@@ -1078,7 +1088,23 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
     }
   }
 
-  return { importedNames, warnings };
+  // The Withdrawals tracker, if the backup has one (full backups only).
+  let withdrawalsAdded = null;
+  if (trackerEntry) {
+    try {
+      assertStored(trackerEntry);
+      const trackerBytes = await readRangeBytes(pickedUri, trackerEntry.dataOffset, trackerEntry.compressedSize);
+      if (crc32Bytes(trackerBytes) !== trackerEntry.crc32) {
+        warnings.push("The Withdrawals tracker in this backup didn't match its checksum, so it was skipped.");
+      } else {
+        withdrawalsAdded = (await restoreWithdrawalTracker(JSON.parse(strFromU8(trackerBytes)))).itemsAdded;
+      }
+    } catch (e) {
+      warnings.push(`The Withdrawals tracker in this backup couldn't be read: ${e.message}`);
+    }
+  }
+
+  return { importedNames, warnings, withdrawalsAdded };
 }
 
 // Re-exported purely so WalletManager.js can check "does this platform

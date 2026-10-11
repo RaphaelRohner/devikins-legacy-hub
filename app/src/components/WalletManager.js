@@ -609,11 +609,13 @@ export default function WalletManager({
       if (result === null) {
         return;
       }
-      const { importedNames, warnings } = result;
+      const { importedNames, warnings, withdrawalsAdded } = result;
       onWalletSetsChanged();
       let message;
+      const hasTracker = withdrawalsAdded !== null && withdrawalsAdded !== undefined;
       if (importedNames.length === 0) {
-        message = "That file didn't contain any wallet sets.";
+        message = hasTracker ? '' : "That file didn't contain any wallet sets.";
+        if (warnings.length > 0) message += warnings.join('\n\n');
       } else {
         message = `Added: ${importedNames.join(', ')}. Use the switcher above to load one.`;
         markUsageActive();
@@ -629,7 +631,13 @@ export default function WalletManager({
             ? ' Its data and pictures were checked against the export and matched exactly.'
             : ' Every file, including every image, was checked against the export and matched exactly.';
       }
-      Alert.alert(importedNames.length > 0 ? 'Import complete' : 'Nothing imported', message);
+      // Full backups also carry the Withdrawals tracker (see
+      // database.js restoreWithdrawalTracker: nothing already here is
+      // overwritten).
+      if (hasTracker) {
+        message += `${message ? '\n\n' : ''}Withdrawals tracker: ${withdrawalsAdded} NFT(s) added to the list.`;
+      }
+      Alert.alert(importedNames.length > 0 || hasTracker ? 'Import complete' : 'Nothing imported', message);
     } catch (err) {
       reportSetActionError(err, 'Importing that file');
     } finally {

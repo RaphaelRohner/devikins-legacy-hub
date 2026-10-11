@@ -1797,3 +1797,90 @@ export async function clearWithdrawalArrivals() {
   const db = await getWithdrawalDb();
   await db.runAsync(`DELETE FROM withdrawal_arrivals`);
 }
+
+// The tracker's own settings (stored in global_settings).
+export const WITHDRAW_SETTING_KEYS = {
+  from: 'withdraw_from_address',
+  to: 'withdraw_to_address',
+  overdue: 'withdraw_overdue_minutes',
+  lastCheck: 'withdraw_last_check',
+};
+
+/** Everything the tracker knows, for a backup ("Export all sets").
+ *  Returns null when the tracker has never been used. */
+export async function dumpWithdrawalTracker() {
+  const db = await getWithdrawalDb();
+  const settings = {};
+  for (const [name, key] of Object.entries(WITHDRAW_SETTING_KEYS)) {
+    settings[name] = await getGlobalSetting(key);
+  }
+  const items = await db.getAllAsync(`SELECT * FROM withdrawal_items`);
+  const arrivals = await db.getAllAsync(`SELECT * FROM withdrawal_arrivals`);
+  if (items.length === 0 && arrivals.length === 0 && !settings.from && !settings.to) return null;
+  return { settings, items, arrivals };
+}
+
+/**
+ * Brings a backup's tracker into this Hub without throwing anything away:
+ * the wallets are only taken if this Hub's tracker has none yet, NFTs
+ * already on the list keep their own state, new ones come in with
+ * everything the backup knew about them. Returns how many NFTs were new.
+ */
+export async function restoreWithdrawalTracker(dump) {
+  if (!dump) return { itemsAdded: 0 };
+  const db = await getWithdrawalDb();
+  const s = dump.settings || {};
+  if (!(await getGlobalSetting(WITHDRAW_SETTING_KEYS.from)) && !(await getGlobalSetting(WITHDRAW_SETTING_KEYS.to))) {
+    for (const [name, key] of Object.entries(WITHDRAW_SETTING_KEYS)) {
+      if (s[name]) await setGlobalSetting(key, String(s[name]));
+    }
+  }
+  let itemsAdded = 0;
+  const kinds = new Set(['devikin', 'weapon', 'equipment']);
+  await db.withTransactionAsync(async () => {
+    for (const i of dump.items || []) {
+      if (!kinds.has(i.kind) || !Number.isInteger(i.nonce)) continue;
+      const result = await db.runAsync(
+        `INSERT OR IGNORE INTO withdrawal_items
+           (kind, nonce, added_at, requested_at, holder, previous_holder, checked_at, arrived_at, arrived_from, arrived_tx)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [i.kind, i.nonce, i.added_at || Date.now(), i.requested_at ?? null, i.holder ?? null, i.previous_holder ?? null,
+          i.checked_at ?? null, i.arrived_at ?? null, i.arrived_from ?? null, i.arrived_tx ?? null]
+      );
+      itemsAdded += result.changes || 0;
+    }
+    for (const a of dump.arrivals || []) {
+      if (!kinds.has(a.kind) || !a.tx_hash) continue;
+      await db.runAsync(
+        `INSERT OR IGNORE INTO withdrawal_arrivals (tx_hash, kind, nonce, from_address, timestamp) VALUES (?, ?, ?, ?, ?)`,
+        [a.tx_hash, a.kind, a.nonce, a.from_address ?? null, a.timestamp || 0]
+      );
+    }
+  });
+  return { itemsAdded };
+}
+
+/**
+ * Every wallet in every wallet set, for "Choose from my wallets" on the
+ * Withdrawals screen: [{ address, alias, setName }]. Sets other than the
+ * active one are opened just for reading and closed again.
+ */
+export async function getWalletsFromAllSets() {
+  const sets = await getWalletSets();
+  const out = [];
+  for (const set of sets) {
+    const isActiveConnection = set.db_file_name === activeDatabaseFileName && !!databaseConnectionPromise;
+    let db = null;
+    try {
+      db = isActiveConnection ? await databaseConnectionPromise : await SQLite.openDatabaseAsync(set.db_file_name);
+      await createSchemaOnDatabase(db);
+      const rows = await db.getAllAsync(`SELECT address, alias FROM wallets ORDER BY id ASC`);
+      for (const r of rows) out.push({ address: r.address, alias: r.alias || '', setName: set.name });
+    } catch (e) {
+      // A set that can't be opened just doesn't offer its wallets.
+    } finally {
+      if (db && !isActiveConnection) await db.closeAsync();
+    }
+  }
+  return out;
+}
