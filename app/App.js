@@ -854,6 +854,9 @@ Continue anyway?`
       if (pending.missingImageCount > 0) {
         summaryParts.push(`${pending.missingImageCount} image refetch${pending.missingImageCount === 1 ? '' : 'es'}`);
       }
+      if (pending.uncheckedImageCount > 0) {
+        summaryParts.push(`${pending.uncheckedImageCount} picture check${pending.uncheckedImageCount === 1 ? '' : 's'}`);
+      }
       setRetryProgress({ phase: 'summary', label: `Retrying: ${summaryParts.join(' and ')}` });
 
       try {

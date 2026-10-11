@@ -315,6 +315,14 @@ const ALL_FAQ_ENTRIES = [
       "Open Withdrawals in the ☰ menu. Enter your in-game wallet (where the game sends from) and your own wallet (where it should arrive), then paste the numbers of the NFTs you want to follow - with headings like \"Weapons\" one paste can hold all kinds. Select the ones you've actually requested in the game and tap Mark requested. Check now asks the Klever blockchain where each one is: Arrived, still in your in-game wallet, still in the game's main wallet, or somewhere else. Anything requested that hasn't arrived after 30 minutes (you can change that) shows as Overdue, and you can copy that list for a support ticket. The arrivals log shows everything that came into your wallet, with date and sender.",
   },
   {
+    id: 'hide-blanks',
+    topic: 'browsing',
+    question: 'What does "Hide blanks" do?',
+    keywords: ['blank', 'blanks', 'hide blanks', 'empty', 'white', 'missing picture', 'no picture', 'background', 'unavailable', 'incomplete'],
+    answer:
+      "Some NFTs come back from Moonlabs' servers incomplete: no details, no picture, or a picture that's plain white or only shows the coloured background without the item. With \"Hide blanks\" switched on (next to Deleted, above the list), those are left out so you only see complete NFTs. Nothing is deleted - the Hub keeps retrying them quietly, and they appear by themselves once Moonlabs delivers them properly. Pictures you already have are checked once in the background. The switch remembers its setting. Devikins whose picture shows a body without a face still count as complete.",
+  },
+  {
     id: 'donate',
     topic: 'data-feedback',
     question: 'How can I support the Hub?',

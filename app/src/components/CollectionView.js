@@ -81,7 +81,7 @@ import WeaponSummaryRow from './WeaponSummaryRow';
 import EquipmentSummaryRow from './EquipmentSummaryRow';
 import CompareView from './CompareView';
 import NftHistoryModal from './NftHistoryModal';
-import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange, getNftHistory } from '../db/database';
+import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange, getNftHistory, getGlobalSetting, setGlobalSetting } from '../db/database';
 import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER } from '../constants/schema';
 import { useTheme } from '../context/ThemeContext';
 
@@ -147,6 +147,21 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // components) rather than disappearing the moment they're marked.
   // Switching this on excludes them from the query entirely.
   const [excludeDeleted, setExcludeDeleted] = useState(false);
+
+  // The "Hide blanks" switch (11 Oct 2026): leaves out NFTs that aren't
+  // complete - no details, no picture, or a blank picture (see
+  // src/api/imageQuality.js). They're still collected and retried in the
+  // background and show up by themselves once complete. Remembered
+  // between visits (unlike Deleted), since it's a "how I like my list"
+  // choice rather than a quick look.
+  const [excludeBlanks, setExcludeBlanksState] = useState(false);
+  useEffect(() => {
+    getGlobalSetting('hide_blanks').then((value) => setExcludeBlanksState(value === '1'));
+  }, []);
+  function setExcludeBlanks(value) {
+    setExcludeBlanksState(value);
+    setGlobalSetting('hide_blanks', value ? '1' : '0');
+  }
 
   // How many NOT-deleted items this wallet has in this category - shown
   // next to "Show filters" as a quick "142 Devikins"-style count. This is
@@ -244,11 +259,11 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     }
 
     setIsLoading(true);
-    const result = await queryNfts(kind, ownerAddresses, filters, excludeDeleted, searchText, starFilter, sortField, sortDirection);
+    const result = await queryNfts(kind, ownerAddresses, filters, excludeDeleted, searchText, starFilter, sortField, sortDirection, excludeBlanks);
     setRows(result);
     setIsLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, ownerAddresses, filters, excludeDeleted, refreshKey, searchText, starFilter, sortField, sortDirection]);
+  }, [kind, ownerAddresses, filters, excludeDeleted, excludeBlanks, refreshKey, searchText, starFilter, sortField, sortDirection]);
 
   useEffect(() => {
     reloadRows();
@@ -857,6 +872,18 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // room in an already-tight row, and menuRow already had a matching
   // blank slot doing nothing outside a fetch). Kept as its own variable
   // regardless, now just for this one control.
+  const blanksSwitchControl = (
+    <View style={[styles.deletedSwitchGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <Text style={[styles.deletedSwitchLabel, { color: colors.text }]}>Hide blanks</Text>
+      <Switch
+        value={excludeBlanks}
+        onValueChange={setExcludeBlanks}
+        trackColor={{ false: colors.border, true: colors.primary }}
+        thumbColor={colors.surface}
+      />
+    </View>
+  );
+
   const deletedSwitchControl = (
     <View style={[styles.deletedSwitchGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <Text style={[styles.deletedSwitchLabel, { color: colors.text }]}>Deleted</Text>
@@ -986,7 +1013,14 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
               </TouchableOpacity>
             </View>
 
-            {deletedSwitchControl}
+            {/* While choosing two NFTs to compare, the two switches step
+                aside so the row stays tidy (Raphael, 11 Oct 2026). */}
+            {!compareMode ? (
+              <View style={styles.switchGroup}>
+                {blanksSwitchControl}
+                {deletedSwitchControl}
+              </View>
+            ) : null}
           </View>
 
           {expanded && hasPendingChanges && (
@@ -1170,10 +1204,20 @@ const styles = StyleSheet.create({
   // needed.
   toggleRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    rowGap: 8,
     paddingTop: 8,
     paddingBottom: 8,
+  },
+  // Hide blanks + Deleted, kept together; on narrow screens the pair
+  // moves to its own line below List/Tiles/Compare.
+  switchGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginLeft: 'auto',
   },
   // Groups the List and Tiles buttons together with a small gap, so
   // the pair reads as one control (like Apple's segmented controls)

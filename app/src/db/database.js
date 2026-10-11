@@ -173,6 +173,12 @@ async function createSchemaOnDatabase(db) {
     // it looks at an older row rather than assuming a change.
     await ensureColumn(db, kind, 'image_etag', 'TEXT');
 
+    // Blank-picture check (11 Oct 2026, the "Blanks" switch - see
+    // src/api/imageQuality.js): 'ok' = a real picture, 'blank' = plain
+    // white or only the background, 'none' = no picture could be
+    // downloaded (yet). NULL = not checked yet (shown as normal).
+    await ensureColumn(db, kind, 'image_quality', 'TEXT');
+
     // "Deleted" here doesn't mean the row is actually removed from the
     // database - it's a soft flag the user sets themselves from an NFT's
     // detail view (see NftCard.js's "Mark as Deleted" button) to hide
@@ -523,7 +529,7 @@ export async function getExistingStatuses(kind, nonces) {
  *     column. If our column list is ever wrong or incomplete, no data is
  *     gone - it's sitting in raw_json waiting to be re-parsed.
  */
-export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, localImagePath = null, imageEtag = null }) {
+export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, localImagePath = null, imageEtag = null, imageQuality = null }) {
   const db = await getDatabase();
   const traitColumns = TRAIT_COLUMNS[kind];
 
@@ -621,7 +627,7 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
   // the preserved columns below without re-reading that note first.
   const traitColumnNames = Object.keys(traitColumns);
   const existingUserData = await db.getFirstAsync(
-    `SELECT custom_name, star_rating, local_image_path, image_etag, first_seen, ${traitColumnNames.join(', ')} FROM ${kind} WHERE nonce = ?`,
+    `SELECT custom_name, star_rating, local_image_path, image_etag, image_quality, first_seen, ${traitColumnNames.join(', ')} FROM ${kind} WHERE nonce = ?`,
     [nonce]
   );
   const preservedCustomName = existingUserData?.custom_name ?? null;
@@ -650,9 +656,12 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
   // genuinely hasn't changed, so keeping the old ETag is correct too.
   const finalLocalImagePath = localImagePath || existingUserData?.local_image_path || null;
   const finalImageEtag = imageEtag || existingUserData?.image_etag || null;
+  // Same for the blank-picture check: a fresh result wins, otherwise the
+  // previous one is kept (a failed re-fetch shouldn't forget it).
+  const finalImageQuality = imageQuality || existingUserData?.image_quality || null;
 
   const allColumnNames = [
-    'nonce', 'owner_address', 'name', 'image', 'local_image_path', 'image_etag', 'description', 'status', 'fetched_at', 'raw_json',
+    'nonce', 'owner_address', 'name', 'image', 'local_image_path', 'image_etag', 'image_quality', 'description', 'status', 'fetched_at', 'raw_json',
     'custom_name', 'star_rating', 'first_seen',
     ...traitColumnNames,
   ];
@@ -665,6 +674,7 @@ export async function upsertNft(kind, { nonce, ownerAddress, status, metadata, l
     image,
     finalLocalImagePath,
     finalImageEtag,
+    finalImageQuality,
     description,
     status,
     Date.now(),
@@ -804,7 +814,7 @@ export async function getColumnRange(kind, columnName, ownerAddresses) {
  *     better" - per how it was designed. 0/null/undefined means "no
  *     rating filter".
  */
-export async function queryNfts(kind, ownerAddresses, filters = {}, excludeDeleted = false, searchText = '', starRating = null, sortField = 'nonce', sortDirection = 'asc') {
+export async function queryNfts(kind, ownerAddresses, filters = {}, excludeDeleted = false, searchText = '', starRating = null, sortField = 'nonce', sortDirection = 'asc', excludeBlanks = false) {
   const db = await getDatabase();
   const traitColumns = TRAIT_COLUMNS[kind];
 
@@ -814,6 +824,13 @@ export async function queryNfts(kind, ownerAddresses, filters = {}, excludeDelet
 
   if (excludeDeleted) {
     whereClauses.push(`(deleted IS NULL OR deleted = 0)`);
+  }
+
+  // The "Blanks" switch (11 Oct 2026): leave out NFTs that aren't
+  // complete - details never came through, no picture, or a blank
+  // picture (see imageQuality.js). Not-yet-checked pictures stay in.
+  if (excludeBlanks) {
+    whereClauses.push(`(status = 'ok' AND image IS NOT NULL AND (image_quality IS NULL OR image_quality = 'ok'))`);
   }
 
   const trimmedSearch = typeof searchText === 'string' ? searchText.trim() : '';
@@ -1098,7 +1115,27 @@ export async function getNoncesMissingCachedImage(kind, ownerAddress) {
   const db = await getDatabase();
   return db.getAllAsync(
     `SELECT nonce, image FROM ${kind}
-     WHERE owner_address = ? AND status = 'ok' AND image IS NOT NULL AND local_image_path IS NULL`,
+     WHERE owner_address = ? AND status = 'ok' AND image IS NOT NULL AND local_image_path IS NULL
+       AND (image_quality IS NULL OR image_quality = 'none')`,
+    [ownerAddress]
+  );
+  // (The image_quality part matters for the website, where pictures live
+  // in the browser's store and local_image_path is always empty: a
+  // picture already stored and checked isn't fetched again and again.)
+}
+
+/** Saves the blank-picture check result for one NFT (see imageQuality.js). */
+export async function setImageQuality(kind, nonce, quality) {
+  const db = await getDatabase();
+  await db.runAsync(`UPDATE ${kind} SET image_quality = ? WHERE nonce = ?`, [quality, nonce]);
+}
+
+/** NFTs with a picture address that haven't had the blank check yet. */
+export async function getRowsNeedingImageCheck(kind, ownerAddress) {
+  const db = await getDatabase();
+  return db.getAllAsync(
+    `SELECT nonce, image, local_image_path FROM ${kind}
+     WHERE owner_address = ? AND status = 'ok' AND image IS NOT NULL AND image_quality IS NULL`,
     [ownerAddress]
   );
 }
@@ -1155,6 +1192,7 @@ export async function countPendingRetries(ownerAddresses) {
   const { clause, params } = ownerAddressClause(ownerAddresses);
   let failedCount = 0;
   let missingImageCount = 0;
+  let uncheckedImageCount = 0;
 
   for (const kind of Object.keys(TRAIT_COLUMNS)) {
     const failedRow = await db.getFirstAsync(
@@ -1165,16 +1203,27 @@ export async function countPendingRetries(ownerAddresses) {
 
     const missingImageRow = await db.getFirstAsync(
       `SELECT COUNT(*) AS count FROM ${kind}
-       WHERE ${clause} AND status = 'ok' AND image IS NOT NULL AND local_image_path IS NULL`,
+       WHERE ${clause} AND status = 'ok' AND image IS NOT NULL AND local_image_path IS NULL
+         AND (image_quality IS NULL OR image_quality = 'none')`,
       params
     );
     missingImageCount += missingImageRow?.count ?? 0;
+
+    // Stored pictures not yet checked for blanks (see imageQuality.js) -
+    // done from the stored copy, no download.
+    const uncheckedRow = await db.getFirstAsync(
+      `SELECT COUNT(*) AS count FROM ${kind}
+       WHERE ${clause} AND status = 'ok' AND image IS NOT NULL AND local_image_path IS NOT NULL AND image_quality IS NULL`,
+      params
+    );
+    uncheckedImageCount += uncheckedRow?.count ?? 0;
   }
 
   return {
     failedCount,
     missingImageCount,
-    total: failedCount + missingImageCount,
+    uncheckedImageCount,
+    total: failedCount + missingImageCount + uncheckedImageCount,
   };
 }
 
@@ -1348,9 +1397,21 @@ export async function restoreWalletSetData(dbFileName, dump, onProgress) {
     let rowsDone = 0;
     onProgress?.({ current: 0, total: totalRows });
 
+    // A backup from a newer Hub version can carry columns this version
+    // doesn't have yet - those are left out instead of failing the import.
+    const knownColumns = {};
+    async function columnsOf(table) {
+      if (!knownColumns[table]) {
+        const info = await db.getAllAsync(`PRAGMA table_info(${table})`);
+        knownColumns[table] = new Set(info.map((c) => c.name));
+      }
+      return knownColumns[table];
+    }
+
     async function insertRows(table, rows) {
+      const allowed = await columnsOf(table);
       for (const row of rows || []) {
-        const columns = Object.keys(row);
+        const columns = Object.keys(row).filter((c) => allowed.has(c));
         if (columns.length === 0) continue;
         const placeholders = columns.map(() => '?').join(', ');
         await db.runAsync(

@@ -32,10 +32,13 @@
  *      everything already in flight finishes.
  */
 
+import { Platform } from 'react-native';
 import { COLLECTIONS } from '../constants/schema';
 import { fetchWalletNonces } from './kleverApi';
 import { fetchNftMetadata } from './metadataApi';
 import { storeImage, fetchImageEtag } from './imageStorage';
+import { readStoredImageBytes } from './imageBytes';
+import { judgeImageBytes } from './imageQuality';
 import {
   getExistingStatuses,
   upsertNft,
@@ -43,9 +46,30 @@ import {
   getNoncesMissingCachedImage,
   updateLocalImagePath,
   getCachedImageRows,
+  setImageQuality,
+  getRowsNeedingImageCheck,
 } from '../db/database';
 
+const IS_WEB_PLATFORM = Platform.OS === 'web';
 const CONCURRENCY = 4; // "no more than 3-5 parallel requests" - see NOTES.md
+
+/**
+ * The blank-picture check for one just-stored picture (see
+ * imageQuality.js): 'ok', 'blank', or 'none' when there's no picture to
+ * look at (the download failed - it'll be retried as before).
+ */
+async function judgeStoredImage(localImagePath, remoteUrl) {
+  if (!remoteUrl) return null;
+  const bytes = await readStoredImageBytes(localImagePath, remoteUrl);
+  if (!bytes) return 'none';
+  return judgeImageBytes(bytes);
+}
+
+// Lets the screen breathe between picture checks (each takes a few
+// hundredths of a second of the phone's attention).
+function pause(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Fetches full metadata (+ image) for a plain list of nonces in one
@@ -94,7 +118,8 @@ async function fetchAndSaveNonces(kind, label, nonces, ownerAddress, { skippedCo
         // runs, since it specifically looks for 'ok' rows missing a
         // cached image.
         const { localImagePath, etag } = await storeImage(kind, nonce, result.metadata?.image ?? null);
-        await upsertNft(kind, { nonce, ownerAddress, status: 'ok', metadata: result.metadata, localImagePath, imageEtag: etag });
+        const imageQuality = await judgeStoredImage(localImagePath, result.metadata?.image ?? null);
+        await upsertNft(kind, { nonce, ownerAddress, status: 'ok', metadata: result.metadata, localImagePath, imageEtag: etag, imageQuality });
       } else if (result.outcome === 'unavailable') {
         await upsertNft(kind, { nonce, ownerAddress, status: 'unavailable', metadata: null });
       } else {
@@ -207,6 +232,24 @@ export async function retryPendingItems(walletAddress, { onProgress, shouldCance
       if (shouldCancel()) return;
     }
 
+    // Pictures already stored but never checked for blanks (everything
+    // downloaded before the check existed): check them now, from the
+    // stored copy - no download needed.
+    const uncheckedRows = (await getRowsNeedingImageCheck(kind, walletAddress)).filter(
+      (row) => row.local_image_path || IS_WEB_PLATFORM
+    );
+    let checked = 0;
+    for (const row of uncheckedRows) {
+      if (shouldCancel()) return;
+      const bytes = await readStoredImageBytes(row.local_image_path, row.image);
+      if (bytes) await setImageQuality(kind, row.nonce, judgeImageBytes(bytes));
+      checked += 1;
+      if (checked % 10 === 0 || checked === uncheckedRows.length) {
+        onProgress({ phase: 'fetching', kind, label: `${label} (picture check)`, completed: checked, total: uncheckedRows.length, skipped: 0 });
+      }
+      await pause(5);
+    }
+
     const missingImageRows = await getNoncesMissingCachedImage(kind, walletAddress);
     if (missingImageRows.length > 0) {
       let completedCount = 0;
@@ -222,6 +265,7 @@ export async function retryPendingItems(walletAddress, { onProgress, shouldCance
         if (localImagePath) {
           await updateLocalImagePath(kind, row.nonce, localImagePath, etag);
         }
+        await setImageQuality(kind, row.nonce, await judgeStoredImage(localImagePath, row.image));
 
         completedCount += 1;
         onProgress({ phase: 'fetching', kind, label: imageLabel, completed: completedCount, total: totalCount, skipped: 0 });
@@ -302,6 +346,7 @@ export async function checkImageFreshnessForWallets(walletAddresses, { onProgres
           const { localImagePath, etag } = await storeImage(kind, row.nonce, row.image, { forceRedownload: true });
           if (localImagePath) {
             await updateLocalImagePath(kind, row.nonce, localImagePath, etag);
+            await setImageQuality(kind, row.nonce, await judgeStoredImage(localImagePath, row.image));
           }
         }
 

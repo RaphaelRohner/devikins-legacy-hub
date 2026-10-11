@@ -32,6 +32,9 @@ window) as a brand-new visitor:
   Import a set in a second, empty browser, including the pictures (with
   the picture server down), and every file's checksum in the zip is
   right.
+- **Hide blanks:** NFTs whose picture is missing, plain white or only the
+  background disappear when the switch is on (and come back when it's
+  off); the setting is remembered; Compare hides the switches.
 - **Withdrawals:** on a pretend blockchain, the tracker shows where each
   listed NFT is (arrived, in-game wallet, game's main wallet, another
   wallet, not found), turns a requested NFT "Overdue" after 30 minutes,
@@ -70,7 +73,7 @@ npm test
 
 This first builds the website (about a minute), then runs all tests
 (a few minutes). Every test prints a ✓ when it passes or ✘ when it
-fails, and the last line says e.g. `9 passed`.
+fails, and the last line says e.g. `10 passed`.
 
 - `npm run test:quick` runs the tests again without rebuilding - only
   useful when nothing in the app's code changed since the last build.

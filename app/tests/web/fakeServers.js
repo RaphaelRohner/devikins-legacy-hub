@@ -68,17 +68,28 @@ function pngChunk(type, data) {
   crc.writeUInt32BE(crc32(body) >>> 0);
   return Buffer.concat([len, body, crc]);
 }
-/** A 48x64 picture in one colour with a darker stripe - well over the
- *  200-byte "that's an error page, not a picture" limit the Hub uses. */
-function makePng(seed) {
+/** A 48x64 test picture (well over the 200-byte "that's an error page,
+ *  not a picture" limit the Hub uses). style:
+ *   'item'       coloured background with a dark-outlined item in the
+ *                middle - what a real NFT picture looks like
+ *   'background' only the coloured background (a blank, Moonlabs-style)
+ *   'white'      plain white (the other kind of blank) */
+function makePng(seed, style = 'item') {
   const w = 48, h = 64;
-  const r = (seed * 67) % 256, g = (seed * 131) % 256, b = (seed * 29) % 256;
+  const r = 120 + ((seed * 67) % 120), g = 120 + ((seed * 131) % 120), b = 120 + ((seed * 29) % 120);
   const rows = [];
   for (let y = 0; y < h; y++) {
     const row = Buffer.alloc(1 + w * 3);
     for (let x = 0; x < w; x++) {
-      const dark = (x + y + seed) % 7 === 0 ? 0.4 : 1;
-      row[1 + x * 3] = r * dark; row[2 + x * 3] = g * dark; row[3 + x * 3] = b * dark;
+      let px = [r, g, b];
+      if (style === 'white') px = [255, 255, 255];
+      else if (style === 'item') {
+        const inBox = x >= 14 && x <= 34 && y >= 18 && y <= 50;
+        const onEdge = inBox && (x <= 16 || x >= 32 || y <= 20 || y >= 48);
+        if (onEdge) px = [10, 10, 10]; // the dark outline
+        else if (inBox) px = [200, 60, 60];
+      }
+      row[1 + x * 3] = px[0]; row[2 + x * 3] = px[1]; row[3 + x * 3] = px[2];
     }
     rows.push(row);
   }
@@ -101,6 +112,7 @@ function makePng(seed) {
 async function installFakeServers(context) {
   const fake = {
     picturesDown: false, // true = picture servers answer "403 access denied"
+    blankPictures: new Map(), // picture URL -> 'white' | 'background' | 'missing'
     requests: [], // every outside URL the Hub asked for, for checks
     blocked: [], // anything unexpected that was blocked
     // A tiny pretend blockchain for the withdrawal tracker:
@@ -170,9 +182,10 @@ async function installFakeServers(context) {
 
     // Moonlabs picture servers
     if (/^img(weapon|equipment)?\.devikins\.com$/.test(url.hostname)) {
-      if (fake.picturesDown) return route.fulfill({ status: 403, contentType: 'text/plain', body: 'Access Denied' });
+      const special = fake.blankPictures.get(url.href);
+      if (fake.picturesDown || special === 'missing') return route.fulfill({ status: 403, contentType: 'text/plain', body: 'Access Denied' });
       const nonce = Number(url.pathname.match(/(\d+)\.png$/)?.[1] || 1);
-      return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: makePng(nonce) });
+      return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: makePng(nonce, special || 'item') });
     }
 
     fake.blocked.push(url.href);
@@ -188,4 +201,4 @@ function fakeAddress(letter) {
 }
 const GAME_MAIN_WALLET = 'klv1a35lsdqvsmk370ujzjc4js2666kvp7wukumtjejj7ze8ehde5slqe0uvpf';
 
-module.exports = { installFakeServers, TEST_WALLET, TEST_NFTS, makePng, fakeAddress, GAME_MAIN_WALLET };
+module.exports = { installFakeServers, TEST_WALLET, TEST_NFTS, makePng, fakeAddress, GAME_MAIN_WALLET, IMAGE_URL };
