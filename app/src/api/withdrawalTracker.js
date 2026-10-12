@@ -43,9 +43,8 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function isValidKleverAddress(address) {
-  return /^klv1[02-9ac-hj-np-z]{58}$/.test(String(address || '').trim());
-}
+// Format + checksum check (src/utils/kleverAddress.js).
+export { isValidKleverAddress } from '../utils/kleverAddress';
 
 // ---------------------------------------------------------------------------
 // Reading an ID list

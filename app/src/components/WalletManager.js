@@ -74,7 +74,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { isValidKleverAddress } from '../api/withdrawalTracker';
+import { isValidKleverAddress } from '../utils/kleverAddress';
 import {
   View,
   Text,
@@ -127,13 +127,14 @@ import {
 // "Connect Klever Extension" button.
 const IS_WEB = Platform.OS === 'web';
 
-// A Klever address is "klv1" plus 58 letters/digits (no b, i, o or 1).
-// Anything else is refused right away, so typos never end up in the list.
+// A Klever address is "klv1" plus 58 letters/digits (no b, i, o or 1),
+// the last 6 being a checksum (see src/utils/kleverAddress.js). Anything
+// else - including a real address with a typo - is refused right away.
 function refuseInvalidAddress(address) {
   if (isValidKleverAddress(address)) return false;
   Alert.alert(
     'Not a Klever address',
-    'A Klever wallet address starts with "klv1" and is 62 characters long. Please check it and try again.'
+    'A Klever wallet address starts with "klv1" and is 62 characters long. This one is mistyped or incomplete (even one wrong character is noticed). Please copy it again and try once more.'
   );
   return true;
 }
@@ -381,18 +382,31 @@ export default function WalletManager({
     onWalletsChanged();
   }
 
-  async function handleDelete(id) {
-    // No confirmation dialog on purpose, to match the rest of this app's
-    // plain, direct style - deleting a wallet here only stops it from
-    // being fetched/shown, it doesn't erase any of its already-saved NFT
-    // data (see deleteWallet's own comment in database.js), so it's a
-    // low-risk, easily-undone action (just re-add the same address).
-    if (editingId === id) {
-      setEditingId(null);
-      setEditAddressInput('');
-    }
-    await deleteWallet(id);
-    onWalletsChanged();
+  // Asks first (Raphael's call, 12 Oct 2026: an accidental tap shouldn't
+  // silently drop a wallet). Deleting only stops the wallet from being
+  // fetched and shown - its saved NFT data stays (see deleteWallet in
+  // database.js), so re-adding the same address brings it all back.
+  function handleDelete(wallet) {
+    const label = wallet.alias ? `${wallet.alias}\n${wallet.address}` : wallet.address;
+    Alert.alert(
+      'Delete this wallet?',
+      `${label}\n\nIts NFTs leave your lists. Adding the same address again later brings them back.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            if (editingId === wallet.id) {
+              setEditingId(null);
+              setEditAddressInput('');
+            }
+            await deleteWallet(wallet.id);
+            onWalletsChanged();
+          },
+        },
+      ]
+    );
   }
 
   // Creates a brand-new, empty wallet set and switches straight into
@@ -1127,7 +1141,7 @@ export default function WalletManager({
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }, isBusy && { opacity: 0.5 }]}
-                        onPress={() => handleDelete(wallet.id)}
+                        onPress={() => handleDelete(wallet)}
                         disabled={isBusy}
                       >
                         <Text style={[styles.rowButtonText, { color: colors.cancelText }]}>Delete</Text>

@@ -39,6 +39,7 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { getGlobalSetting, setGlobalSetting } from '../db/database';
 import QrScannerModal, { extractAddress } from './QrScannerModal';
+import { isValidKleverAddress } from '../utils/kleverAddress';
 import { getSignerAddress, signWithSigner } from '../api/klvSigner';
 import {
   broadcastSigned, buildTransfer, explorerUrl, getKlvBalance, klvToUnits, unitsToKlv,
@@ -99,8 +100,8 @@ export default function SignerTestView({ onClose }) {
     setSentHash(null);
     const to = receiver.trim();
     const kda = token.trim().toUpperCase();
-    if (!/^klv1[0-9a-z]{58}$/.test(to)) {
-      setError('Please enter a valid receiver address (klv1… , 62 characters).');
+    if (!isValidKleverAddress(to)) {
+      setError('Please enter a valid receiver address (klv1… , 62 characters). Even one wrong character is noticed - copy it again.');
       return;
     }
     let amountUnits;

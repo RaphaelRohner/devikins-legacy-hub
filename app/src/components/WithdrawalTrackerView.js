@@ -666,29 +666,40 @@ export default function WithdrawalTrackerView({ onClose }) {
             <Text style={[styles.note, { color: colors.secondaryText }]}>No NFTs on the list yet (step 2).</Text>
           ) : null}
 
-          {filtered.slice(0, shownRows).map((item) => {
-            const isSelected = selected.has(keyOf(item));
-            return (
-              <TouchableOpacity
-                key={keyOf(item)}
-                style={[styles.row, { borderColor: colors.border, backgroundColor: isSelected ? colors.progressBackground : 'transparent' }]}
-                onPress={() => toggleSelected(item)}
-              >
-                <Text style={[styles.checkbox, { color: isSelected ? colors.primary : colors.secondaryText }]}>{isSelected ? '☑' : '☐'}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.rowTitle, { color: colors.text }]}>
-                    {KIND_LABEL[item.kind]} #{item.nonce}
-                    <Text style={{ color: statusColor(item.status), fontWeight: '700' }}>  {STATUS_TEXT[item.status]}</Text>
-                  </Text>
-                  {describe(item) ? <Text style={[styles.note, { color: colors.secondaryText }]}>{describe(item)}</Text> : null}
-                </View>
+          {/* The rows sit in their own box that scrolls by itself, so a long
+              list doesn't push the rest of the screen far down (Raphael,
+              12 Oct 2026). */}
+          {filtered.length > 0 ? (
+            <ScrollView
+              style={[styles.listBox, { borderColor: colors.border }]}
+              nestedScrollEnabled
+              testID="withdrawals-list-box"
+            >
+            {filtered.slice(0, shownRows).map((item) => {
+              const isSelected = selected.has(keyOf(item));
+              return (
+                <TouchableOpacity
+                  key={keyOf(item)}
+                  style={[styles.row, { borderColor: colors.border, backgroundColor: isSelected ? colors.progressBackground : 'transparent' }]}
+                  onPress={() => toggleSelected(item)}
+                >
+                  <Text style={[styles.checkbox, { color: isSelected ? colors.primary : colors.secondaryText }]}>{isSelected ? '☑' : '☐'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rowTitle, { color: colors.text }]}>
+                      {KIND_LABEL[item.kind]} #{item.nonce}
+                      <Text style={{ color: statusColor(item.status), fontWeight: '700' }}>  {STATUS_TEXT[item.status]}</Text>
+                    </Text>
+                    {describe(item) ? <Text style={[styles.note, { color: colors.secondaryText }]}>{describe(item)}</Text> : null}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+            {filtered.length > shownRows ? (
+              <TouchableOpacity style={{ padding: 10 }} onPress={() => setShownRows((n) => n + ROWS_PER_PAGE)}>
+                <Text style={[styles.link, { color: colors.primary }]}>Show more ({filtered.length - shownRows} left)</Text>
               </TouchableOpacity>
-            );
-          })}
-          {filtered.length > shownRows ? (
-            <TouchableOpacity onPress={() => setShownRows((n) => n + ROWS_PER_PAGE)}>
-              <Text style={[styles.link, { color: colors.primary }]}>Show more ({filtered.length - shownRows} left)</Text>
-            </TouchableOpacity>
+            ) : null}
+            </ScrollView>
           ) : null}
         </View>
 
@@ -713,6 +724,12 @@ export default function WithdrawalTrackerView({ onClose }) {
 }
 
 const styles = StyleSheet.create({
+  listBox: {
+    maxHeight: 420,
+    borderWidth: 1,
+    borderRadius: 8,
+    marginTop: 6,
+  },
   container: { flex: 1 },
   topRow: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 12, marginVertical: 12, gap: 8 },
   backButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },

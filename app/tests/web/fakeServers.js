@@ -202,8 +202,26 @@ async function installFakeServers(context) {
 }
 
 /** Made-up but well-formed Klever addresses for the withdrawal tests. */
+// A made-up but correctly formed Klever address: "klv1", 52 x the letter,
+// then the 6-character checksum the Hub checks (see src/utils/kleverAddress.js).
 function fakeAddress(letter) {
-  return 'klv1' + letter.repeat(58);
+  const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+  const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  const polymod = (values) => {
+    let chk = 1;
+    for (const v of values) {
+      const top = chk >>> 25;
+      chk = ((chk & 0x1ffffff) << 5) ^ v;
+      for (let i = 0; i < 5; i += 1) if ((top >>> i) & 1) chk ^= GEN[i];
+    }
+    return chk;
+  };
+  const prefix = [...'klv'].map((c) => c.charCodeAt(0));
+  const expanded = [...prefix.map((c) => c >> 5), 0, ...prefix.map((c) => c & 31)];
+  const data = Array(52).fill(CHARSET.indexOf(letter));
+  const mod = polymod([...expanded, ...data, 0, 0, 0, 0, 0, 0]) ^ 1;
+  const checksum = [0, 1, 2, 3, 4, 5].map((i) => CHARSET[(mod >>> (5 * (5 - i))) & 31]).join('');
+  return 'klv1' + letter.repeat(52) + checksum;
 }
 const GAME_MAIN_WALLET = 'klv1a35lsdqvsmk370ujzjc4js2666kvp7wukumtjejj7ze8ehde5slqe0uvpf';
 

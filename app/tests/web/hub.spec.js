@@ -312,3 +312,27 @@ test('an address that is not a Klever address is refused', async ({ page }) => {
   await page.getByText('Add', { exact: true }).click();
   await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
 });
+
+test('a real-looking address with one typo is refused (checksum)', async ({ page }) => {
+  const dialogs = await openHub(page);
+  await openMenuEntry(page, 'Wallets');
+  const typo = TEST_WALLET.slice(0, 20) + (TEST_WALLET[20] === 'q' ? 'p' : 'q') + TEST_WALLET.slice(21);
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(typo);
+  await page.getByText('Add', { exact: true }).click();
+  await expect.poll(() => dialogs.join('\n')).toMatch(/Not a Klever address/);
+  await expect(page.getByText(typo, { exact: true })).toHaveCount(0);
+});
+
+test('deleting a wallet asks first', async ({ page }) => {
+  const dialogs = await openHub(page);
+  await openMenuEntry(page, 'Wallets');
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
+  const before = dialogs.length;
+
+  // The tests' message boxes answer "OK", which here means Delete.
+  await page.getByText(TEST_WALLET).first().locator('xpath=..').getByText('Delete', { exact: true }).click();
+  await expect.poll(() => dialogs.slice(before).join('\n')).toMatch(/Delete this wallet\?/);
+  await expect(page.getByText(TEST_WALLET)).toHaveCount(0);
+});

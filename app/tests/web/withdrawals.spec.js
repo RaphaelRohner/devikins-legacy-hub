@@ -182,3 +182,18 @@ test('Reset All Data also empties the Withdrawals list', async ({ page }) => {
   await expect(page.getByPlaceholder('klv1… (in-game wallet)')).toHaveValue('');
   await expect(page.getByText(/W3265|#3265/)).toHaveCount(0);
 });
+
+test('a long Withdrawals list scrolls in its own box', async ({ page }) => {
+  await openHub(page);
+  await openMenuEntry(page, 'Withdrawals');
+  await page.getByPlaceholder('klv1… (in-game wallet)').fill(IN_GAME);
+  await page.getByPlaceholder('klv1… (receiving wallet)').fill(RECEIVING);
+  await page.getByText('Save', { exact: true }).click();
+  await page.locator('textarea').fill(Array.from({ length: 60 }, (_, i) => `W${5000 + i}`).join(' '));
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText(/60 added/)).toBeVisible();
+  const box = page.getByTestId('withdrawals-list-box');
+  const size = await box.evaluate((el) => ({ shown: el.clientHeight, full: el.scrollHeight }));
+  expect(size.shown).toBeLessThanOrEqual(430);
+  expect(size.full).toBeGreaterThan(size.shown); // the rest is reached by scrolling inside the box
+});
