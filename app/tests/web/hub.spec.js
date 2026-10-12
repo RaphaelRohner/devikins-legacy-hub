@@ -369,3 +369,20 @@ test('pictures no set uses any more are removed after deleting a set', async ({ 
   await expect.poll(() => dialogs.join('\n')).toMatch(/Delete/);
   await expect.poll(async () => (await storedPictureUrls(page)).length).toBe(0);
 });
+
+test('Fetch/Update without internet says so plainly and stops', async ({ page }) => {
+  const dialogs = await openHub(page);
+  await openMenuEntry(page, 'Wallets');
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
+  await goBack(page);
+
+  fake.offline = true;
+  await openMenuEntry(page, 'Fetch/Update');
+  await expect.poll(() => dialogs.join('\n')).toMatch(/No connection/);
+  expect(dialogs.join('\n')).not.toMatch(/Continue anyway/);
+  // Nothing hangs: the progress bar is gone again.
+  await expect(page.getByText(/Checking scan size/)).toHaveCount(0);
+  fake.offline = false;
+});

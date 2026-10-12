@@ -112,6 +112,7 @@ function makePng(seed, style = 'item') {
 async function installFakeServers(context) {
   const fake = {
     picturesDown: false, // true = picture servers answer "403 access denied"
+    offline: false, // true = every outside server is unreachable (no internet)
     blankPictures: new Map(), // picture URL -> 'white' | 'background' | 'missing'
     metadataDelayMs: 0, // slow down the pretend NFT-details server
     requests: [], // every outside URL the Hub asked for, for checks
@@ -129,6 +130,7 @@ async function installFakeServers(context) {
     const url = new URL(route.request().url());
     if (url.hostname === 'localhost') return route.continue();
     fake.requests.push(url.href);
+    if (fake.offline) return route.abort('internetdisconnected');
 
     if (url.hostname === 'api.mainnet.klever.org') {
       // Which NFTs a wallet holds

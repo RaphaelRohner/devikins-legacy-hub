@@ -475,16 +475,31 @@ export async function fetchAllForWallets(walletAddresses, { onProgress, shouldCa
  *     for a message that says WHY the estimate couldn't be trusted
  *     rather than just that it couldn't.
  */
+// "klv1abcd…wxyz" - enough to tell wallets apart in a message.
+function shortAddress(address) {
+  const text = String(address || '');
+  return text.length > 14 ? `${text.slice(0, 8)}…${text.slice(-4)}` : text;
+}
+
 export async function estimateNewNftCountForWallets(walletAddresses, { shouldCancel } = {}) {
   let newCount = 0;
   let incomplete = false;
   const incompleteNotices = [];
+  // How many listings had to ask Klever's server, and how many of those got
+  // nothing back at all. If every one failed, the server (or the internet
+  // connection) is simply unreachable - App.js then says so plainly instead
+  // of asking whether to continue (Raphael tested with Wi-Fi off, 12 Oct 2026).
+  let onlineTried = 0;
+  let onlineFailed = 0;
 
   for (const walletAddress of walletAddresses) {
     for (const kind of Object.keys(COLLECTIONS)) {
-      if (shouldCancel && shouldCancel()) return { newCount, incomplete, incompleteNotices };
+      if (shouldCancel && shouldCancel()) return { newCount, incomplete, incompleteNotices, unreachable: false };
 
       const { assetId, label } = COLLECTIONS[kind];
+      const where = walletAddress === ID_LIST_OWNER ? 'Withdrawals list' : shortAddress(walletAddress);
+      const online = walletAddress !== ID_LIST_OWNER;
+      if (online) onlineTried += 1;
 
       let nonces;
       try {
@@ -498,7 +513,8 @@ export async function estimateNewNftCountForWallets(walletAddresses, { shouldCan
         // whatever this collection would have added to the count is
         // simply unknown now, not zero.
         incomplete = true;
-        incompleteNotices.push(`${label} - ${err.message}`);
+        if (online) onlineFailed += 1;
+        incompleteNotices.push(`${label} (${where}) - ${err.message}`);
         continue;
       }
 
@@ -510,7 +526,8 @@ export async function estimateNewNftCountForWallets(walletAddresses, { shouldCan
         // this collection's true count could be far higher, so the
         // caller needs to know not to trust newCount alone.
         incomplete = true;
-        incompleteNotices.push(`${label} - ${nonces.truncationReason}`);
+        if (online && nonces.length === 0) onlineFailed += 1;
+        incompleteNotices.push(`${label} (${where}) - ${nonces.truncationReason}`);
       }
 
       const existingStatuses = await getExistingStatuses(kind, nonces);
@@ -522,7 +539,7 @@ export async function estimateNewNftCountForWallets(walletAddresses, { shouldCan
     }
   }
 
-  return { newCount, incomplete, incompleteNotices };
+  return { newCount, incomplete, incompleteNotices, unreachable: onlineTried > 0 && onlineFailed === onlineTried };
 }
 
 /**

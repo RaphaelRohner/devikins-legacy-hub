@@ -158,6 +158,9 @@ function AppContent() {
   // of just re-arming the "press again" toast.
   const EXIT_CONFIRM_WINDOW_MS = 2000;
 
+  // Where fetched NFTs are kept, for the "large scan" messages.
+  const STORAGE_PLACE = Platform.OS === 'web' ? "this browser's storage" : "your phone's storage";
+
   // How often to check for anything left unfinished (failed items,
   // missing images) and quietly retry it in the background, how many
   // times in a row to try at that fast pace, and how long to wait between
@@ -711,12 +714,27 @@ function AppContent() {
       // smaller proceeds exactly as it always has, no extra step in the
       // way. A genuinely large scan just needs one tap on Continue.
       setProgress({ phase: 'summary', label: 'Checking scan size...' });
-      const { newCount: newNftCount, incomplete: estimateIncomplete, incompleteNotices: estimateIncompleteNotices } =
-        await estimateNewNftCountForWallets(ownerAddresses, {
-          shouldCancel: () => cancelRequestedRef.current,
-        });
+      const {
+        newCount: newNftCount,
+        incomplete: estimateIncomplete,
+        incompleteNotices: estimateIncompleteNotices,
+        unreachable: kleverUnreachable,
+      } = await estimateNewNftCountForWallets(ownerAddresses, {
+        shouldCancel: () => cancelRequestedRef.current,
+      });
 
       if (cancelRequestedRef.current) {
+        return;
+      }
+
+      // Not a single wallet could be listed: no internet, or Klever's server
+      // is down. Say so plainly and stop, rather than offering to continue
+      // a fetch that can't get anywhere.
+      if (kleverUnreachable) {
+        Alert.alert(
+          'No connection',
+          "The Hub couldn't reach Klever's server for any of your wallets. Please check your internet connection and try Fetch/Update again.\n\nEverything already loaded stays as it is."
+        );
         return;
       }
 
@@ -734,12 +752,12 @@ function AppContent() {
       if (estimateIncomplete || projectedBytes > STORAGE_WARNING_THRESHOLD_BYTES) {
         const title = estimateIncomplete ? "Couldn't fully check scan size" : 'Large scan ahead';
         const message = estimateIncomplete
-          ? `This could add roughly ${formatBytes(projectedBytes)} to your phone's storage (at least ${newNftCount.toLocaleString()} new NFTs) - but part of the check itself didn't finish, so the real number could be higher:
+          ? `This could add roughly ${formatBytes(projectedBytes)} to ${STORAGE_PLACE} (at least ${newNftCount.toLocaleString()} new NFTs) - but part of the check itself didn't finish, so the real number could be higher:
 
 ${estimateIncompleteNotices.join('\n')}
 
 Continue anyway?`
-          : `This could add roughly ${formatBytes(projectedBytes)} to your phone's storage (about ${newNftCount.toLocaleString()} new NFTs). Continue?`;
+          : `This could add roughly ${formatBytes(projectedBytes)} to ${STORAGE_PLACE} (about ${newNftCount.toLocaleString()} new NFTs). Continue?`;
 
         const shouldContinue = await new Promise((resolve) => {
           Alert.alert(
