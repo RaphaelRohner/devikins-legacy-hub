@@ -63,17 +63,27 @@ function getDatabase() {
 
 // Closes whatever per-set database connection is currently open (if
 // any) and forgets it, so the next getDatabase() call opens a fresh
-// connection against whatever activeDatabaseFileName has just been
-// pointed at. Used by every wallet-set switch below (create/switch/
-// unload/delete) - always call this BEFORE changing
-// activeDatabaseFileName, never after, so nothing in between can read
-// through a connection to a file that's about to stop being "the"
-// active one.
-async function closeActiveDatabase() {
-  if (databaseConnectionPromise) {
-    const db = await databaseConnectionPromise;
-    await db.closeAsync();
-    databaseConnectionPromise = null;
+// connection. Pass the next set's file name to switch: the name is
+// changed in the same step, so nothing in between can open or read the
+// set that's being left. Used by every wallet-set switch below
+// (create/switch/unload/delete).
+async function closeActiveDatabase(nextFileName) {
+  // Point at the next file and forget the old connection FIRST, before
+  // waiting for the old one to close. Otherwise anything that asks for
+  // the database during that short wait (e.g. the main screen reloading
+  // because the user tapped back right after picking a set) would reopen
+  // the OLD set's file and keep using it - the switch would silently
+  // show the previous set's (empty) data.
+  const oldConnection = databaseConnectionPromise;
+  if (nextFileName !== undefined) activeDatabaseFileName = nextFileName;
+  databaseConnectionPromise = null;
+  if (oldConnection) {
+    try {
+      const db = await oldConnection;
+      await db.closeAsync();
+    } catch (err) {
+      console.warn('[database] closing the previous set failed:', err?.message || err);
+    }
   }
 }
 
@@ -1627,7 +1637,8 @@ export async function createWalletSet(name) {
   const dbFileName = `devikins-set-${suffix}.db`;
   const imagesDirName = `nft-images-set-${suffix}`;
 
-  await closeActiveDatabase();
+  setActiveImagesDirName(imagesDirName);
+  await closeActiveDatabase(dbFileName);
   await registryDb.runAsync(`UPDATE wallet_sets SET is_active = 0`);
   const result = await registryDb.runAsync(
     `INSERT INTO wallet_sets (name, db_file_name, images_dir_name, created_at, is_active)
@@ -1635,8 +1646,6 @@ export async function createWalletSet(name) {
     [trimmedName, dbFileName, imagesDirName, suffix]
   );
 
-  activeDatabaseFileName = dbFileName;
-  setActiveImagesDirName(imagesDirName);
   await initDatabase();
   return result.lastInsertRowId;
 }
@@ -1671,12 +1680,10 @@ export async function switchToWalletSet(id) {
   const targetSet = await registryDb.getFirstAsync(`SELECT * FROM wallet_sets WHERE id = ?`, [id]);
   if (!targetSet) return;
 
-  await closeActiveDatabase();
+  setActiveImagesDirName(targetSet.images_dir_name);
+  await closeActiveDatabase(targetSet.db_file_name);
   await registryDb.runAsync(`UPDATE wallet_sets SET is_active = 0`);
   await registryDb.runAsync(`UPDATE wallet_sets SET is_active = 1 WHERE id = ?`, [id]);
-
-  activeDatabaseFileName = targetSet.db_file_name;
-  setActiveImagesDirName(targetSet.images_dir_name);
   await initDatabase();
 }
 
