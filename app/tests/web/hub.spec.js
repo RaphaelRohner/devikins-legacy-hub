@@ -283,6 +283,18 @@ test("the browser's back button works like the phone's Back button", async ({ pa
   await expect(page.getByPlaceholder('Give this NFT a name (optional)')).toHaveCount(0);
   await expect(page.getByText('2 Devikins')).toBeVisible();
 
+  // Several Back presses in a row (no clicks in between) stay in the Hub:
+  // NFT, then Wallets.
+  await openMenuEntry(page, 'Wallets');
+  await page.getByText('‹').first().click();
+  await page.getByText('#101', { exact: true }).click();
+  await expect(page.getByPlaceholder('Give this NFT a name (optional)')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByPlaceholder('Give this NFT a name (optional)')).toHaveCount(0);
+  await page.getByText('☰').first().click();
+  await page.goBack();
+  await expect(menu).toHaveCount(0);
+
   // Nothing left to close: back leaves the Hub like any website.
   await page.goBack();
   await expect.poll(() => page.url()).not.toContain('/devikins-legacy-hub');
