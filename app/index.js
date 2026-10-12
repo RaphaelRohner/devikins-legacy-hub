@@ -2,6 +2,7 @@ import { registerRootComponent } from 'expo';
 import { Platform } from 'react-native';
 import notifee from 'react-native-notify-kit';
 import './src/web/alertForWeb'; // website only: makes pop-up messages work in the browser
+import './src/web/browserBack'; // website only: the browser's back button works like the phone's
 
 import App from './App';
 

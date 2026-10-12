@@ -256,3 +256,34 @@ test('menu categories open and close, and the menu starts tidy each time', async
   await page.getByText('☰').first().click();
   await expect.poll(menuText).toMatch(/Browse NFTs ▾ Devikins Weapons Equipment Tools ▸ Help ▸/);
 });
+
+test("the browser's back button works like the phone's Back button", async ({ page }) => {
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  const menu = page.locator('[role="dialog"][aria-modal="true"]').filter({ hasText: 'Menu' });
+
+  // Wallets screen -> back to the list.
+  await openMenuEntry(page, 'Wallets');
+  await expect(page.getByText('Danger zone')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByText('2 Devikins')).toBeVisible();
+  await expect(page.getByText('Danger zone')).toHaveCount(0);
+
+  // Open menu -> back closes just the menu.
+  await page.getByText('☰').first().click();
+  await expect(menu).toHaveCount(1);
+  await page.goBack();
+  await expect(menu).toHaveCount(0);
+  await expect(page.getByText('2 Devikins')).toBeVisible();
+
+  // Open NFT -> back closes it.
+  await page.getByText('#101', { exact: true }).click();
+  await expect(page.getByPlaceholder('Give this NFT a name (optional)')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByPlaceholder('Give this NFT a name (optional)')).toHaveCount(0);
+  await expect(page.getByText('2 Devikins')).toBeVisible();
+
+  // Nothing left to close: back leaves the Hub like any website.
+  await page.goBack();
+  await expect.poll(() => page.url()).not.toContain('/devikins-legacy-hub');
+});

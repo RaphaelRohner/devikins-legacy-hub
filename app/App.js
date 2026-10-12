@@ -628,6 +628,9 @@ function AppContent() {
       // in between - the standard Android "press back again to exit"
       // pattern, so one stray tap on the home screen doesn't close the
       // app on you.
+      // On the website, back from the main list simply leaves the Hub,
+      // like on any other website (see src/web/browserBack.js).
+      if (Platform.OS === 'web') return false;
       const now = Date.now();
       if (now - lastExitBackPressAtRef.current < EXIT_CONFIRM_WINDOW_MS) {
         return false; // second press in time - let Android actually exit
