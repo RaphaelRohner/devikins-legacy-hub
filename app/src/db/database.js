@@ -56,7 +56,18 @@ let databaseConnectionPromise = null;
 
 function getDatabase() {
   if (!databaseConnectionPromise) {
-    databaseConnectionPromise = SQLite.openDatabaseAsync(activeDatabaseFileName);
+    // No set loaded right now (e.g. in the middle of Reset All Data):
+    // fail just this one request, without remembering the failure, so
+    // the next request after the reset opens the new set normally.
+    if (!activeDatabaseFileName) {
+      return Promise.reject(new Error('No wallet set is loaded right now'));
+    }
+    const opening = SQLite.openDatabaseAsync(activeDatabaseFileName);
+    databaseConnectionPromise = opening;
+    // A failed open is not kept either, so it can be retried.
+    opening.catch(() => {
+      if (databaseConnectionPromise === opening) databaseConnectionPromise = null;
+    });
   }
   return databaseConnectionPromise;
 }
@@ -451,15 +462,15 @@ export async function resetAllData() {
   // same filename, a failed delete here would mean the "reset" set
   // isn't actually empty. Close it first, same as every other
   // set-switching function in this section already does before
-  // touching files.
-  await closeActiveDatabase();
+  // touching files. (No set is loaded until the fresh one below exists,
+  // so nothing running in the background can reopen a file being deleted.)
+  setActiveImagesDirName(null);
+  await closeActiveDatabase(null);
 
   for (const set of allSets) {
     await deleteWalletSetFiles(set.id);
   }
   await registryDb.runAsync(`DELETE FROM wallet_sets`);
-  activeDatabaseFileName = null;
-  setActiveImagesDirName(null);
 
   // Recreate the single starting set, exactly what a brand-new install
   // gets from initWalletSets' own first-run migration below - Reset All
@@ -1707,7 +1718,8 @@ export async function deleteWalletSet(id) {
 
   const wasActive = !!target.is_active;
   if (wasActive) {
-    await closeActiveDatabase();
+    setActiveImagesDirName(null);
+    await closeActiveDatabase(null);
   }
   await deleteWalletSetFiles(id);
   await registryDb.runAsync(`DELETE FROM wallet_sets WHERE id = ?`, [id]);

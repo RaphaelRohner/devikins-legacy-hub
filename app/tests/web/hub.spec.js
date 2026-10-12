@@ -210,3 +210,31 @@ test('new wallet sets are called "Wallet set 1", "Wallet set 2", ...', async ({ 
   await page.getByText('Create', { exact: true }).click(); // no name typed
   await expect(page.getByText('Wallet set 2', { exact: true })).toBeVisible();
 });
+
+test('Reset All Data works even while the Hub is busy in the background', async ({ page }) => {
+  const dialogs = await openHub(page);
+  // Start a fetch with slow answers from Moonlabs, so the Hub is still
+  // saving NFTs while the reset runs (like with a big real collection).
+  await openMenuEntry(page, 'Wallets');
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
+  await goBack(page);
+  fake.metadataDelayMs = 150;
+  await openMenuEntry(page, 'Fetch/Update');
+  await page.waitForTimeout(600);
+
+  await openMenuEntry(page, 'Wallets');
+  await page.getByText('Danger zone').locator('xpath=..').getByRole('switch').click();
+  await page.getByText('Reset All Data', { exact: true }).click();
+  await expect.poll(() => dialogs.join('\n')).toMatch(/Reset all data\?/);
+  await expect(page.getByText(TEST_WALLET)).toHaveCount(0);
+  await page.waitForTimeout(3000);
+  expect(dialogs.join('\n')).not.toMatch(/didn't complete|went wrong/);
+
+  // The fresh set works: a wallet can be added and fetched again.
+  fake.metadataDelayMs = 0;
+  await goBack(page);
+  await addWalletAndFetch(page, fake);
+  await expect(page.getByText('#101', { exact: true })).toBeVisible();
+});
