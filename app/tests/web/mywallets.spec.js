@@ -63,3 +63,53 @@ test('the set marked "My wallets" also shows the Withdrawals list NFTs, with whe
   await openMenuEntry(page, 'Weapons');
   await expect(page.getByText('#3265', { exact: true })).toHaveCount(0);
 });
+
+test('exporting the "My wallets" set on its own also takes the IDs along', async ({ page, browser }, testInfo) => {
+  fake.chain.holders.set('weapon:3265', GAME_MAIN_WALLET);
+  fake.extraNfts.set('weapon:3265', { name: 'Rusty Test Wand #3265', attributes: { Rarity: 'Common', Type: 'Wand', Quality: 'Rusty' } });
+
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  await openMenuEntry(page, 'Withdrawals');
+  await page.locator('textarea').fill('W3265');
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText('All (1)')).toBeVisible();
+  await goBack(page);
+  await openMenuEntry(page, 'Wallets');
+  await switchNear(page, 'My wallets').click();
+  await goBack(page);
+  await openMenuEntry(page, 'Weapons');
+  await openMenuEntry(page, 'Fetch/Update');
+  await expect(page.getByText('3 Weapons')).toBeVisible({ timeout: 60_000 });
+
+  // Export just this one set (its own Export button, not "Export all sets").
+  await openMenuEntry(page, 'Wallets');
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByText('Export', { exact: true }).first().click(),
+  ]);
+  const zipPath = testInfo.outputPath('my-set.zip');
+  await download.saveAs(zipPath);
+
+  // A brand-new browser: import, load the set, mark it as mine.
+  const context2 = await browser.newContext();
+  const fake2 = await installFakeServers(context2);
+  fake2.chain.holders.set('weapon:3265', GAME_MAIN_WALLET);
+  const page2 = await context2.newPage();
+  const dialogs = await openHub(page2);
+  await openMenuEntry(page2, 'Wallets');
+  const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import a set').click()]);
+  await chooser.setFiles(zipPath);
+  await expect.poll(() => dialogs.join('\n')).toMatch(/Withdrawals tracker: 1 NFT/);
+  await page2.getByText(/\(imported\)$/).first().click();
+  await expect(page2.getByText(/Wallets in ".*\(imported\)"/)).toBeVisible();
+  await switchNear(page2, 'My wallets').click();
+  await expect(page2.getByText(/This is your own set/)).toBeVisible();
+  await expect(page2.getByText(/Your IDs \(1\)/)).toBeVisible();
+  await goBack(page2);
+
+  // #3265 shows straight away - no new fetch needed.
+  await openMenuEntry(page2, 'Weapons');
+  await expect(page2.getByText('3 Weapons')).toBeVisible();
+  await context2.close();
+});

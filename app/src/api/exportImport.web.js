@@ -37,7 +37,9 @@ import {
   restoreWalletSetData,
   dumpWithdrawalTracker,
   restoreWithdrawalTracker,
+  getGlobalSetting,
 } from '../db/database';
+import { MY_WALLETS_SET_KEY } from '../constants/idList';
 import { ensureCachedImage, putCachedImageBytes, extensionFromUrl } from './webImageCache';
 
 const NFT_KINDS = ['devikin', 'weapon', 'equipment'];
@@ -134,9 +136,21 @@ function buildZip(files, setSummaries) {
   return URL.createObjectURL(blob);
 }
 
+async function isMyWalletsSet(walletSet) {
+  const mine = await getGlobalSetting(MY_WALLETS_SET_KEY).catch(() => null);
+  return mine !== null && mine !== undefined && String(mine) === String(walletSet.id);
+}
+
 export async function exportWalletSet(walletSet, { onProgress } = {}) {
   const files = {};
   await addWalletSetFiles(files, walletSet, onProgress);
+  // The set marked "My wallets" also carries the Withdrawals list (your IDs),
+  // so its NFTs from that list show again after importing it elsewhere
+  // (Raphael, 12 Oct 2026: imported his set in Safari, the IDs were missing).
+  if (await isMyWalletsSet(walletSet)) {
+    const tracker = await dumpWithdrawalTracker();
+    if (tracker) files['withdrawals.json'] = strToU8(JSON.stringify(tracker));
+  }
   onProgress?.({ phase: 'writing', setName: walletSet.name });
   const fileUri = buildZip(files, [{ id: walletSet.id, name: walletSet.name }]);
   return { fileUri, fileName: `devikins-${sanitizeForFileName(walletSet.name)}-${timestampForFileName()}.zip` };

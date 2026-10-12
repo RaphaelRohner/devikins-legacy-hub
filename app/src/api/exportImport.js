@@ -113,7 +113,8 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { Platform } from 'react-native';
 import { Zip, ZipPassThrough, strToU8, strFromU8 } from 'fflate';
-import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSetRowCounts, dumpWalletSetData, restoreWalletSetData, dumpWithdrawalTracker, restoreWithdrawalTracker } from '../db/database';
+import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSetRowCounts, dumpWalletSetData, restoreWalletSetData, dumpWithdrawalTracker, restoreWithdrawalTracker, getGlobalSetting } from '../db/database';
+import { MY_WALLETS_SET_KEY } from '../constants/idList';
 
 // Bumped only if a future change to what's INSIDE an export (the shape
 // of manifest.json, what folders/files exist) would need the import
@@ -648,6 +649,11 @@ function pathPrefixForSet(walletSet) {
  * next (Save to a folder he picks, and/or Share via the OS share sheet
  * - his own explicit request to support both rather than picking one).
  */
+async function isMyWalletsSet(walletSet) {
+  const mine = await getGlobalSetting(MY_WALLETS_SET_KEY).catch(() => null);
+  return mine !== null && mine !== undefined && String(mine) === String(walletSet.id);
+}
+
 export async function exportWalletSet(walletSet, { onProgress } = {}) {
   const fileName = `devikins-${sanitizeForFileName(walletSet.name)}-${timestampForFileName()}.zip`;
   const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
@@ -655,6 +661,14 @@ export async function exportWalletSet(walletSet, { onProgress } = {}) {
   const stats = { totalRawBytes: 0 };
 
   await streamWalletSetIntoWriter(writer, walletSet, pathPrefixForSet(walletSet), onProgress, stats);
+  // The set marked "My wallets" also carries the Withdrawals list (your IDs),
+  // so its NFTs from that list show again after importing it elsewhere
+  // (Raphael, 12 Oct 2026: imported his set in another browser, the IDs
+  // were missing).
+  if (await isMyWalletsSet(walletSet)) {
+    const tracker = await dumpWithdrawalTracker();
+    if (tracker) await writer.addFile('withdrawals.json', strToU8(JSON.stringify(tracker)));
+  }
   await writer.addFile('export-manifest.json', strToU8(JSON.stringify(
     { formatVersion: EXPORT_FORMAT_VERSION, exportedAt: new Date().toISOString(), sets: [{ id: walletSet.id, name: walletSet.name }] },
     null,
