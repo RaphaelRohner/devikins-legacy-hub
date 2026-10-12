@@ -158,3 +158,27 @@ test('the tracker travels with a full backup into a new browser', async ({ page,
   expect(fake2.blocked).toEqual([]);
   await context2.close();
 });
+
+test('Reset All Data also empties the Withdrawals list', async ({ page }) => {
+  const dialogs = await openHub(page);
+  await openMenuEntry(page, 'Withdrawals');
+  await page.getByPlaceholder('klv1… (in-game wallet)').fill(IN_GAME);
+  await page.getByPlaceholder('klv1… (receiving wallet)').fill(RECEIVING);
+  await page.getByText('Save', { exact: true }).click();
+  await page.locator('textarea').fill('W3265 W1442');
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText(/2 added/)).toBeVisible();
+
+  await page.getByText('‹').first().click();
+  await openMenuEntry(page, 'Wallets');
+  await expect(page.getByText(/Your IDs \(2\)/)).toBeVisible();
+  await page.getByText('Danger zone').locator('xpath=..').getByRole('switch').click();
+  await page.getByText('Reset All Data', { exact: true }).click();
+  await expect.poll(() => dialogs.join('\n')).toMatch(/Reset all data\?/);
+  await expect(page.getByText(/Your IDs \(\d+\)/)).toHaveCount(0);
+
+  await page.getByText('‹').first().click();
+  await openMenuEntry(page, 'Withdrawals');
+  await expect(page.getByPlaceholder('klv1… (in-game wallet)')).toHaveValue('');
+  await expect(page.getByText(/W3265|#3265/)).toHaveCount(0);
+});

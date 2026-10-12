@@ -667,7 +667,7 @@ export default function WalletManager({
   function handleResetAllData() {
     Alert.alert(
       'Reset all data?',
-      'This deletes every wallet set, every saved wallet, and every Devikin, Weapon, and Equipment NFT stored on this phone, along with their downloaded images. This cannot be undone - your actual NFTs are safe on the blockchain either way, but you will need to re-add your wallet(s) and fetch again from scratch.',
+      'This deletes every wallet set, every saved wallet, every Devikin, Weapon, and Equipment NFT stored here (with their downloaded images), and your Withdrawals list with its IDs. Export a backup first if you want to keep anything. This cannot be undone - your actual NFTs are safe on the blockchain either way, but you will need to re-add your wallet(s) and fetch again from scratch.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -1150,7 +1150,7 @@ export default function WalletManager({
           {isDangerZoneVisible ? (
             <>
               <Text style={[styles.dangerZoneText, { color: colors.secondaryText }]}>
-                Wipes every wallet set, every saved wallet, and every stored NFT (and their downloaded images) - useful for testing the app again from a fresh start. Your actual NFTs on the blockchain are never affected. To clear out just one set instead, use its own Delete button above.
+                Wipes every wallet set, every saved wallet, every stored NFT (and their downloaded images) and your Withdrawals list - useful for testing the app again from a fresh start. Your actual NFTs on the blockchain are never affected. To clear out just one set instead, use its own Delete button above.
               </Text>
               <TouchableOpacity
                 style={[styles.resetButton, { backgroundColor: colors.statusFailedBackground }, isBusy && { opacity: 0.5 }]}

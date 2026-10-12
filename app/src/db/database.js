@@ -472,6 +472,18 @@ export async function resetAllData() {
   }
   await registryDb.runAsync(`DELETE FROM wallet_sets`);
 
+  // The Withdrawals list, its arrivals log and settings, "My wallets" and
+  // the Getting started ticks live next to the sets (not inside one), so
+  // they're cleared here too - a reset really starts from scratch (Raphael
+  // found his 1628 IDs still there after a reset, 12 Oct 2026). Display
+  // choices (List/Tiles, Hide blanks, Light/Dark) and the anonymous Hub
+  // counter id are kept.
+  await getWithdrawalDb();
+  await registryDb.execAsync(`DELETE FROM withdrawal_items; DELETE FROM withdrawal_arrivals;`);
+  await registryDb.runAsync(
+    `DELETE FROM global_settings WHERE key LIKE 'withdraw_%' OR key LIKE 'guide_%' OR key = 'my_wallets_set_id'`
+  );
+
   // Recreate the single starting set, exactly what a brand-new install
   // gets from initWalletSets' own first-run migration below - Reset All
   // Data should leave the app in that same "just installed" state, not
