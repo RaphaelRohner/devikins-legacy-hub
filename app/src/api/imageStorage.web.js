@@ -15,7 +15,7 @@
  * app doesn't need to know the difference.
  */
 
-import { ensureCachedImage } from './webImageCache';
+import { ensureCachedImage, pruneCachedImages } from './webImageCache';
 
 export function setActiveImagesDirName() {}
 
@@ -31,3 +31,9 @@ export async function fetchImageEtag() {
 }
 
 export async function deleteStoredImagesForDir() {}
+
+// Removes stored pictures no wallet set uses any more (see database.js's
+// pruneUnusedStoredImages). `keepUrls` is every picture address still used.
+export async function pruneStoredImages(keepUrls) {
+  return pruneCachedImages(keepUrls);
+}

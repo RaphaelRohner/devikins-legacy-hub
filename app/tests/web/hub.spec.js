@@ -231,6 +231,8 @@ test('Reset All Data works even while the Hub is busy in the background', async 
   await expect(page.getByText(TEST_WALLET)).toHaveCount(0);
   await page.waitForTimeout(3000);
   expect(dialogs.join('\n')).not.toMatch(/didn't complete|went wrong/);
+  // No stored pictures are left behind either.
+  await expect.poll(async () => (await storedPictureUrls(page)).length).toBe(0);
 
   // The fresh set works: a wallet can be added and fetched again.
   fake.metadataDelayMs = 0;
@@ -345,4 +347,25 @@ test('the Wallets screen shows how much space the sets use', async ({ page }) =>
   // The loaded set shows its own size instead of 0 MB.
   await expect(page.getByText(/^[\d.]+ KB$|^[\d.]+ MB$/).first()).toBeVisible();
   await expect(page.getByText('0 MB', { exact: true })).toHaveCount(0);
+});
+
+test('pictures no set uses any more are removed after deleting a set', async ({ page }) => {
+  const dialogs = await openHub(page);
+  await addWalletAndFetch(page, fake);
+  await expect.poll(async () => (await storedPictureUrls(page)).length).toBe(6);
+
+  // Reloading keeps them: the set still uses them.
+  await page.reload();
+  await expect(page.getByText('#101', { exact: true })).toBeVisible();
+  await page.waitForTimeout(1000);
+  expect((await storedPictureUrls(page)).length).toBe(6);
+
+  // A second, empty set; then delete the first one.
+  await openMenuEntry(page, 'Wallets');
+  await page.getByText('+ New set', { exact: true }).click();
+  await page.getByText('Create', { exact: true }).click();
+  await expect(page.getByText('Wallet set 2').first()).toBeVisible();
+  await page.getByText('Wallet set 1', { exact: true }).locator('xpath=../..').getByText('Delete', { exact: true }).click();
+  await expect.poll(() => dialogs.join('\n')).toMatch(/Delete/);
+  await expect.poll(async () => (await storedPictureUrls(page)).length).toBe(0);
 });

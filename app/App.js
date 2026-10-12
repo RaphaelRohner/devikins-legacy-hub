@@ -67,6 +67,7 @@ import {
   setGlobalSetting,
   countPendingRetries,
   countWithdrawalItems,
+  pruneUnusedStoredImages,
 } from './src/db/database';
 import { ID_LIST_OWNER, MY_WALLETS_SET_KEY } from './src/constants/idList';
 import {
@@ -576,6 +577,10 @@ function AppContent() {
         setCurrentScreen('wallets');
       }
       setIsDatabaseReady(true);
+
+      // Website: quietly remove stored pictures that no wallet set uses any
+      // more (left over from deleted sets or an older reset).
+      if (Platform.OS === 'web') pruneUnusedStoredImages();
 
       // Anonymous "hello" for the people/visits count on the About screen
       // (see src/api/usage.js). Runs in the background and never blocks

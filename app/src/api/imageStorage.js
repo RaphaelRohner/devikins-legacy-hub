@@ -262,3 +262,10 @@ export async function deleteStoredImagesForDir(dirName) {
     await FileSystem.deleteAsync(dir, { idempotent: true });
   }
 }
+
+// Website only (see imageStorage.web.js). On the phone each set has its own
+// picture folder, which is deleted together with the set, so there's
+// nothing left over to clean up.
+export async function pruneStoredImages() {
+  return 0;
+}

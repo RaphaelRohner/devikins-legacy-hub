@@ -33,7 +33,7 @@
 
 import * as SQLite from 'expo-sqlite';
 import { TRAIT_COLUMNS, RARITY_ORDER } from '../constants/schema';
-import { setActiveImagesDirName, deleteStoredImagesForDir } from '../api/imageStorage';
+import { setActiveImagesDirName, deleteStoredImagesForDir, pruneStoredImages } from '../api/imageStorage';
 
 // Which wallet set's own database FILE is currently active - see the
 // "Wallet sets" section near the bottom of this file. Starts out
@@ -493,6 +493,7 @@ export async function resetAllData() {
   activeDatabaseFileName = freshRow.db_file_name;
   setActiveImagesDirName(freshRow.images_dir_name);
   await initDatabase();
+  await pruneUnusedStoredImages();
 }
 
 /**
@@ -1362,6 +1363,39 @@ export async function checkpointWalletSetForExport(dbFileName) {
   }
 }
 
+// Website: pictures are stored once for all sets together (see
+// imageStorage.web.js), so deleting a set can't simply delete "its" folder.
+// This collects every picture address any remaining set still uses and
+// removes all other stored pictures. Does nothing on the phone. Called
+// after deleting a set, after Reset All Data, and once at start-up.
+export async function pruneUnusedStoredImages() {
+  try {
+    await ensureRegistryTablesExist();
+    const registryDb = await getRegistryDatabase();
+    const sets = await registryDb.getAllAsync(`SELECT db_file_name FROM wallet_sets`);
+    const keep = new Set();
+    for (const set of sets) {
+      const active = set.db_file_name === activeDatabaseFileName && databaseConnectionPromise;
+      let db = null;
+      try {
+        db = active ? await databaseConnectionPromise : await SQLite.openDatabaseAsync(set.db_file_name);
+        for (const kind of ['devikin', 'weapon', 'equipment']) {
+          const rows = await db.getAllAsync(`SELECT image FROM ${kind} WHERE image IS NOT NULL`).catch(() => []);
+          for (const row of rows) keep.add(row.image);
+        }
+      } catch (e) {
+        // A set that can't be read right now: keep everything, to be safe.
+        return 0;
+      } finally {
+        if (db && !active) await db.closeAsync().catch(() => {});
+      }
+    }
+    return await pruneStoredImages(keep);
+  } catch (e) {
+    return 0;
+  }
+}
+
 // How many bytes one wallet set's database takes, asked from SQLite itself
 // (pages x page size). Used by the website's storage line, where there are
 // no files to measure (see src/api/storageStats.web.js). Like the export
@@ -1765,6 +1799,7 @@ export async function deleteWalletSet(id) {
     activeDatabaseFileName = null;
     setActiveImagesDirName(null);
   }
+  await pruneUnusedStoredImages();
 }
 
 /**
