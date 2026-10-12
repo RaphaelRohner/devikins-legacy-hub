@@ -299,3 +299,16 @@ test("the browser's back button works like the phone's Back button", async ({ pa
   await page.goBack();
   await expect.poll(() => page.url()).not.toContain('/devikins-legacy-hub');
 });
+
+test('an address that is not a Klever address is refused', async ({ page }) => {
+  const dialogs = await openHub(page);
+  await openMenuEntry(page, 'Wallets');
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill('abtdfghjkl');
+  await page.getByText('Add', { exact: true }).click();
+  await expect.poll(() => dialogs.join('\n')).toMatch(/Not a Klever address/);
+  await expect(page.getByText('abtdfghjkl', { exact: true })).toHaveCount(0);
+  // A real one still works.
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
+});

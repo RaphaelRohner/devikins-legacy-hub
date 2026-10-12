@@ -74,6 +74,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { isValidKleverAddress } from '../api/withdrawalTracker';
 import {
   View,
   Text,
@@ -125,6 +126,17 @@ import {
 // asking Share/Save, the website stores no pictures, and there's a
 // "Connect Klever Extension" button.
 const IS_WEB = Platform.OS === 'web';
+
+// A Klever address is "klv1" plus 58 letters/digits (no b, i, o or 1).
+// Anything else is refused right away, so typos never end up in the list.
+function refuseInvalidAddress(address) {
+  if (isValidKleverAddress(address)) return false;
+  Alert.alert(
+    'Not a Klever address',
+    'A Klever wallet address starts with "klv1" and is 62 characters long. Please check it and try again.'
+  );
+  return true;
+}
 
 export default function WalletManager({
   wallets,
@@ -284,6 +296,7 @@ export default function WalletManager({
   async function handleAdd() {
     const trimmedAddress = newAddressInput.trim();
     if (!trimmedAddress) return;
+    if (refuseInvalidAddress(trimmedAddress)) return;
 
     // This is the very first wallet ever added if the list App.js
     // handed us is still empty right now - a one-time heads-up that the
@@ -360,6 +373,7 @@ export default function WalletManager({
   async function handleSaveEdit(id) {
     const trimmedAddress = editAddressInput.trim();
     if (!trimmedAddress) return;
+    if (refuseInvalidAddress(trimmedAddress)) return;
     await updateWalletAddress(id, trimmedAddress, editAliasInput);
     setEditingId(null);
     setEditAddressInput('');
