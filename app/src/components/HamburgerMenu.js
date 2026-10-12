@@ -33,7 +33,7 @@
  * calling back up to App.js to say what was tapped.
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Platform, Linking, ScrollView } from 'react-native';
 import { KLEVERSCAN_URL } from './KleverscanView';
 import { DONATION_ADDRESS } from '../constants/donation';
@@ -186,13 +186,15 @@ export default function HamburgerMenu({
 
   // Which categories are open. Every time the menu opens, it starts tidy:
   // only the category of the current screen is open, the rest are closed.
-  const [openGroups, setOpenGroups] = useState(() => new Set(['browse']));
-  useEffect(() => {
-    if (!visible) return;
-    const current = groups.find((g) => g.items.some((e) => e.screen && e.screen === currentScreen));
-    setOpenGroups(new Set(current ? [current.key] : []));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, currentScreen]);
+  // This is decided while the menu is being drawn (not a moment later),
+  // so a quick tap on a category right after opening is never undone.
+  const currentGroupKey = groups.find((g) => g.items.some((e) => e.screen && e.screen === currentScreen))?.key;
+  const [openGroups, setOpenGroups] = useState(() => new Set(currentGroupKey ? [currentGroupKey] : []));
+  const [wasVisible, setWasVisible] = useState(visible);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
+    if (visible) setOpenGroups(new Set(currentGroupKey ? [currentGroupKey] : []));
+  }
   function toggleGroup(key) {
     setOpenGroups((prev) => {
       const next = new Set(prev);
