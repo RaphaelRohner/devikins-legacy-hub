@@ -1362,6 +1362,31 @@ export async function checkpointWalletSetForExport(dbFileName) {
   }
 }
 
+// How many bytes one wallet set's database takes, asked from SQLite itself
+// (pages x page size). Used by the website's storage line, where there are
+// no files to measure (see src/api/storageStats.web.js). Like the export
+// checkpoint above, a set that isn't loaded gets a short-lived connection.
+export async function getWalletSetDatabaseBytes(dbFileName) {
+  async function measure(db) {
+    const count = await db.getFirstAsync('PRAGMA page_count;');
+    const size = await db.getFirstAsync('PRAGMA page_size;');
+    return (Number(count?.page_count) || 0) * (Number(size?.page_size) || 0);
+  }
+  if (dbFileName === activeDatabaseFileName && databaseConnectionPromise) {
+    return measure(await databaseConnectionPromise);
+  }
+  try {
+    const tempDb = await SQLite.openDatabaseAsync(dbFileName);
+    try {
+      return await measure(tempDb);
+    } finally {
+      await tempDb.closeAsync();
+    }
+  } catch (err) {
+    return 0;
+  }
+}
+
 // V3.2 (2026-09-27): reads every row of one wallet set's own tables -
 // used for export INSTEAD OF copying the database FILE's raw bytes (the
 // original approach - see exportImport.js's own header comment and
