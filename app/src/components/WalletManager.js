@@ -937,7 +937,9 @@ export default function WalletManager({
                         {isActive ? 'Active - loaded now' : 'Tap to load'}
                       </Text>
                       <Text style={[styles.setStorageText, { color: colors.secondaryText }]}>
-                        {isCalculatingStorage ? '...' : formatBytes(storageBytesById[set.id] ?? 0)}
+                        {isCalculatingStorage
+                          ? '...'
+                          : `${formatBytes(storageBytesById[set.id] ?? 0)}${totalIncludesSharedPictures ? ' (just NFT data, no pictures)' : ''}`}
                       </Text>
                     </TouchableOpacity>
                     <View style={[styles.walletRowButtons, isThisSetExporting && styles.walletRowButtonsExporting]}>

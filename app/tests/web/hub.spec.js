@@ -344,8 +344,8 @@ test('the Wallets screen shows how much space the sets use', async ({ page }) =>
   await addWalletAndFetch(page, fake);
   await openMenuEntry(page, 'Wallets');
   await expect(page.getByText(/Total storage used: [\d.]+ (KB|MB) - 1 set plus the pictures they share/)).toBeVisible();
-  // The loaded set shows its own size instead of 0 MB.
-  await expect(page.getByText(/^[\d.]+ KB$|^[\d.]+ MB$/).first()).toBeVisible();
+  // The loaded set shows its own size instead of 0 MB, marked as data only.
+  await expect(page.getByText(/^[\d.]+ (KB|MB) \(just NFT data, no pictures\)$/).first()).toBeVisible();
   await expect(page.getByText('0 MB', { exact: true })).toHaveCount(0);
 });
 
