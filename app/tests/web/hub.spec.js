@@ -238,3 +238,21 @@ test('Reset All Data works even while the Hub is busy in the background', async 
   await addWalletAndFetch(page, fake);
   await expect(page.getByText('#101', { exact: true })).toBeVisible();
 });
+
+test('menu categories open and close, and the menu starts tidy each time', async ({ page }) => {
+  await openHub(page);
+  const menu = page.locator('[role="dialog"][aria-modal="true"]').filter({ hasText: 'Menu' }).last();
+  const menuText = async () => (await menu.innerText()).replace(/\s+/g, ' ');
+  await page.getByText('☰').first().click();
+  await expect.poll(menuText).toMatch(/Browse NFTs ▾ Devikins Weapons Equipment Tools ▸/);
+  await menu.getByText('Tools', { exact: true }).click();
+  await expect.poll(menuText).toMatch(/Tools ▾ Withdrawals/);
+  await menu.getByText('Tools', { exact: true }).click();
+  await expect.poll(menuText).toMatch(/Tools ▸ Help/);
+  // Open Tools again, close the menu, reopen: only the current screen's
+  // category (Browse NFTs) is open.
+  await menu.getByText('Tools', { exact: true }).click();
+  await menu.getByText('✕', { exact: true }).click();
+  await page.getByText('☰').first().click();
+  await expect.poll(menuText).toMatch(/Browse NFTs ▾ Devikins Weapons Equipment Tools ▸ Help ▸/);
+});

@@ -184,13 +184,13 @@ export default function HamburgerMenu({
   const groups = GROUPS.map((g) => ({ ...g, items: g.entries.map((k) => entryByKey[k]).filter(Boolean) }));
   const looseEntries = entries.filter((e) => !GROUPS.some((g) => g.entries.includes(e.key)));
 
-  // Which categories are open. When the menu opens, the category of the
-  // current screen is opened (others keep how they were left).
+  // Which categories are open. Every time the menu opens, it starts tidy:
+  // only the category of the current screen is open, the rest are closed.
   const [openGroups, setOpenGroups] = useState(() => new Set(['browse']));
   useEffect(() => {
     if (!visible) return;
     const current = groups.find((g) => g.items.some((e) => e.screen && e.screen === currentScreen));
-    if (current) setOpenGroups((prev) => (prev.has(current.key) ? prev : new Set([...prev, current.key])));
+    setOpenGroups(new Set(current ? [current.key] : []));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, currentScreen]);
   function toggleGroup(key) {
