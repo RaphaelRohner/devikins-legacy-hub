@@ -32,10 +32,12 @@
     "web": "expo start --web",
     "test": "expo export -p web && playwright test",
     "test:quick": "playwright test",
-    "test:report": "playwright show-report test-report"
+    "test:report": "playwright show-report test-report",
+    "postinstall": "patch-package"
   },
   "private": true,
   "devDependencies": {
-    "@playwright/test": "^1.56.1"
+    "@playwright/test": "^1.56.1",
+    "patch-package": "^8.0.0"
   }
 }

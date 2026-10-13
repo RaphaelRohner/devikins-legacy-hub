@@ -406,3 +406,32 @@ test('while one set exports, its row keeps a readable layout', async ({ page }) 
   expect(box.width).toBeGreaterThan(80);
   expect(box.height).toBeLessThan(40);
 });
+
+test('a backup with four sets imports completely (enough database room)', async ({ page, browser }, testInfo) => {
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  await openMenuEntry(page, 'Wallets');
+  for (let i = 0; i < 3; i += 1) {
+    await page.getByText('+ New set', { exact: true }).click();
+    await page.getByText('Create', { exact: true }).click();
+    await expect(page.getByText(`Wallets in "Wallet set ${i + 2}"`)).toBeVisible();
+    await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
+    await page.getByText('Add', { exact: true }).click();
+    await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
+  }
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByText('Export all sets').click()]);
+  const zipPath = testInfo.outputPath('four-sets.zip');
+  await download.saveAs(zipPath);
+
+  const context2 = await browser.newContext();
+  await installFakeServers(context2);
+  const page2 = await context2.newPage();
+  const dialogs = await openHub(page2);
+  await openMenuEntry(page2, 'Wallets');
+  const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import a set').click()]);
+  await chooser.setFiles(zipPath);
+  await expect.poll(() => dialogs.join('\n'), { timeout: 30_000 }).toMatch(/Import complete|went wrong/);
+  expect(dialogs.join('\n')).toMatch(/Wallet set 4 \(imported\)/);
+  expect(dialogs.join('\n')).not.toMatch(/went wrong/);
+  await context2.close();
+});

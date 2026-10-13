@@ -1,0 +1,20 @@
+diff --git a/node_modules/expo-sqlite/web/wa-sqlite/AccessHandlePoolVFS.js b/node_modules/expo-sqlite/web/wa-sqlite/AccessHandlePoolVFS.js
+index 046fe6f..6b8b5e7 100644
+--- a/node_modules/expo-sqlite/web/wa-sqlite/AccessHandlePoolVFS.js
++++ b/node_modules/expo-sqlite/web/wa-sqlite/AccessHandlePoolVFS.js
+@@ -230,8 +230,13 @@ export class AccessHandlePoolVFS extends FacadeVFS {
+       this.#directoryHandle = handle;
+ 
+       await this.#acquireAccessHandles();
+-      if (this.getCapacity() === 0) {
+-        await this.addCapacity(DEFAULT_CAPACITY);
++      // Devikins Legacy Hub: every wallet set is its own database (plus a
++      // journal file), so 6 files run out after about two sets ("unable to
++      // open database file" when importing four sets, 13 Oct 2026). Keep
++      // at least HUB_MIN_CAPACITY files ready - also for existing visitors.
++      const HUB_MIN_CAPACITY = 64;
++      if (this.getCapacity() < HUB_MIN_CAPACITY) {
++        await this.addCapacity(HUB_MIN_CAPACITY - this.getCapacity());
+       }
+     }
+     return true;
