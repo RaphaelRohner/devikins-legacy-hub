@@ -82,7 +82,10 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   await expect(page.getByText(/Weapon #3265 · from klv1ssss/)).toBeVisible(); // arrivals log
 
   // Narrow and sort: weapons still in the game, by number
-  await page.getByText('Weapons', { exact: true }).last().click();
+  // The kind chips say how many of each are on the whole list.
+  await expect(page.getByText('All kinds (5)', { exact: true })).toBeVisible();
+  await expect(page.getByText('Equipment (1)', { exact: true })).toBeVisible();
+  await page.getByText('Weapons (3)', { exact: true }).click();
   await page.getByText('Still in the game', { exact: true }).click();
   await page.getByText('ID ↑', { exact: true }).click();
   const shown = await page.locator('div[tabindex="0"]').filter({ hasText: /^.?(Weapon|Equipment|Devikin) #\d+/ }).allInnerTexts();
@@ -91,7 +94,7 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   await page.getByText('Anywhere', { exact: true }).click();
   const shown2 = await page.locator('div[tabindex="0"]').filter({ hasText: /^.?(Weapon|Equipment|Devikin) #\d+/ }).allInnerTexts();
   expect(shown2.map((t) => t.match(/#(\d+)/)[1])).toEqual(['3265', '1450', '1442']);
-  await page.getByText('All kinds', { exact: true }).click();
+  await page.getByText('All kinds (5)', { exact: true }).click();
   await page.getByText('Needs attention first', { exact: true }).click();
 
   // 5. 31 minutes later, #1442 still hasn't come: overdue
@@ -196,4 +199,25 @@ test('a long Withdrawals list scrolls in its own box', async ({ page }) => {
   const size = await box.evaluate((el) => ({ shown: el.clientHeight, full: el.scrollHeight }));
   expect(size.shown).toBeLessThanOrEqual(430);
   expect(size.full).toBeGreaterThan(size.shown); // the rest is reached by scrolling inside the box
+});
+
+test('"Check selected" looks up exactly the selected NFTs', async ({ page }) => {
+  fake.chain.holders.set('weapon:3265', IN_GAME);
+  fake.chain.holders.set('weapon:1442', IN_GAME);
+  await openHub(page);
+  await openMenuEntry(page, 'Withdrawals');
+  await page.getByPlaceholder('klv1… (in-game wallet)').fill(IN_GAME);
+  await page.getByPlaceholder('klv1… (receiving wallet)').fill(RECEIVING);
+  await page.getByText('Save', { exact: true }).click();
+  await page.locator('textarea').fill('W3265 W1442');
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText(/2 added/)).toBeVisible();
+
+  const lookups = (nonce) => fake.requests.filter((u) => u.includes('/assets/nft/holder/') && u.endsWith(`/${nonce}`)).length;
+  await row(page, 'Weapon #1442').click();
+  await expect(page.getByText('1 selected')).toBeVisible();
+  await page.getByText('Check selected', { exact: true }).click();
+  await expect(page.getByText(/Last check:/)).toBeVisible();
+  expect(lookups(1442)).toBe(1);
+  expect(lookups(3265)).toBe(0);
 });

@@ -225,6 +225,15 @@ export default function WithdrawalTrackerView({ onClose }) {
     [withStatus, kindFilter, placeFilter]
   );
 
+  // How many of each kind are on the whole list - shown on the kind chips,
+  // so it's always clear what the list holds in total (13 Oct 2026: with
+  // "Equipment" picked, "Select all" + "Remove" only removed the Equipment).
+  const kindCounts = useMemo(() => {
+    const c = { all: items.length, devikin: 0, weapon: 0, equipment: 0 };
+    for (const i of items) c[i.kind] = (c[i.kind] || 0) + 1;
+    return c;
+  }, [items]);
+
   const counts = useMemo(() => {
     const c = { all: narrowed.length, requested: 0, overdue: 0, arrived: 0, 'not-requested': 0 };
     for (const i of narrowed) {
@@ -346,7 +355,9 @@ export default function WithdrawalTrackerView({ onClose }) {
     ]);
   }
 
-  async function check(full) {
+  // full = look up every NFT on the list; onlyItems = look up exactly these
+  // (the "Check selected" button), whatever their state.
+  async function check(full, onlyItems = null) {
     if (!walletsReady || checking) return;
     setChecking(true);
     setCheckMessage('');
@@ -354,10 +365,10 @@ export default function WithdrawalTrackerView({ onClose }) {
     try {
       const knownHashes = new Set(arrivals.map((a) => a.tx_hash));
       const result = await runWithdrawalCheck({
-        items,
+        items: onlyItems || items,
         fromAddress,
         toAddress,
-        full,
+        full: onlyItems ? true : full,
         knownHashes,
         shouldCancel: () => cancelRef.current,
         onProgress: (p) => {
@@ -606,7 +617,7 @@ export default function WithdrawalTrackerView({ onClose }) {
                   }}
                 >
                   <Text style={{ color: value === o.key ? colors.primary : colors.secondaryText, fontSize: 12, fontWeight: value === o.key ? '700' : '400' }}>
-                    {o.label}
+                    {options === KIND_FILTERS ? `${o.label} (${kindCounts[o.key] ?? 0})` : o.label}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -647,6 +658,13 @@ export default function WithdrawalTrackerView({ onClose }) {
                 </TouchableOpacity>
                 <TouchableOpacity style={smallButton} onPress={() => markSelected(false)}>
                   <Text style={{ color: colors.text }}>Clear mark</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[smallButton, (checking || !walletsReady) && { opacity: 0.5 }]}
+                  onPress={() => check(true, selectedItems)}
+                  disabled={checking || !walletsReady}
+                >
+                  <Text style={{ color: colors.text, fontWeight: '700' }}>Check selected</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={smallButton} onPress={removeSelected}>
                   <Text style={{ color: colors.cancelText }}>Remove</Text>
