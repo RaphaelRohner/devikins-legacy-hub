@@ -67,6 +67,27 @@ export async function ensureCachedImage(url) {
   }
 }
 
+/**
+ * Downloads the picture again (skipping the browser's own cache) and
+ * replaces the stored copy - used to re-check pictures marked as blank,
+ * which Moonlabs may have fixed since (13 Oct 2026). Returns the new bytes,
+ * or null if the server didn't deliver a picture right now (the old copy
+ * then stays).
+ */
+export async function refreshCachedImage(url) {
+  if (!available() || !url) return null;
+  try {
+    const res = await fetch(url, { cache: 'reload' });
+    if (!res.ok) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.length < MIN_VALID_IMAGE_BYTES) return null;
+    await putCachedImageBytes(url, bytes, res.headers.get('content-type'));
+    return bytes;
+  } catch (e) {
+    return null;
+  }
+}
+
 /** Same file-extension rule as the phone app (imageStorage.js). */
 export function extensionFromUrl(url) {
   const match = String(url).match(/\.(png|jpe?g|gif|webp)(\?|$)/i);

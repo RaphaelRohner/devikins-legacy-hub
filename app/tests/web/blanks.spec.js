@@ -60,3 +60,18 @@ test('Hide blanks hides NFTs with missing or empty pictures, and steps aside for
   await blanksSwitch(page).click();
   await expect(page.getByText('#302', { exact: true })).toBeVisible();
 });
+
+test('a picture first stored as blank is checked again and shows once Moonlabs fixed it', async ({ page }) => {
+  await page.clock.install();
+  fake.blankPictures.set(IMAGE_URL.devikin(102), 'background');
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  await blanksSwitch(page).click();
+  await expect(page.getByText('#102', { exact: true })).toHaveCount(0);
+
+  // Moonlabs now delivers the full picture; the next hourly check (about a
+  // minute after opening) downloads blank-marked pictures again.
+  fake.blankPictures.delete(IMAGE_URL.devikin(102));
+  await page.clock.fastForward(65_000);
+  await expect(page.getByText('#102', { exact: true })).toBeVisible({ timeout: 30_000 });
+});

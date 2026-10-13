@@ -50,9 +50,13 @@ import {
   setImageQuality,
   getRowsNeedingImageCheck,
   getWithdrawalNonces,
+  getBlankImageRows,
 } from '../db/database';
 
 const IS_WEB_PLATFORM = Platform.OS === 'web';
+// Gap between two re-downloads of blank-marked pictures (website), so
+// Moonlabs' picture server isn't rushed.
+const BLANK_RECHECK_PAUSE_MS = 1500;
 const CONCURRENCY = 4; // "no more than 3-5 parallel requests" - see NOTES.md
 
 /**
@@ -330,6 +334,30 @@ export async function checkImageFreshnessForWallets(walletAddresses, { onProgres
       if (shouldCancel()) return;
 
       const { label } = COLLECTIONS[kind];
+
+      // Website: a browser can't ask Moonlabs whether a picture changed
+      // (no ETag there), so instead the pictures marked as blank are
+      // downloaded again, gently, and checked again - Moonlabs fixes some
+      // of them later (13 Oct 2026: Devikins first stored as blanks were
+      // meanwhile drawn, only without a face). Fixed ones show again with
+      // "Hide blanks" on.
+      if (IS_WEB_PLATFORM) {
+        const blankRows = await getBlankImageRows(kind, walletAddress);
+        let done = 0;
+        for (const row of blankRows) {
+          if (shouldCancel()) return;
+          await storeImage(kind, row.nonce, row.image, { forceRedownload: true });
+          await setImageQuality(kind, row.nonce, await judgeStoredImage(null, row.image));
+          done += 1;
+          onProgress({
+            phase: 'fetching', kind, label: `${label} (blank pictures re-check)`, completed: done, total: blankRows.length, skipped: 0,
+            walletAddress, walletIndex, walletTotal,
+          });
+          await pause(BLANK_RECHECK_PAUSE_MS);
+        }
+        continue;
+      }
+
       const rows = await getCachedImageRows(kind, walletAddress);
       if (rows.length === 0) continue;
 

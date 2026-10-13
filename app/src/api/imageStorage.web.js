@@ -15,12 +15,15 @@
  * app doesn't need to know the difference.
  */
 
-import { ensureCachedImage, pruneCachedImages } from './webImageCache';
+import { ensureCachedImage, pruneCachedImages, refreshCachedImage } from './webImageCache';
 
 export function setActiveImagesDirName() {}
 
-export async function storeImage(kind, nonce, remoteUrl) {
-  if (remoteUrl) await ensureCachedImage(remoteUrl);
+export async function storeImage(kind, nonce, remoteUrl, options = {}) {
+  if (remoteUrl) {
+    if (options.forceRedownload) await refreshCachedImage(remoteUrl);
+    else await ensureCachedImage(remoteUrl);
+  }
   return { localImagePath: null, etag: null };
 }
 

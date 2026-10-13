@@ -1200,6 +1200,17 @@ export async function updateLocalImagePath(kind, nonce, localImagePath, imageEta
  * existing path back in when it's only backfilling an ETag rather than
  * forcing a real re-download.
  */
+// Pictures marked as blank by the picture check (website re-check, see
+// fetchAllForWallet.js checkImageFreshnessForWallets).
+export async function getBlankImageRows(kind, ownerAddress) {
+  const db = await getDatabase();
+  return db.getAllAsync(
+    `SELECT nonce, image FROM ${kind}
+     WHERE owner_address = ? AND status = 'ok' AND image IS NOT NULL AND image_quality = 'blank'`,
+    [ownerAddress]
+  );
+}
+
 export async function getCachedImageRows(kind, ownerAddress) {
   const db = await getDatabase();
   return db.getAllAsync(
