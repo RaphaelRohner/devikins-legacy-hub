@@ -435,3 +435,33 @@ test('a backup with four sets imports completely (enough database room)', async 
   expect(dialogs.join('\n')).not.toMatch(/went wrong/);
   await context2.close();
 });
+
+test('sort: one tap on ↑ or ↓ picks field and direction and closes the sheet', async ({ page }) => {
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  const order = async () => {
+    const t = await page.locator('body').innerText();
+    return [...t.matchAll(/#(101|102)\b/g)].map((m) => m[1]).join(',');
+  };
+  await expect.poll(order).toBe('101,102'); // ID, lowest first
+
+  // Rarity ↑: Common (#102) before Rare (#101); the sheet closes by itself.
+  await page.getByText('↑ ID').click();
+  await expect(page.getByText('Sort by')).toBeVisible();
+  await page.getByLabel('Rarity ascending').click();
+  await expect(page.getByText('Sort by')).toHaveCount(0);
+  await expect(page.getByText('↑ Rarity')).toBeVisible();
+  await expect.poll(order).toBe('102,101');
+
+  // Rarity ↓: the other way round.
+  await page.getByText('↑ Rarity').click();
+  await page.getByLabel('Rarity descending').click();
+  await expect(page.getByText('↓ Rarity')).toBeVisible();
+  await expect.poll(order).toBe('101,102');
+
+  // ✕ closes without changing anything.
+  await page.getByText('↓ Rarity').click();
+  await page.getByLabel('Close').click();
+  await expect(page.getByText('Sort by')).toHaveCount(0);
+  await expect(page.getByText('↓ Rarity')).toBeVisible();
+});

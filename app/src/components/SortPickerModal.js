@@ -11,11 +11,10 @@
  * currently showing - see App.js's sortFieldOptions) plus the current
  * selection.
  *
- * Tapping a field that isn't the current one picks it (App.js gives it
- * a sensible starting direction - see handleSelectSortField there).
- * Tapping the field that's ALREADY active flips its direction instead -
- * same onSelect callback either way, App.js decides which happened by
- * comparing the tapped name to the current sortField.
+ * Each row has its own ↑ and ↓ buttons: one tap picks the field and the
+ * direction, and the sheet closes (13 Oct 2026). Tapping the field name
+ * itself uses that field's usual direction (see App.js's
+ * handleSelectSortField). ✕ closes without changing anything.
  *
  * Deliberately only covers part of the screen (see `sheet` below, not
  * a full-screen Modal like QrScannerModal.js) with a dim, tappable
@@ -48,36 +47,59 @@ export default function SortPickerModal({ visible, fields, sortField, sortDirect
           style={[styles.sheet, { backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }]}
         >
           <View style={styles.header}>
-            <Text style={[styles.title, { color: colors.text }]}>Sort by</Text>
-            <Text style={[styles.hint, { color: colors.secondaryText }]}>
-              Tap a field to sort by it - tap it again to flip the order.
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.title, { color: colors.text }]}>Sort by</Text>
+              <Text style={[styles.hint, { color: colors.secondaryText }]}>
+                Tap ↑ (lowest first) or ↓ (highest first) next to a field.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.closeButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+              onPress={onClose}
+              accessibilityLabel="Close"
+            >
+              <Text style={[styles.closeButtonText, { color: colors.text }]}>✕</Text>
+            </TouchableOpacity>
           </View>
 
           <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
             {fields.map((field) => {
               const isActive = field.name === sortField;
-              return (
-                <TouchableOpacity
-                  key={field.name}
-                  style={[styles.row, { borderBottomColor: colors.border }]}
-                  onPress={() => onSelect(field.name)}
-                >
-                  <Text
+              const arrowButton = (direction, symbol) => {
+                const isChosen = isActive && sortDirection === direction;
+                return (
+                  <TouchableOpacity
+                    key={direction}
                     style={[
-                      styles.rowLabel,
-                      { color: isActive ? colors.primary : colors.text },
-                      isActive && styles.rowLabelActive,
+                      styles.arrowButton,
+                      { borderColor: isChosen ? colors.primary : colors.border },
+                      isChosen && { backgroundColor: colors.primary },
                     ]}
+                    onPress={() => onSelect(field.name, direction)}
+                    accessibilityLabel={`${field.label} ${direction === 'asc' ? 'ascending' : 'descending'}`}
                   >
-                    {field.label}
-                  </Text>
-                  {isActive && (
-                    <Text style={[styles.rowArrow, { color: colors.primary }]}>
-                      {sortDirection === 'asc' ? '↑ Ascending' : '↓ Descending'}
+                    <Text style={[styles.arrowText, { color: isChosen ? colors.primaryText : colors.text }]}>{symbol}</Text>
+                  </TouchableOpacity>
+                );
+              };
+              return (
+                <View key={field.name} style={[styles.row, { borderBottomColor: colors.border }]}>
+                  <TouchableOpacity style={styles.rowNameButton} onPress={() => onSelect(field.name)}>
+                    <Text
+                      style={[
+                        styles.rowLabel,
+                        { color: isActive ? colors.primary : colors.text },
+                        isActive && styles.rowLabelActive,
+                      ]}
+                    >
+                      {field.label}
                     </Text>
-                  )}
-                </TouchableOpacity>
+                  </TouchableOpacity>
+                  <View style={styles.arrowGroup}>
+                    {arrowButton('asc', '↑')}
+                    {arrowButton('desc', '↓')}
+                  </View>
+                </View>
               );
             })}
           </ScrollView>
@@ -100,8 +122,43 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     paddingHorizontal: 20,
     paddingBottom: 8,
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 12,
+  },
+  closeButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  rowNameButton: {
+    flex: 1,
+    paddingVertical: 4,
+  },
+  arrowGroup: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  arrowButton: {
+    width: 44,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arrowText: {
+    fontSize: 18,
+    fontWeight: '700',
   },
   title: {
     fontSize: 17,
@@ -121,7 +178,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   rowLabel: {
@@ -129,9 +186,5 @@ const styles = StyleSheet.create({
   },
   rowLabelActive: {
     fontWeight: '700',
-  },
-  rowArrow: {
-    fontSize: 13,
-    fontWeight: '600',
   },
 });

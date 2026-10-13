@@ -445,13 +445,14 @@ function AppContent() {
   // "best" first reads more usefully for a stat or Rarity than
   // alphabetical-first would) except for ID, which defaults ascending
   // to match the app's own original, pre-Sort-feature default order.
-  function handleSelectSortField(fieldName) {
-    if (fieldName === sortField) {
-      setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortField(fieldName);
-      setSortDirection(fieldName === 'nonce' ? 'asc' : 'desc');
-    }
+  // One tap picks the field AND its direction (the ↑ / ↓ buttons in the
+  // Sort sheet), then the sheet closes (Raphael, 13 Oct 2026: having to
+  // click outside to close it felt clumsy). Tapping just the field name
+  // uses its usual direction: ID lowest first, everything else highest.
+  function handleSelectSortField(fieldName, direction) {
+    setSortField(fieldName);
+    setSortDirection(direction || (fieldName === 'nonce' ? 'asc' : 'desc'));
+    setIsSortPickerVisible(false);
   }
 
   // Progress info from fetchAllForWallets.js's onProgress callback, and
@@ -1417,7 +1418,7 @@ Continue anyway?`
           fields={sortFieldOptions}
           sortField={sortField}
           sortDirection={sortDirection}
-          onSelect={(fieldName) => handleSelectSortField(fieldName)}
+          onSelect={(fieldName, direction) => handleSelectSortField(fieldName, direction)}
           onClose={() => setIsSortPickerVisible(false)}
         />
         </>
