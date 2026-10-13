@@ -38,6 +38,6 @@
   "private": true,
   "devDependencies": {
     "@playwright/test": "^1.56.1",
-    "patch-package": "^8.0.0"
+    "patch-package": "^8.0.1"
   }
 }
