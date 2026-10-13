@@ -386,3 +386,23 @@ test('Fetch/Update without internet says so plainly and stops', async ({ page })
   await expect(page.getByText(/Checking scan size/)).toHaveCount(0);
   fake.offline = false;
 });
+
+test('while one set exports, its row keeps a readable layout', async ({ page }) => {
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  await openMenuEntry(page, 'Wallets');
+  // Make reading the stored pictures slow, so the export takes a while.
+  await page.evaluate(() => {
+    const match = Cache.prototype.match;
+    Cache.prototype.match = async function slowMatch(...args) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      return match.apply(this, args);
+    };
+  });
+  await page.getByText('Export', { exact: true }).first().click();
+  await expect(page.getByText(/^(Preparing export|Reading images|Exporting|Compressing|Writing file)/).first()).toBeVisible({ timeout: 3000 });
+  // The set's name block stays readable (not one letter per line).
+  const box = await page.getByText('Active - loaded now').boundingBox();
+  expect(box.width).toBeGreaterThan(80);
+  expect(box.height).toBeLessThan(40);
+});

@@ -935,10 +935,10 @@ export default function WalletManager({
                       <Text style={[styles.setNameText, { color: colors.text }]} numberOfLines={1}>
                         {set.name}
                       </Text>
-                      <Text style={[styles.setActiveBadge, { color: isActive ? colors.primary : colors.secondaryText }]}>
+                      <Text style={[styles.setActiveBadge, { color: isActive ? colors.primary : colors.secondaryText }]} numberOfLines={1}>
                         {isActive ? 'Active - loaded now' : 'Tap to load'}
                       </Text>
-                      <Text style={[styles.setStorageText, { color: colors.secondaryText }]}>
+                      <Text style={[styles.setStorageText, { color: colors.secondaryText }]} numberOfLines={1}>
                         {isCalculatingStorage
                           ? '...'
                           : `${formatBytes(storageBytesById[set.id] ?? 0)}${totalIncludesSharedPictures ? ' (just NFT data, no pictures)' : ''}`}
@@ -1279,7 +1279,14 @@ const styles = StyleSheet.create({
   // below can claim the rest of the row for the Export button instead
   // of the usual 50/50 flex split - see that style's own comment.
   setNameButtonCompact: {
-    flex: 0,
+    // While this set exports, the name block keeps its natural width (up
+    // to half the row) instead of being squeezed to one letter per line
+    // on the website (Raphael's screenshot, 13 Oct 2026).
+    flexGrow: 0,
+    flexShrink: 0,
+    flexBasis: 'auto',
+    maxWidth: '50%',
+    marginRight: 10,
   },
   setNameText: {
     fontSize: 14,
