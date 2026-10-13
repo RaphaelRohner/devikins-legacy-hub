@@ -146,6 +146,8 @@ test('a backup keeps names, stars and pictures, and imports into a new browser',
   await chooser.setFiles(zipPath);
   await expect.poll(() => dialogs.join('\n')).toMatch(/matched exactly/);
   await page2.getByText(/\(imported\)$/).first().click();
+  // Wait until the switch to the imported set has really finished.
+  await expect(page2.getByText(/\(imported\)$/).first().locator('xpath=..')).toContainText('Active - loaded now');
   await goBack(page2);
   // Data that's already there counts as fetched in the Getting started
   // checklist (no new fetch needed): wallet + fetch done, backup not yet.
@@ -464,4 +466,41 @@ test('sort: one tap on ↑ or ↓ picks field and direction and closes the sheet
   await page.getByLabel('Close').click();
   await expect(page.getByText('Sort by')).toHaveCount(0);
   await expect(page.getByText('↓ Rarity')).toBeVisible();
+});
+
+test('the Changelog shows a trait that changed between two fetches', async ({ page }) => {
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+
+  // First fetch: nothing has changed yet, so there's no Changelog button.
+  await page.getByText('#101', { exact: true }).click();
+  await expect(page.getByPlaceholder('Give this NFT a name (optional)')).toBeVisible();
+  await expect(page.getByText('Changelog', { exact: true })).toHaveCount(0);
+  await goBack(page);
+
+  // In the "game", #101 procreates once: Procreations Left goes 3 -> 2.
+  fake.extraNfts.set('devikin:101', {
+    name: 'Testy the Brave #101',
+    attributes: { Rarity: 'Rare', Ancestry: 'Faery', 'Life Stage': 'Adult', 'Procreations Left': 2 },
+  });
+  const asksFor101 = () => fake.requests.filter((u) => /\/101(\D|$)/.test(u) && !/\.png$/.test(u)).length;
+  const before = asksFor101();
+  await openMenuEntry(page, 'Fetch/Update');
+  await expect.poll(asksFor101, { timeout: 60_000 }).toBeGreaterThan(before);
+  await expect(page.getByText(/^\d+%$/)).toHaveCount(0, { timeout: 60_000 });
+
+  // Now #101 has a Changelog with that one change.
+  await page.getByText('#101', { exact: true }).click();
+  await page.getByText('Changelog', { exact: true }).click();
+  await expect(page.getByText(/Procreations Left: 3 → 2/i)).toBeVisible();
+
+  // #102 didn't change, so it still has no Changelog.
+  // Tap outside the Changelog to close it, then Back closes the NFT.
+  await page.mouse.click(5, 5);
+  await expect(page.getByText(/Procreations Left: 3 → 2/i)).toHaveCount(0);
+  await page.goBack();
+  await expect(page.getByPlaceholder('Give this NFT a name (optional)')).toHaveCount(0);
+  await page.getByText('#102', { exact: true }).click();
+  await expect(page.getByPlaceholder('Give this NFT a name (optional)')).toBeVisible();
+  await expect(page.getByText('Changelog', { exact: true })).toHaveCount(0);
 });
