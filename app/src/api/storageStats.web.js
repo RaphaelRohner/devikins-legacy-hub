@@ -6,14 +6,15 @@
  * measured on disk. A browser has no such files, so here:
  *   - each set shows the size of its own data (its database), asked from
  *     SQLite itself;
- *   - the total is what the browser reports the whole Hub uses, which also
- *     includes the stored pictures (those are shared by all sets, so they
- *     only count once).
+ *   - the total adds the stored pictures, counted by the Hub itself (they
+ *     are shared by all sets, so each counts once). Browsers' own figures
+ *     turned out too rough (Safari: 724 MB with nothing stored).
  * Before 12 Oct 2026 the website simply showed "0 MB" everywhere (Raphael
  * noticed it while testing S3).
  */
 
 import { getWalletSetDatabaseBytes } from '../db/database';
+import { measureCachedImages } from './webImageCache';
 
 export const AVERAGE_BYTES_PER_NFT = 112 * 1024;
 export const STORAGE_WARNING_THRESHOLD_BYTES = 200 * 1024 * 1024; // 200 MB
@@ -45,14 +46,8 @@ export async function getStorageBytesForSets(walletSets) {
     setsTotal += stats.totalBytes;
   }
 
-  // Everything the Hub keeps in this browser (data + pictures).
-  let browserTotal = 0;
-  try {
-    const estimate = await navigator.storage?.estimate?.();
-    browserTotal = Number(estimate?.usage) || 0;
-  } catch (e) {
-    browserTotal = 0;
-  }
+  // The stored pictures, counted by the Hub itself (all sets share them).
+  const pictures = await measureCachedImages(AVERAGE_BYTES_PER_NFT);
 
-  return { perSet, grandTotalBytes: Math.max(browserTotal, setsTotal), includesSharedPictures: browserTotal > 0 };
+  return { perSet, grandTotalBytes: setsTotal + pictures.bytes, includesSharedPictures: true, pictureCount: pictures.count };
 }

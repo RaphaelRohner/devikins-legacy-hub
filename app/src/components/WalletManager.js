@@ -202,6 +202,7 @@ export default function WalletManager({
   // Website: the total also counts the stored pictures, which all sets share
   // (see src/api/storageStats.web.js), so it's more than the sets added up.
   const [totalIncludesSharedPictures, setTotalIncludesSharedPictures] = useState(false);
+  const [storedPictureCount, setStoredPictureCount] = useState(null);
   const [totalStorageBytes, setTotalStorageBytes] = useState(null);
   const [isCalculatingStorage, setIsCalculatingStorage] = useState(false);
 
@@ -255,9 +256,10 @@ export default function WalletManager({
     setIsCalculatingStorage(true);
 
     getStorageBytesForSets(walletSets)
-      .then(({ perSet, grandTotalBytes, includesSharedPictures }) => {
+      .then(({ perSet, grandTotalBytes, includesSharedPictures, pictureCount }) => {
         if (cancelled) return;
         setTotalIncludesSharedPictures(Boolean(includesSharedPictures));
+        setStoredPictureCount(pictureCount ?? null);
         const byId = {};
         for (const set of perSet) byId[set.id] = set.totalBytes;
         setStorageBytesById(byId);
@@ -809,7 +811,7 @@ export default function WalletManager({
             {isCalculatingStorage
               ? 'Calculating storage used...'
               : totalIncludesSharedPictures
-                ? `Total storage used: ${formatBytes(totalStorageBytes ?? 0)} - ${walletSets.length} set${walletSets.length === 1 ? '' : 's'} plus the pictures they share`
+                ? `Total storage used: about ${formatBytes(totalStorageBytes ?? 0)} - ${walletSets.length} set${walletSets.length === 1 ? '' : 's'} plus ${(storedPictureCount ?? 0).toLocaleString()} stored picture${storedPictureCount === 1 ? '' : 's'} they share`
                 : `Total storage used: ${formatBytes(totalStorageBytes ?? 0)} across ${walletSets.length} set${walletSets.length === 1 ? '' : 's'}`}
           </Text>
 

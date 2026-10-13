@@ -38,7 +38,10 @@ export async function putCachedImageBytes(url, bytes, contentType) {
   if (!available() || !url || !bytes || bytes.length < MIN_VALID_IMAGE_BYTES) return false;
   try {
     const cache = await caches.open(CACHE_NAME);
-    await cache.put(url, new Response(bytes, { headers: { 'Content-Type': contentType || 'image/png' } }));
+    await cache.put(
+      url,
+      new Response(bytes, { headers: { 'Content-Type': contentType || 'image/png', 'X-Hub-Bytes': String(bytes.length) } })
+    );
     return true;
   } catch (e) {
     return false;
@@ -102,5 +105,28 @@ export async function pruneCachedImages(keepUrls) {
     return removed;
   } catch (e) {
     return 0;
+  }
+}
+
+/**
+ * How many pictures are stored and roughly how many bytes they take - counted
+ * by the Hub itself, because browsers' own "this site uses ..." figures are
+ * rough (Safari showed 724 MB with nothing stored, 13 Oct 2026). Pictures
+ * saved before this existed have no size noted; those count as `fallbackBytes`.
+ */
+export async function measureCachedImages(fallbackBytes) {
+  if (!available()) return { count: 0, bytes: 0 };
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    const requests = await cache.keys();
+    let bytes = 0;
+    for (const request of requests) {
+      const res = await cache.match(request);
+      const noted = Number(res?.headers?.get('X-Hub-Bytes'));
+      bytes += noted > 0 ? noted : fallbackBytes;
+    }
+    return { count: requests.length, bytes };
+  } catch (e) {
+    return { count: 0, bytes: 0 };
   }
 }
