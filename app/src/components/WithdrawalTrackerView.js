@@ -58,6 +58,10 @@ import {
   runWithdrawalCheck,
   overdueListText,
 } from '../api/withdrawalTracker';
+import { kleverscanNftUrl } from '../constants/schema';
+
+// Where withdrawal problems are reported (Klever's help centre).
+const SUPPORT_URL = 'https://support.klever.org/';
 
 const IS_WEB = Platform.OS === 'web';
 const KEY_FROM = WITHDRAW_SETTING_KEYS.from;
@@ -401,7 +405,7 @@ export default function WithdrawalTrackerView({ onClose }) {
     try {
       if (IS_WEB && navigator.clipboard) {
         await navigator.clipboard.writeText(text);
-        Alert.alert('Copied', 'The overdue list is copied - paste it into your support ticket.');
+        Alert.alert('Copied', 'The overdue list is copied - paste it into your ticket at support.klever.org (the button next to it opens the page).');
       } else {
         await Share.share({ message: text });
       }
@@ -642,11 +646,22 @@ export default function WithdrawalTrackerView({ onClose }) {
           </View>
 
           {overdueTotal > 0 ? (
-            <TouchableOpacity style={smallButton} onPress={copyOverdue}>
-              <Text style={{ color: colors.cancelText, fontWeight: '700' }}>
-                {IS_WEB ? 'Copy' : 'Share'} the overdue list ({overdueTotal}) for a support ticket
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.buttonRow}>
+              <TouchableOpacity style={smallButton} onPress={copyOverdue}>
+                <Text style={{ color: colors.cancelText, fontWeight: '700' }}>
+                  {IS_WEB ? 'Copy' : 'Share'} the overdue list ({overdueTotal}) for a support ticket
+                </Text>
+              </TouchableOpacity>
+              {/* Where the ticket goes (Raphael: "I need to look it up every
+                  single time"). */}
+              <TouchableOpacity
+                style={smallButton}
+                onPress={() => Linking.openURL(SUPPORT_URL)}
+                accessibilityRole="link"
+              >
+                <Text style={{ color: colors.primary, fontWeight: '700' }}>Open a ticket at Klever support ↗</Text>
+              </TouchableOpacity>
+            </View>
           ) : null}
 
           {selected.size > 0 ? (
@@ -709,6 +724,14 @@ export default function WithdrawalTrackerView({ onClose }) {
                     </Text>
                     {describe(item) ? <Text style={[styles.note, { color: colors.secondaryText }]}>{describe(item)}</Text> : null}
                   </View>
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL(kleverscanNftUrl(item.kind, item.nonce))}
+                    accessibilityRole="link"
+                    accessibilityLabel={`${KIND_LABEL[item.kind]} #${item.nonce} on Kleverscan`}
+                    style={{ paddingHorizontal: 6, paddingVertical: 2 }}
+                  >
+                    <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>Kleverscan ↗</Text>
+                  </TouchableOpacity>
                 </TouchableOpacity>
               );
             })}

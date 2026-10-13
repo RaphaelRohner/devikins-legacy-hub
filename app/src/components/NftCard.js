@@ -77,8 +77,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import { View, Text, Image, TextInput, StyleSheet, Modal, TouchableOpacity } from 'react-native';
-import { TRAIT_COLUMNS } from '../constants/schema';
+import { View, Text, Image, TextInput, StyleSheet, Modal, TouchableOpacity, Linking } from 'react-native';
+import { TRAIT_COLUMNS, kleverscanNftUrl } from '../constants/schema';
 import { setNftDeletedState, setNftCustomName, setNftStarRating, getWithdrawalItem, getGlobalSetting, WITHDRAW_SETTING_KEYS } from '../db/database';
 import { ID_LIST_OWNER } from '../constants/idList';
 import { placeInWords } from '../api/withdrawalTracker';
@@ -317,6 +317,13 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
   // requested order: name and rating first, then notes/delete.
   const nameAndRatingSection = (
     <View style={styles.nameAndRatingSection}>
+      <TouchableOpacity
+        onPress={() => Linking.openURL(kleverscanNftUrl(kind, nft.nonce))}
+        accessibilityRole="link"
+        style={{ alignSelf: 'flex-start', marginBottom: 12 }}
+      >
+        <Text style={{ color: colors.primary, fontSize: 14, fontWeight: '600' }}>View on Kleverscan ↗</Text>
+      </TouchableOpacity>
       {whereText ? (
         <>
           <Text style={[styles.deleteSectionLabel, { color: colors.secondaryText }]}>Where it is (from your Withdrawals list)</Text>

@@ -37,6 +37,13 @@ export const COLLECTIONS = {
   },
 };
 
+// The page of one NFT on kleverscan.org (Klever's block explorer). The
+// slash between collection and number has to be written as %2F - a plain
+// "/" makes Kleverscan show the whole collection instead (13 Oct 2026).
+export function kleverscanNftUrl(kind, nonce) {
+  return `https://kleverscan.org/asset/${COLLECTIONS[kind].assetId}%2F${nonce}`;
+}
+
 /**
  * TRAIT_COLUMNS describes every known trait for every collection, and how
  * it should be stored:

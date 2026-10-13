@@ -4,7 +4,7 @@
  */
 const { test, expect } = require('@playwright/test');
 const { installFakeServers, fakeAddress, GAME_MAIN_WALLET } = require('./fakeServers');
-const { openHub, openMenuEntry } = require('./helpers');
+const { openHub, openMenuEntry, addWalletAndFetch } = require('./helpers');
 
 const IN_GAME = fakeAddress('g');
 const RECEIVING = fakeAddress('r');
@@ -101,6 +101,7 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   await page.clock.fastForward('31:00');
   await expect(row(page, 'Weapon #1442')).toContainText('Overdue');
   await expect(page.getByText('Overdue (1)')).toBeVisible();
+  await expect(page.getByText('Open a ticket at Klever support ↗')).toBeVisible();
   await expect(page.getByText(/overdue list \(1\)/)).toBeVisible();
 
   // 6. The game finally sends it
@@ -220,4 +221,26 @@ test('"Check selected" looks up exactly the selected NFTs', async ({ page }) => 
   await expect(page.getByText(/Last check:/)).toBeVisible();
   expect(lookups(1442)).toBe(1);
   expect(lookups(3265)).toBe(0);
+});
+
+test('NFT details and Withdrawals rows link to the NFT on Kleverscan', async ({ page }) => {
+  // Don't really open Kleverscan: just note which page was asked for.
+  await page.addInitScript(() => {
+    window.open = (url) => { window.__opened = (window.__opened || []).concat(String(url)); return null; };
+  });
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  await page.getByText('#101', { exact: true }).click();
+  await page.getByText('View on Kleverscan ↗').click();
+  await expect.poll(() => page.evaluate(() => window.__opened || [])).toContain('https://kleverscan.org/asset/DVKNFT-1SW5%2F101');
+  await page.goBack();
+
+  await openMenuEntry(page, 'Withdrawals');
+  await page.locator('textarea').fill('E38441');
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText(/1 added/)).toBeVisible();
+  await page.getByLabel('Equipment #38441 on Kleverscan').click();
+  await expect.poll(() => page.evaluate(() => window.__opened || [])).toContain('https://kleverscan.org/asset/DVKEQNFT-1Q56%2F38441');
+  // Tapping the link doesn't select the row.
+  await expect(page.getByText('1 selected')).toHaveCount(0);
 });
