@@ -244,3 +244,15 @@ test('NFT details and Withdrawals rows link to the NFT on Kleverscan', async ({ 
   // Tapping the link doesn't select the row.
   await expect(page.getByText('1 selected')).toHaveCount(0);
 });
+
+test('pasting a list file with wallet addresses says they were skipped', async ({ page }) => {
+  await openHub(page);
+  await openMenuEntry(page, 'Withdrawals');
+  await page.locator('textarea').fill(
+    `Private Wallet ID\n${RECEIVING}\n\nIn-Game Wallet ID\n${IN_GAME}\n\nDevikin ID's\n101\n102\n\nWeapon IDs\n3265\n\nEquipment IDs\n1022`
+  );
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText(/4 added\. 2 wallet addresses skipped \(only NFT IDs go on the list\)\./)).toBeVisible();
+  await expect(page.getByText(/Skipped \(not an ID\)/)).toHaveCount(0);
+  await expect(page.getByText('All kinds (4)', { exact: true })).toBeVisible();
+});

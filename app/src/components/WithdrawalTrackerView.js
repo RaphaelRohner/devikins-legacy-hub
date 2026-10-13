@@ -319,7 +319,17 @@ export default function WithdrawalTrackerView({ onClose }) {
         `${unassigned.length} ID(s) had no kind: put a heading (Devikins / Weapons / Equipment) above them, or pick the kind above the box.`
       );
     }
-    if (ignored.length > 0) notes.push(`Skipped (not an ID): ${ignored.slice(0, 5).join(', ')}${ignored.length > 5 ? ' …' : ''}`);
+    // Wallet addresses in the pasted text (Raphael's list starts with his
+    // two) are named as such; words like "Private Wallet ID" are just
+    // labels and aren't worth a mention (13 Oct 2026: the old "Skipped (not
+    // an ID): Private, Wallet, ID, klv1..." note was easy to misread).
+    const addresses = ignored.filter((t) => /^klv1[0-9a-z]{20,}$/i.test(t));
+    const LABEL_WORDS = /^(private|in-?game|wallet|wallets|id|ids|id's|address|addresses|my|main|receiving|from|to|the|and|nft|nfts|list|liste)$/i;
+    const other = ignored.filter((t) => !addresses.includes(t) && !LABEL_WORDS.test(t.replace(/[^a-z'-]/gi, '')));
+    if (addresses.length > 0) {
+      notes.push(`${addresses.length} wallet address${addresses.length === 1 ? '' : 'es'} skipped (only NFT IDs go on the list).`);
+    }
+    if (other.length > 0) notes.push(`Skipped (not an ID): ${other.slice(0, 5).join(', ')}${other.length > 5 ? ' …' : ''}`);
     if (notes.length === 0) notes.push('No NFT IDs found in the text.');
     await reload(); // first refresh the list, then say what happened
     setAddMessage(notes.join(' '));
