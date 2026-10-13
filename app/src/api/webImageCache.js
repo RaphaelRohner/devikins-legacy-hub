@@ -56,7 +56,13 @@ export async function ensureCachedImage(url) {
   const existing = await getCachedImageBytes(url);
   if (existing) return existing;
   try {
-    const res = await fetch(url);
+    // Straight from the server, never from the browser's own cache: the
+    // tiles load the same picture without asking for permission to copy it
+    // (no CORS), and for newer pictures Moonlabs lets the browser keep that
+    // answer for a year - so a normal fetch got that copy-forbidden answer
+    // back every time and the picture was never stored (13 Oct 2026: 202
+    // of Raphael's Devikins, e.g. the faceless ones, hidden by Hide blanks).
+    const res = await fetch(url, { cache: 'reload' });
     if (!res.ok) return null;
     const bytes = new Uint8Array(await res.arrayBuffer());
     if (bytes.length < MIN_VALID_IMAGE_BYTES) return null;
