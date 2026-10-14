@@ -64,6 +64,7 @@ async function addWalletAndFetch(page, fake) {
   await openMenuEntry(page, 'Wallets');
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
   await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
   await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
   await goBack(page);
   await openMenuEntry(page, 'Fetch/Update');
@@ -112,4 +113,19 @@ async function litStarCount(page) {
   return colours.filter((c) => c !== colours[4]).length;
 }
 
-module.exports = { litStarCount, openHub, openMenuEntry, goBack, addWalletAndFetch, storedPictureUrls, shownPictureSources };
+/** After "Add": answers the "What's this wallet?" box - with `name`
+ *  (e.g. "In-game wallet") or "Skip". Does nothing if no box comes up
+ *  (an address that was refused, or already in the list). */
+async function nameNewWallet(page, name = null) {
+  const box = page.getByTestId('naming-box');
+  try {
+    await box.waitFor({ state: 'visible', timeout: 4000 });
+  } catch (e) {
+    return;
+  }
+  if (name) await box.getByText(name, { exact: true }).click();
+  else await box.getByText('Skip', { exact: true }).click();
+  await expect(box).toHaveCount(0);
+}
+
+module.exports = { nameNewWallet, litStarCount, openHub, openMenuEntry, goBack, addWalletAndFetch, storedPictureUrls, shownPictureSources };

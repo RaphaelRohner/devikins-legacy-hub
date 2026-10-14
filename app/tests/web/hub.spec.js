@@ -9,7 +9,7 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const { test, expect } = require('@playwright/test');
 const { installFakeServers, TEST_WALLET } = require('./fakeServers');
-const { litStarCount, openHub, openMenuEntry, goBack, addWalletAndFetch, storedPictureUrls, shownPictureSources } = require('./helpers');
+const { litStarCount, openHub, openMenuEntry, goBack, addWalletAndFetch, storedPictureUrls, shownPictureSources, nameNewWallet } = require('./helpers');
 
 const APP_VERSION = require('../../app.json').expo.version;
 
@@ -46,6 +46,7 @@ test('the counter only counts a visitor once they add a wallet, then every visit
   await expect(page.getByTestId('welcome-box')).toBeVisible();
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
   await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
   await expect.poll(pings).toBe(1);
 
   // Each later opening of the Hub is one more visit.
@@ -224,6 +225,7 @@ test('Reset All Data works even while the Hub is busy in the background', async 
   await openMenuEntry(page, 'Wallets');
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
   await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
   await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
   await goBack(page);
   fake.metadataDelayMs = 150;
@@ -313,11 +315,13 @@ test('an address that is not a Klever address is refused', async ({ page }) => {
   await openMenuEntry(page, 'Wallets');
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill('abtdfghjkl');
   await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
   await expect.poll(() => dialogs.join('\n')).toMatch(/Not a Klever address/);
   await expect(page.getByText('abtdfghjkl', { exact: true })).toHaveCount(0);
   // A real one still works.
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
   await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
   await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
 });
 
@@ -327,6 +331,7 @@ test('a real-looking address with one typo is refused (checksum)', async ({ page
   const typo = TEST_WALLET.slice(0, 20) + (TEST_WALLET[20] === 'q' ? 'p' : 'q') + TEST_WALLET.slice(21);
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(typo);
   await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
   await expect.poll(() => dialogs.join('\n')).toMatch(/Not a Klever address/);
   await expect(page.getByText(typo, { exact: true })).toHaveCount(0);
 });
@@ -336,6 +341,7 @@ test('deleting a wallet asks first', async ({ page }) => {
   await openMenuEntry(page, 'Wallets');
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
   await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
   await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
   const before = dialogs.length;
 
@@ -381,6 +387,7 @@ test('Fetch/Update without internet says so plainly and stops', async ({ page })
   await openMenuEntry(page, 'Wallets');
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
   await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
   await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
   await goBack(page);
 
@@ -423,6 +430,7 @@ test('a backup with four sets imports completely (enough database room)', async 
     await expect(page.getByText(`Wallets in "Wallet set ${i + 2}"`)).toBeVisible();
     await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
     await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
     await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
   }
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByText('Export all sets').click()]);
@@ -551,6 +559,7 @@ test('a first visit opens Wallets with a welcome; "Fetch now" loads the NFTs rig
 
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
   await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
   await expect.poll(() => dialogs.join('\n')).toMatch(/Wallet added/);
   // "Fetch now" was chosen: back on the list, and the NFTs come in.
   await expect(page.getByText('2 Devikins', { exact: true })).toBeVisible({ timeout: 60_000 });
@@ -572,6 +581,7 @@ test('importing a backup loads the set with wallets (not an empty one), and name
   await expect(page.getByText('Wallets in "Wallet set 2"')).toBeVisible();
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
   await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
   await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByText('Export all sets').click()]);
   const zipPath = testInfo.outputPath('backup.zip');
@@ -597,4 +607,37 @@ test('importing a backup loads the set with wallets (not an empty one), and name
   await expect.poll(() => dialogs.filter((d) => /Import complete/.test(d)).length).toBe(2);
   await expect(page2.getByText(/\(imported\) \(imported\)/)).toHaveCount(0);
   await context2.close();
+});
+
+test('a new wallet gets a name, shown first in the list; Withdrawals fills itself in from the names', async ({ page }) => {
+  const inGame = require('./fakeServers').fakeAddress('g');
+  await openHub(page, { keepWelcome: true });
+  const input = page.getByPlaceholder('Paste a Klever wallet address (klv1...)');
+
+  await input.fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  const box = page.getByTestId('naming-box');
+  await expect(box).toContainText("What's this wallet?");
+  await nameNewWallet(page, 'My wallet');
+
+  await input.fill(inGame);
+  await page.getByText('Add', { exact: true }).click();
+  // "My wallet" is taken in this set now.
+  await expect(box.getByText('already used in this set')).toBeVisible();
+  await nameNewWallet(page, 'In-game wallet');
+
+  await expect(page.getByText('My wallet', { exact: true })).toBeVisible();
+  await expect(page.getByText('In-game wallet', { exact: true })).toBeVisible();
+
+  // The same address again: it says so, no name box.
+  await input.fill(inGame);
+  await page.getByText('Add', { exact: true }).click();
+  await expect(box).toHaveCount(0);
+
+  await page.getByText('‹').first().click();
+  await openMenuEntry(page, 'Withdrawals');
+  await expect(page.getByText(/Filled in from your wallets named/)).toBeVisible();
+  await expect(page.getByPlaceholder('klv1… (in-game wallet)')).toHaveValue(inGame);
+  await expect(page.getByPlaceholder('klv1… (receiving wallet)')).toHaveValue(TEST_WALLET);
+  await expect(page.getByText('Check', { exact: true })).toBeVisible(); // already saved
 });

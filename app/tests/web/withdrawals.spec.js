@@ -4,7 +4,7 @@
  */
 const { test, expect } = require('@playwright/test');
 const { installFakeServers, fakeAddress, GAME_MAIN_WALLET } = require('./fakeServers');
-const { openHub, openMenuEntry, addWalletAndFetch } = require('./helpers');
+const { openHub, openMenuEntry, addWalletAndFetch, nameNewWallet } = require('./helpers');
 
 const IN_GAME = fakeAddress('g');
 const RECEIVING = fakeAddress('r');
@@ -42,6 +42,7 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   await openMenuEntry(page, 'Wallets');
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(IN_GAME);
   await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
   await expect(page.getByText(IN_GAME).first()).toBeVisible();
   await page.getByText('‹').first().click();
   await openMenuEntry(page, 'Withdrawals');

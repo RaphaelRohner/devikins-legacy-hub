@@ -36,6 +36,7 @@ import {
   Alert,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { IN_GAME_WALLET_NAME, MY_WALLET_NAME } from '../constants/walletNames';
 import {
   getGlobalSetting,
   setGlobalSetting,
@@ -220,6 +221,8 @@ export default function WithdrawalTrackerView({ onClose }) {
   const [pickerFor, setPickerFor] = useState(null); // 'from' | 'to' | null
   const [myWallets, setMyWallets] = useState(null); // null = not loaded yet
   const cancelRef = useRef(false);
+  // True when step 1 was filled in from the wallet names (shown as a note).
+  const [autoFilledNote, setAutoFilledNote] = useState(false);
 
   const reload = useCallback(async () => {
     const [list, log] = await Promise.all([getWithdrawalItems(), getWithdrawalArrivals()]);
@@ -235,10 +238,37 @@ export default function WithdrawalTrackerView({ onClose }) {
         getGlobalSetting(KEY_OVERDUE),
         getGlobalSetting(KEY_LAST_CHECK),
       ]);
-      setFromAddress(from || '');
-      setFromDraft(from || '');
-      setToAddress(to || '');
-      setToDraft(to || '');
+      let savedFrom = from || '';
+      let savedTo = to || '';
+      let draftFrom = savedFrom;
+      let draftTo = savedTo;
+      // Not set up yet: use the wallets named "In-game wallet" / "My wallet"
+      // on the Wallets screen (14 Oct 2026). Both found -> saved straight
+      // away; only one -> filled in, waiting for Save.
+      if (!savedFrom || !savedTo) {
+        try {
+          const all = await getWalletsFromAllSets();
+          const named = (name) => all.find((w) => (w.alias || '').trim().toLowerCase() === name.toLowerCase())?.address || '';
+          if (!draftFrom) draftFrom = named(IN_GAME_WALLET_NAME);
+          if (!draftTo) draftTo = named(MY_WALLET_NAME);
+          if (
+            !savedFrom && !savedTo &&
+            isValidKleverAddress(draftFrom) && isValidKleverAddress(draftTo) && draftFrom !== draftTo
+          ) {
+            await setGlobalSetting(KEY_FROM, draftFrom);
+            await setGlobalSetting(KEY_TO, draftTo);
+            savedFrom = draftFrom;
+            savedTo = draftTo;
+            setAutoFilledNote(true);
+          }
+        } catch (e) {
+          // Not fatal - the addresses can still be entered by hand.
+        }
+      }
+      setFromAddress(savedFrom);
+      setFromDraft(draftFrom);
+      setToAddress(savedTo);
+      setToDraft(draftTo);
       const minutes = Number(overdue) > 0 ? Number(overdue) : DEFAULT_OVERDUE_MINUTES;
       setOverdueMinutes(minutes);
       setOverdueDraft(String(minutes));
@@ -581,6 +611,11 @@ export default function WithdrawalTrackerView({ onClose }) {
             The game sends withdrawals from your in-game wallet (or from the game's main wallet) to your own wallet.
             Only public addresses are used - never keys.
           </Text>
+          {autoFilledNote ? (
+            <Text style={[styles.note, { color: colors.primary }]}>
+              Filled in from your wallets named "{IN_GAME_WALLET_NAME}" and "{MY_WALLET_NAME}".
+            </Text>
+          ) : null}
           <Text style={[styles.label, { color: colors.text }]}>Withdraw from (your in-game wallet)</Text>
           <TextInput style={input} value={fromDraft} onChangeText={setFromDraft} placeholder="klv1… (in-game wallet)" placeholderTextColor={colors.secondaryText} autoCapitalize="none" autoCorrect={false} />
           <TouchableOpacity onPress={() => openPicker('from')}>

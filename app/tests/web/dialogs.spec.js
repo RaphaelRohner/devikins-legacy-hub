@@ -5,7 +5,7 @@
  */
 const { test, expect } = require('@playwright/test');
 const { installFakeServers, TEST_WALLET } = require('./fakeServers');
-const { openHub, openMenuEntry, goBack } = require('./helpers');
+const { openHub, openMenuEntry, goBack, nameNewWallet } = require('./helpers');
 
 test('a message box does not pause a running fetch', async ({ page, context }) => {
   const fake = await installFakeServers(context);
@@ -20,6 +20,7 @@ test('a message box does not pause a running fetch', async ({ page, context }) =
   await openMenuEntry(page, 'Wallets');
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
   await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
   // The Hub's own box, inside the page:
   const box = page.locator('[data-hub-dialog]');
   await expect(box).toContainText('Wallet added');

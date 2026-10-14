@@ -388,10 +388,14 @@ export async function getWallets() {
 export async function addWallet(address) {
   const db = await getDatabase();
   const trimmedAddress = address.trim();
-  await db.runAsync(
+  const result = await db.runAsync(
     `INSERT OR IGNORE INTO wallets (address, created_at) VALUES (?, ?)`,
     [trimmedAddress, Date.now()]
   );
+  // { id, added }: `added` is false when the address was already in the
+  // list (so the Wallets screen can say so, and skip asking for a name).
+  const row = await db.getFirstAsync(`SELECT id FROM wallets WHERE address = ?`, [trimmedAddress]);
+  return { id: row?.id ?? null, added: (result?.changes || 0) > 0 };
 }
 
 /**

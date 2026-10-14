@@ -87,6 +87,7 @@ import {
   Alert,
   Switch,
   BackHandler,
+  Modal,
 } from 'react-native';
 import {
   addWallet,
@@ -104,6 +105,7 @@ import {
   countWithdrawalItems,
 } from '../db/database';
 import { MY_WALLETS_SET_KEY } from '../constants/idList';
+import { IN_GAME_WALLET_NAME, MY_WALLET_NAME } from '../constants/walletNames';
 import { GUIDE_KEYS } from './GettingStartedCard';
 import { useTheme } from '../context/ThemeContext';
 import QrScannerModal from './QrScannerModal';
@@ -320,26 +322,59 @@ export default function WalletManager({
     // persistStorage.web.js). Not awaited - it never blocks adding.
     requestPersistentStorage();
 
-    await addWallet(trimmedAddress);
+    const { id, added } = await addWallet(trimmedAddress);
     setNewAddressInput('');
+    if (!added) {
+      Alert.alert('Already added', 'That wallet is already in this list.');
+      return;
+    }
     onWalletsChanged();
     markUsageActive(); // counts this Hub as in use (anonymous user count)
-
-    if (isFirstWalletEver) {
-      // "Fetch now" starts the first fetch straight away (14 Oct 2026),
-      // so a newcomer doesn't have to find Fetch/Update in the menu.
-      Alert.alert(
-        'Wallet added',
-        'Next, load its Devikins, Weapons and Equipment. Add your other wallet first if you have one (e.g. your in-game wallet) - then everything comes in one go. The first fetch can take a few minutes, since nothing is cached yet - after that, updates are much faster.',
-        onFetchNow
-          ? [
-              { text: 'Add another wallet first', style: 'cancel' },
-              { text: 'Fetch now', onPress: onFetchNow },
-            ]
-          : undefined
-      );
-    }
+    // Ask for a name first ("In-game wallet", "My wallet", ...), so the
+    // two klv1... addresses can be told apart everywhere (fresh-eyes
+    // review, 14 Oct 2026). The "Wallet added" box follows after it.
+    setNamingWallet({ id, address: trimmedAddress, isFirst: isFirstWalletEver });
   }
+
+  // The "Wallet added" box after the first wallet ever (see handleAdd).
+  function showFirstWalletAdded() {
+    // "Fetch now" starts the first fetch straight away (14 Oct 2026),
+    // so a newcomer doesn't have to find Fetch/Update in the menu.
+    Alert.alert(
+      'Wallet added',
+      'Next, load its Devikins, Weapons and Equipment. Add your other wallet first if you have one (e.g. your in-game wallet) - then everything comes in one go. The first fetch can take a few minutes, since nothing is cached yet - after that, updates are much faster.',
+      onFetchNow
+        ? [
+            { text: 'Add another wallet first', style: 'cancel' },
+            { text: 'Fetch now', onPress: onFetchNow },
+          ]
+        : undefined
+    );
+  }
+
+  // "What's this wallet?" - right after adding one.
+  const [namingWallet, setNamingWallet] = useState(null); // { id, address, isFirst }
+  const [customNameInput, setCustomNameInput] = useState('');
+  const [isTypingCustomName, setIsTypingCustomName] = useState(false);
+  async function finishNaming(name) {
+    const target = namingWallet;
+    setNamingWallet(null);
+    setIsTypingCustomName(false);
+    setCustomNameInput('');
+    if (!target) return;
+    if (name && name.trim()) {
+      try {
+        await updateWalletAddress(target.id, target.address, name.trim());
+      } catch (err) {
+        reportSetActionError(err, 'Naming that wallet');
+      }
+      onWalletsChanged();
+    }
+    if (target.isFirst) showFirstWalletAdded();
+  }
+  // Names already given in this set - a quick choice that's taken is
+  // shown greyed out (two "In-game wallet"s would defeat the point).
+  const usedNames = new Set(wallets.map((w) => (w.alias || '').trim()).filter(Boolean));
 
   async function handleConnectExtension() {
     setIsConnectingExtension(true);
@@ -351,14 +386,10 @@ export default function WalletManager({
         return;
       }
       const isFirstWalletEver = wallets.length === 0;
-      await addWallet(address);
+      const { id } = await addWallet(address);
       onWalletsChanged();
       markUsageActive();
-      Alert.alert(
-        'Wallet added',
-        `${address}\n\nThis is the wallet open in your Klever extension.` +
-          (isFirstWalletEver ? ' Next, choose Fetch/Update in the menu to load its Devikins, Weapons, and Equipment.' : '')
-      );
+      setNamingWallet({ id, address, isFirst: isFirstWalletEver });
     } catch (err) {
       Alert.alert('Klever extension', err?.message || String(err));
     } finally {
@@ -984,7 +1015,19 @@ export default function WalletManager({
                 </>
               ) : (
                 <>
-                  <Text style={[styles.walletAddress, { color: colors.text }]} numberOfLines={1}>
+                  {/* The name comes first and big, the address below it
+                      (fresh-eyes review, 14 Oct 2026: two klv1... lines
+                      looked identical). */}
+                  {wallet.alias ? (
+                    <Text style={[styles.walletName, { color: colors.text }]} numberOfLines={1}>
+                      {wallet.alias}
+                    </Text>
+                  ) : null}
+                  <Text
+                    style={[styles.walletAddress, { color: wallet.alias ? colors.secondaryText : colors.text }]}
+                    numberOfLines={1}
+                    ellipsizeMode="middle"
+                  >
                     {wallet.address}
                   </Text>
                   {/* Buttons on the left, the wallet's alias (if it has
@@ -1007,11 +1050,6 @@ export default function WalletManager({
                         <Text style={[styles.rowButtonText, { color: colors.cancelText }]}>Delete</Text>
                       </TouchableOpacity>
                     </View>
-                    {wallet.alias ? (
-                      <Text style={[styles.walletAlias, { color: colors.secondaryText }]} numberOfLines={1}>
-                        {wallet.alias}
-                      </Text>
-                    ) : null}
                   </View>
                 </>
               )}
@@ -1276,6 +1314,72 @@ export default function WalletManager({
           ) : null}
         </View>
       </ScrollView>
+
+      {/* "What's this wallet?" - asked right after adding one (14 Oct 2026). */}
+      <Modal visible={!!namingWallet} transparent animationType="fade" onRequestClose={() => finishNaming(null)}>
+        <View style={styles.namingBackdrop}>
+          <View style={[styles.namingCard, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="naming-box">
+            <Text style={[styles.namingTitle, { color: colors.text }]}>What's this wallet?</Text>
+            <Text style={[styles.namingAddress, { color: colors.secondaryText }]} numberOfLines={1} ellipsizeMode="middle">
+              {namingWallet?.address}
+            </Text>
+            <Text style={[styles.namingHint, { color: colors.secondaryText }]}>
+              A name tells your wallets apart everywhere in the Hub. You can change it later with Edit.
+            </Text>
+            {[IN_GAME_WALLET_NAME, MY_WALLET_NAME].map((name) => {
+              const taken = usedNames.has(name);
+              return (
+                <TouchableOpacity
+                  key={name}
+                  style={[styles.namingChoice, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }, taken && { opacity: 0.4 }]}
+                  onPress={() => finishNaming(name)}
+                  disabled={taken}
+                >
+                  <Text style={[styles.namingChoiceText, { color: colors.text }]}>{name}</Text>
+                  <Text style={[styles.namingChoiceNote, { color: colors.secondaryText }]}>
+                    {taken
+                      ? 'already used in this set'
+                      : name === IN_GAME_WALLET_NAME
+                        ? 'where the game keeps your NFTs'
+                        : 'your own wallet, where withdrawals arrive'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+            {isTypingCustomName ? (
+              <View style={styles.namingCustomRow}>
+                <TextInput
+                  style={[styles.addInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
+                  placeholder="Name, e.g. Trading"
+                  placeholderTextColor={colors.secondaryText}
+                  value={customNameInput}
+                  onChangeText={setCustomNameInput}
+                  autoFocus
+                  onSubmitEditing={() => finishNaming(customNameInput)}
+                />
+                <TouchableOpacity
+                  style={[styles.addButton, { backgroundColor: customNameInput.trim() ? colors.primary : colors.primaryDisabled }]}
+                  onPress={() => finishNaming(customNameInput)}
+                  disabled={!customNameInput.trim()}
+                >
+                  <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styles.namingChoice, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                onPress={() => setIsTypingCustomName(true)}
+              >
+                <Text style={[styles.namingChoiceText, { color: colors.text }]}>Other…</Text>
+                <Text style={[styles.namingChoiceNote, { color: colors.secondaryText }]}>type your own name</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={() => finishNaming(null)} style={styles.namingSkip}>
+              <Text style={[styles.namingSkipText, { color: colors.secondaryText }]}>Skip</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1284,6 +1388,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  namingBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  namingCard: { width: '100%', maxWidth: 420, borderWidth: 1, borderRadius: 14, padding: 16, gap: 10 },
+  namingTitle: { fontSize: 18, fontWeight: '700' },
+  namingAddress: { fontSize: 12 },
+  namingHint: { fontSize: 13, lineHeight: 18 },
+  namingChoice: { borderWidth: 1, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12 },
+  namingChoiceText: { fontSize: 15, fontWeight: '700' },
+  namingChoiceNote: { fontSize: 12, marginTop: 2 },
+  namingCustomRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  namingSkip: { alignSelf: 'center', paddingVertical: 6, paddingHorizontal: 16 },
+  namingSkipText: { fontSize: 14, fontWeight: '600' },
   welcomeBox: { borderWidth: 1, borderRadius: 12, padding: 14, marginHorizontal: 12, marginBottom: 16, gap: 8 },
   welcomeTitle: { fontSize: 18, fontWeight: '700' },
   welcomeText: { fontSize: 14, lineHeight: 20 },
@@ -1478,6 +1593,7 @@ const styles = StyleSheet.create({
   },
   extensionButton: {
     marginTop: 8,
+    marginBottom: 12,
     marginHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 8,
@@ -1577,6 +1693,7 @@ const styles = StyleSheet.create({
   rowButtonTextCentered: {
     textAlign: 'center',
   },
+  walletName: { fontSize: 16, fontWeight: '700', marginBottom: 2 },
   walletAlias: {
     fontSize: 13,
     fontWeight: '600',
