@@ -147,6 +147,7 @@ export default function WalletManager({
   onWalletSetsChanged,
   onClose,
   onOpenWithdrawals,
+  onFetchNow,
 }) {
   const { colors } = useTheme();
 
@@ -323,9 +324,17 @@ export default function WalletManager({
     markUsageActive(); // counts this Hub as in use (anonymous user count)
 
     if (isFirstWalletEver) {
+      // "Fetch now" starts the first fetch straight away (14 Oct 2026),
+      // so a newcomer doesn't have to find Fetch/Update in the menu.
       Alert.alert(
         'Wallet added',
-        "Next, tap Fetch/Update on the home screen to pull in its Devikins, Weapons, and Equipment. The first fetch can take a few minutes, since nothing is cached yet - after that, updates are much faster."
+        'Next, load its Devikins, Weapons and Equipment. Add your other wallet first if you have one (e.g. your in-game wallet) - then everything comes in one go. The first fetch can take a few minutes, since nothing is cached yet - after that, updates are much faster.',
+        onFetchNow
+          ? [
+              { text: 'Add another wallet first', style: 'cancel' },
+              { text: 'Fetch now', onPress: onFetchNow },
+            ]
+          : undefined
       );
     }
   }
@@ -757,6 +766,10 @@ export default function WalletManager({
   const activeSet = walletSets.find((set) => set.id === activeWalletSetId);
   const activeSetName = activeSet ? activeSet.name : '';
 
+  // Same test App.js uses to open this screen first: nothing added yet,
+  // and only the one starting set (a first visit, or after Reset All Data).
+  const showWelcome = !!activeWalletSetId && wallets.length === 0 && walletSets.length <= 1;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <TouchableOpacity
@@ -796,11 +809,212 @@ export default function WalletManager({
           scroll region) fixes that - only the back button/title/
           subtitle above stay fixed. */}
       <ScrollView contentContainerStyle={styles.listContent}>
+        {/* First visit (no wallet yet, only the one starting set): App.js
+            opens this screen straight away, so it says what the Hub is and
+            what to do first (Raphael, 14 Oct 2026). */}
+        {showWelcome ? (
+          <View style={[styles.welcomeBox, { borderColor: colors.primary, backgroundColor: colors.surface }]} testID="welcome-box">
+            <Text style={[styles.welcomeTitle, { color: colors.text }]}>Welcome to the Devikins Legacy Hub</Text>
+            <Text style={[styles.welcomeText, { color: colors.text }]}>
+              Browse, filter and track your Devikins, Weapons and Equipment. Start by adding your wallet below - only the public address (klv1...), never a key.
+            </Text>
+            <TouchableOpacity onPress={handleImport} disabled={isBusy}>
+              <Text style={[styles.welcomeLink, { color: colors.primary }]}>Already have a backup? Import it →</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {activeWalletSetId ? (
+          <>
+            <Text style={[styles.activeSetHeadline, { color: colors.text }]}>
+              Wallets in "{activeSetName}"
+            </Text>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+              <View style={styles.addRow}>
+                <TextInput
+                  style={[styles.addInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                  placeholder="Paste a Klever wallet address (klv1...)"
+                  placeholderTextColor={colors.secondaryText}
+                  value={newAddressInput}
+                  onChangeText={setNewAddressInput}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!isBusy}
+                />
+                <TouchableOpacity
+                  style={[styles.scanButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
+                  onPress={() => setIsScannerVisible(true)}
+                  disabled={isBusy}
+                >
+                  <Text style={styles.scanButtonIcon}>📷</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.addButton,
+                    { backgroundColor: colors.primary },
+                    (isBusy || newAddressInput.trim().length === 0) && { backgroundColor: colors.primaryDisabled },
+                  ]}
+                  onPress={handleAdd}
+                  disabled={isBusy || newAddressInput.trim().length === 0}
+                >
+                  <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Add</Text>
+                </TouchableOpacity>
+              </View>
+              {IS_WEB ? (
+                <TouchableOpacity
+                  style={[
+                    styles.extensionButton,
+                    { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+                    (isBusy || isConnectingExtension) && { opacity: 0.5 },
+                  ]}
+                  onPress={handleConnectExtension}
+                  disabled={isBusy || isConnectingExtension}
+                >
+                  <Text style={[styles.rowButtonText, { color: colors.text }]}>
+                    {isConnectingExtension ? 'Connecting...' : 'Connect Klever Extension'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </KeyboardAvoidingView>
+
+            <QrScannerModal
+              visible={isScannerVisible}
+              onScanned={handleScanned}
+              onClose={() => setIsScannerVisible(false)}
+            />
+          </>
+        ) : null}
+
+        {!activeWalletSetId ? (
+          <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
+            No wallet set is loaded right now - load one under Wallet sets below, or create a new one to start adding wallet addresses.
+          </Text>
+        ) : wallets.length === 0 ? (
+          <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
+            No wallets added yet - paste an address above and tap Add.
+          </Text>
+        ) : (
+          wallets.map((wallet) => (
+            <View
+              key={wallet.id}
+              style={[styles.walletRow, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }]}
+            >
+              {editingId === wallet.id ? (
+                <>
+                  <TextInput
+                    style={[styles.editInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
+                    value={editAddressInput}
+                    onChangeText={setEditAddressInput}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!isBusy}
+                  />
+                  {/* Optional friendly name - "Main", "Trading", etc. -
+                      shown next to the Edit/Delete buttons once saved
+                      (see the non-edit row below). */}
+                  <TextInput
+                    style={[styles.editInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
+                    placeholder="Name this wallet (optional)"
+                    placeholderTextColor={colors.secondaryText}
+                    value={editAliasInput}
+                    onChangeText={setEditAliasInput}
+                    autoCapitalize="words"
+                    editable={!isBusy}
+                  />
+                  <View style={styles.walletRowButtons}>
+                    <TouchableOpacity
+                      style={[
+                        styles.rowButton,
+                        { backgroundColor: colors.primary },
+                        (isBusy || editAddressInput.trim().length === 0) && { backgroundColor: colors.primaryDisabled },
+                      ]}
+                      onPress={() => handleSaveEdit(wallet.id)}
+                      disabled={isBusy || editAddressInput.trim().length === 0}
+                    >
+                      <Text style={[styles.rowButtonText, { color: colors.primaryText }]}>Save</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
+                      onPress={handleCancelEdit}
+                      disabled={isBusy}
+                    >
+                      <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Text style={[styles.walletAddress, { color: colors.text }]} numberOfLines={1}>
+                    {wallet.address}
+                  </Text>
+                  {/* Buttons on the left, the wallet's alias (if it has
+                      one) on the right of them - a plain "name tag" so
+                      wallets are easy to tell apart at a glance. */}
+                  <View style={styles.walletRowBottom}>
+                    <View style={styles.walletRowButtons}>
+                      <TouchableOpacity
+                        style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
+                        onPress={() => handleStartEdit(wallet)}
+                        disabled={isBusy}
+                      >
+                        <Text style={[styles.rowButtonText, { color: colors.text }]}>Edit</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }, isBusy && { opacity: 0.5 }]}
+                        onPress={() => handleDelete(wallet)}
+                        disabled={isBusy}
+                      >
+                        <Text style={[styles.rowButtonText, { color: colors.cancelText }]}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {wallet.alias ? (
+                      <Text style={[styles.walletAlias, { color: colors.secondaryText }]} numberOfLines={1}>
+                        {wallet.alias}
+                      </Text>
+                    ) : null}
+                  </View>
+                </>
+              )}
+            </View>
+          ))
+        )}
+
+        {activeWalletSetId ? (
+          <>
+            <View style={[styles.myWalletsBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <View style={styles.myWalletsRow}>
+                <Text style={[styles.myWalletsLabel, { color: colors.text }]}>My wallets</Text>
+                <Switch
+                  value={isMySet}
+                  onValueChange={handleMyWalletsChange}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor={colors.surface}
+                />
+              </View>
+              <Text style={[styles.myWalletsNote, { color: colors.secondaryText }]}>
+                {isMySet
+                  ? withdrawalListCount > 0
+                    ? `This is your own set: it also shows the ${withdrawalListCount} ID${withdrawalListCount === 1 ? '' : 's'} on your Withdrawals list, wherever those NFTs are (e.g. still in the game's main wallet). Run Fetch/Update to load them.`
+                    : 'This is your own set. IDs you add on the Withdrawals screen will show here too, wherever those NFTs are.'
+                  : `Switch on if these are your own wallets: the set then also shows the IDs on your Withdrawals list. Only one set can be yours${mySetName ? ` - right now it's "${mySetName}"` : ''}.`}
+              </Text>
+              {onOpenWithdrawals ? (
+                <TouchableOpacity onPress={onOpenWithdrawals}>
+                  <Text style={[styles.myWalletsLink, { color: colors.primary }]}>
+                    {withdrawalListCount > 0 ? `Your IDs (${withdrawalListCount}) →` : 'Add the IDs of NFTs you own →'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </>
+        ) : null}
+
         {/* Wallet set switcher - see this file's own header comment for
-            the full reasoning. Everything below this section (the Add
-            row, the wallet list, and every per-wallet action) is always
-            scoped to whichever set is active here, same as this whole
-            screen already worked before sets existed. */}
+            the full reasoning. The Add row and wallet list above are
+            always scoped to whichever set is active here. Moved below the
+            wallets on 14 Oct 2026 (fresh-eyes review): a newcomer came to
+            add a wallet and first met "+ New set", "Export all sets",
+            sizes and a red Delete; most people only ever have one set. */}
         <View style={styles.setSwitcherSection}>
           <Text style={[styles.setSwitcherTitle, { color: colors.text }]}>Wallet sets</Text>
           <Text style={[styles.setSwitcherHint, { color: colors.secondaryText }]}>
@@ -989,185 +1203,6 @@ export default function WalletManager({
 
         </View>
 
-        {activeWalletSetId ? (
-          <>
-            <Text style={[styles.activeSetHeadline, { color: colors.text }]}>
-              Wallets in "{activeSetName}"
-            </Text>
-            <View style={[styles.myWalletsBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-              <View style={styles.myWalletsRow}>
-                <Text style={[styles.myWalletsLabel, { color: colors.text }]}>My wallets</Text>
-                <Switch
-                  value={isMySet}
-                  onValueChange={handleMyWalletsChange}
-                  trackColor={{ false: colors.border, true: colors.primary }}
-                  thumbColor={colors.surface}
-                />
-              </View>
-              <Text style={[styles.myWalletsNote, { color: colors.secondaryText }]}>
-                {isMySet
-                  ? withdrawalListCount > 0
-                    ? `This is your own set: it also shows the ${withdrawalListCount} ID${withdrawalListCount === 1 ? '' : 's'} on your Withdrawals list, wherever those NFTs are (e.g. still in the game's main wallet). Run Fetch/Update to load them.`
-                    : 'This is your own set. IDs you add on the Withdrawals screen will show here too, wherever those NFTs are.'
-                  : `Switch on if these are your own wallets: the set then also shows the IDs on your Withdrawals list. Only one set can be yours${mySetName ? ` - right now it's "${mySetName}"` : ''}.`}
-              </Text>
-              {onOpenWithdrawals ? (
-                <TouchableOpacity onPress={onOpenWithdrawals}>
-                  <Text style={[styles.myWalletsLink, { color: colors.primary }]}>
-                    {withdrawalListCount > 0 ? `Your IDs (${withdrawalListCount}) →` : 'Add the IDs of NFTs you own →'}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-              <View style={styles.addRow}>
-                <TextInput
-                  style={[styles.addInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-                  placeholder="Paste a Klever wallet address (klv1...)"
-                  placeholderTextColor={colors.secondaryText}
-                  value={newAddressInput}
-                  onChangeText={setNewAddressInput}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!isBusy}
-                />
-                <TouchableOpacity
-                  style={[styles.scanButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
-                  onPress={() => setIsScannerVisible(true)}
-                  disabled={isBusy}
-                >
-                  <Text style={styles.scanButtonIcon}>📷</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.addButton,
-                    { backgroundColor: colors.primary },
-                    (isBusy || newAddressInput.trim().length === 0) && { backgroundColor: colors.primaryDisabled },
-                  ]}
-                  onPress={handleAdd}
-                  disabled={isBusy || newAddressInput.trim().length === 0}
-                >
-                  <Text style={[styles.addButtonText, { color: colors.primaryText }]}>Add</Text>
-                </TouchableOpacity>
-              </View>
-              {IS_WEB ? (
-                <TouchableOpacity
-                  style={[
-                    styles.extensionButton,
-                    { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
-                    (isBusy || isConnectingExtension) && { opacity: 0.5 },
-                  ]}
-                  onPress={handleConnectExtension}
-                  disabled={isBusy || isConnectingExtension}
-                >
-                  <Text style={[styles.rowButtonText, { color: colors.text }]}>
-                    {isConnectingExtension ? 'Connecting...' : 'Connect Klever Extension'}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-            </KeyboardAvoidingView>
-
-            <QrScannerModal
-              visible={isScannerVisible}
-              onScanned={handleScanned}
-              onClose={() => setIsScannerVisible(false)}
-            />
-          </>
-        ) : null}
-
-        {!activeWalletSetId ? (
-          <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
-            No wallet set is loaded right now - load one above, or create a new one to start adding wallet addresses.
-          </Text>
-        ) : wallets.length === 0 ? (
-          <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
-            No wallets added yet - paste an address above and tap Add.
-          </Text>
-        ) : (
-          wallets.map((wallet) => (
-            <View
-              key={wallet.id}
-              style={[styles.walletRow, { backgroundColor: colors.surface, shadowColor: colors.cardShadow }]}
-            >
-              {editingId === wallet.id ? (
-                <>
-                  <TextInput
-                    style={[styles.editInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
-                    value={editAddressInput}
-                    onChangeText={setEditAddressInput}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!isBusy}
-                  />
-                  {/* Optional friendly name - "Main", "Trading", etc. -
-                      shown next to the Edit/Delete buttons once saved
-                      (see the non-edit row below). */}
-                  <TextInput
-                    style={[styles.editInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, color: colors.text }]}
-                    placeholder="Name this wallet (optional)"
-                    placeholderTextColor={colors.secondaryText}
-                    value={editAliasInput}
-                    onChangeText={setEditAliasInput}
-                    autoCapitalize="words"
-                    editable={!isBusy}
-                  />
-                  <View style={styles.walletRowButtons}>
-                    <TouchableOpacity
-                      style={[
-                        styles.rowButton,
-                        { backgroundColor: colors.primary },
-                        (isBusy || editAddressInput.trim().length === 0) && { backgroundColor: colors.primaryDisabled },
-                      ]}
-                      onPress={() => handleSaveEdit(wallet.id)}
-                      disabled={isBusy || editAddressInput.trim().length === 0}
-                    >
-                      <Text style={[styles.rowButtonText, { color: colors.primaryText }]}>Save</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
-                      onPress={handleCancelEdit}
-                      disabled={isBusy}
-                    >
-                      <Text style={[styles.rowButtonText, { color: colors.text }]}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              ) : (
-                <>
-                  <Text style={[styles.walletAddress, { color: colors.text }]} numberOfLines={1}>
-                    {wallet.address}
-                  </Text>
-                  {/* Buttons on the left, the wallet's alias (if it has
-                      one) on the right of them - a plain "name tag" so
-                      wallets are easy to tell apart at a glance. */}
-                  <View style={styles.walletRowBottom}>
-                    <View style={styles.walletRowButtons}>
-                      <TouchableOpacity
-                        style={[styles.rowButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }, isBusy && { opacity: 0.5 }]}
-                        onPress={() => handleStartEdit(wallet)}
-                        disabled={isBusy}
-                      >
-                        <Text style={[styles.rowButtonText, { color: colors.text }]}>Edit</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.rowButton, { backgroundColor: colors.statusFailedBackground }, isBusy && { opacity: 0.5 }]}
-                        onPress={() => handleDelete(wallet)}
-                        disabled={isBusy}
-                      >
-                        <Text style={[styles.rowButtonText, { color: colors.cancelText }]}>Delete</Text>
-                      </TouchableOpacity>
-                    </View>
-                    {wallet.alias ? (
-                      <Text style={[styles.walletAlias, { color: colors.secondaryText }]} numberOfLines={1}>
-                        {wallet.alias}
-                      </Text>
-                    ) : null}
-                  </View>
-                </>
-              )}
-            </View>
-          ))
-        )}
 
         {/* Separated from the wallet list above by its own border/
             spacing, and styled distinctly (red text/border) so it never
@@ -1209,6 +1244,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  welcomeBox: { borderWidth: 1, borderRadius: 12, padding: 14, marginHorizontal: 12, marginBottom: 16, gap: 8 },
+  welcomeTitle: { fontSize: 18, fontWeight: '700' },
+  welcomeText: { fontSize: 14, lineHeight: 20 },
+  welcomeLink: { fontSize: 14, fontWeight: '600' },
   backButton: {
     width: 40,
     height: 40,
@@ -1244,6 +1283,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   setSwitcherSection: {
+    marginTop: 16,
     marginBottom: 8,
   },
   setSwitcherTitle: {
@@ -1398,6 +1438,7 @@ const styles = StyleSheet.create({
   },
   extensionButton: {
     marginTop: 8,
+    marginHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
@@ -1418,6 +1459,7 @@ const styles = StyleSheet.create({
   emptyText: {
     textAlign: 'center',
     marginTop: 24,
+    marginBottom: 16,
     marginHorizontal: 12,
   },
   walletRow: {

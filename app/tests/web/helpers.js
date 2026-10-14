@@ -11,14 +11,26 @@ async function openHub(page, options = {}) {
   const dialogs = [];
   page.on('dialog', async (dialog) => {
     dialogs.push(dialog.message());
-    await dialog.accept();
+    // "Wallet added" offers "Fetch now"; the tests choose "Add another
+    // wallet first" and start the fetch themselves, step by step
+    // (options.fetchNow picks "Fetch now" instead).
+    if (/^Wallet added/.test(dialog.message()) && dialog.type() === 'confirm' && !options.fetchNow) await dialog.dismiss();
+    else await dialog.accept();
   });
   // Use the browser's own message boxes, which the tests read and close
   // automatically (see src/web/alertForWeb.js). One test checks the
   // Hub's in-page box on purpose (dialogs.spec.js).
   if (!options.inPageDialogs) await page.addInitScript(() => { window.__HUB_NATIVE_DIALOGS = true; });
   await page.goto('./');
-  await expect(page.getByText('☰').first()).toBeVisible();
+  // A brand-new visitor lands on Wallets with the welcome box (14 Oct
+  // 2026). Most tests start from the NFT list, so they go back there
+  // (options.keepWelcome stays on the welcome screen).
+  const welcome = page.getByTestId('welcome-box');
+  await expect(page.getByText('☰').first().or(welcome)).toBeVisible();
+  if (!options.keepWelcome && (await welcome.isVisible())) {
+    await page.getByText('‹').first().click();
+    await expect(page.getByText('☰').first()).toBeVisible();
+  }
   return dialogs;
 }
 

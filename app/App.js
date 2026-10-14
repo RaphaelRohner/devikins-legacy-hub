@@ -524,6 +524,7 @@ function AppContent() {
   const loadWallets = useCallback(async () => {
     const rows = await getWallets();
     setWallets(rows);
+    return rows;
   }, []);
 
   // Re-reads the wallet-sets registry (which sets exist, which one's
@@ -571,7 +572,12 @@ function AppContent() {
         // wait on the network just to see data we already have. Tapping
         // Fetch/Update still checks for anything new/changed, same as
         // always.
-        await loadWallets();
+        const rows = await loadWallets();
+        // First visit (or right after Reset All Data): no wallet yet and
+        // only the starting set - open Wallets straight away, where a
+        // welcome box says what the Hub is and what to do first
+        // (Raphael, 14 Oct 2026). Same test as WalletManager's showWelcome.
+        if (rows.length === 0 && sets.length <= 1) setCurrentScreen('wallets');
       } else {
         // Nothing's active (the previously-active set was deleted and
         // nothing new was picked yet) - land straight on Wallets rather
@@ -882,6 +888,20 @@ Continue anyway?`
     handleFetchPress();
   }
 
+  // "Fetch now" in the "Wallet added" box (WalletManager.js): back to the
+  // NFT list, then start the fetch once the new wallet is in `wallets`
+  // (it arrives a moment later via loadWallets).
+  const [fetchRequested, setFetchRequested] = useState(false);
+  function handleFetchNowFromWallets() {
+    goToScreen(lastCollectionScreen);
+    setFetchRequested(true);
+  }
+  useEffect(() => {
+    if (!fetchRequested || ownerAddresses.length === 0 || !COLLECTIONS[currentScreen]) return;
+    setFetchRequested(false);
+    handleFetchPress();
+  }, [fetchRequested, ownerAddresses, currentScreen, handleFetchPress]);
+
   // The automatic background maintenance timer: every AUTO_RETRY_INTERVAL_MS
   // (once a minute), if nothing else is currently fetching, does up to
   // two independent things:
@@ -1111,6 +1131,7 @@ Continue anyway?`
           onWalletSetsChanged={refreshWalletSetsState}
           onClose={() => goToScreen(lastCollectionScreen)}
           onOpenWithdrawals={() => goToScreen('withdrawals')}
+          onFetchNow={handleFetchNowFromWallets}
         />
       </SafeAreaView>
     );

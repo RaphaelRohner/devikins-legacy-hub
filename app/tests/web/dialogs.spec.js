@@ -23,7 +23,7 @@ test('a message box does not pause a running fetch', async ({ page, context }) =
   // The Hub's own box, inside the page:
   const box = page.locator('[data-hub-dialog]');
   await expect(box).toContainText('Wallet added');
-  await box.getByRole('button', { name: 'OK' }).click();
+  await box.getByRole('button', { name: 'Add another wallet first' }).click();
   await expect(box).toHaveCount(0);
   await goBack(page);
 

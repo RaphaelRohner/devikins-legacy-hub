@@ -42,7 +42,8 @@ test('the counter only counts a visitor once they add a wallet, then every visit
   await page.waitForTimeout(2000);
   expect(pings(), 'pings before any wallet was added').toBe(0);
 
-  await openMenuEntry(page, 'Wallets');
+  // Still no wallet, so the reload opened Wallets with the welcome.
+  await expect(page.getByTestId('welcome-box')).toBeVisible();
   await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
   await page.getByText('Add', { exact: true }).click();
   await expect.poll(pings).toBe(1);
@@ -533,4 +534,28 @@ test('the count says "1 of 2" when some are left out, and follows Mark as Delete
   await page.getByText('Restore', { exact: true }).click();
   await page.goBack();
   await expect(page.getByText('2 Devikins', { exact: true })).toBeVisible();
+});
+
+test('a first visit opens Wallets with a welcome; "Fetch now" loads the NFTs right away', async ({ page }) => {
+  const dialogs = await openHub(page, { keepWelcome: true, fetchNow: true });
+  const welcome = page.getByTestId('welcome-box');
+  await expect(welcome).toContainText('Welcome to the Devikins Legacy Hub');
+  await expect(welcome).toContainText('Already have a backup? Import it');
+  // The box to add a wallet comes before the wallet sets.
+  const addBox = await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').boundingBox();
+  const sets = await page.getByText('Wallet sets', { exact: true }).boundingBox();
+  expect(addBox.y).toBeLessThan(sets.y);
+
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  await expect.poll(() => dialogs.join('\n')).toMatch(/Wallet added/);
+  // "Fetch now" was chosen: back on the list, and the NFTs come in.
+  await expect(page.getByText('2 Devikins', { exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/^\d+%$/)).toHaveCount(0, { timeout: 60_000 });
+  await expect(page.getByText('#101', { exact: true })).toBeVisible();
+
+  // With a wallet, the Hub starts on the list again - no welcome.
+  await page.reload();
+  await expect(page.getByText('☰').first()).toBeVisible();
+  await expect(page.getByTestId('welcome-box')).toHaveCount(0);
 });
