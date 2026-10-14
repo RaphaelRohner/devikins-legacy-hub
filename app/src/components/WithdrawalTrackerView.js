@@ -25,6 +25,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   ScrollView,
   Platform,
@@ -124,6 +125,33 @@ const SORTS = [
   { key: 'id-desc', label: 'ID ↓' },
 ];
 
+// What each chip means - shown when the mouse rests on a chip (website)
+// or when a chip is pressed and held (app). Raphael, 14 Oct 2026: "a mouse
+// over pop up explaining exactly what it does would be great". The kind
+// chips (Devikins, Weapons, ...) explain themselves and have none.
+const CHIP_HELP = {
+  game: "Still in the game: NFTs in your in-game wallet or in the game's main wallet - everything you'd still have to withdraw.",
+  'in-game': 'In-game wallet: NFTs in your own in-game wallet (the "Withdraw from" address in step 1).',
+  main: "Game's main wallet: NFTs in the big wallet the game keeps for all players (klv1a35l…).",
+  elsewhere:
+    "Another wallet: NFTs held by an address that is neither yours nor the game's - for example a seller's game wallet after a marketplace buy, or an NFT sent to the wrong place.",
+  'not-found': 'Not found: IDs that don\'t exist on the chain - never created, or burned. Often a typo in the ID.',
+  any: 'Anywhere: no filter by place - shows NFTs wherever they are.',
+  attention: 'Needs attention first: Overdue at the top, then Requested, Another wallet, Not found, still in the game, not checked yet - Arrived at the bottom.',
+  'id-asc': 'ID ↑: smallest ID first.',
+  'id-desc': 'ID ↓: biggest ID first.',
+  all: 'All: every NFT the other chips above let through.',
+  requested: 'Requested: NFTs you marked as requested that haven\'t arrived yet (Overdue ones included).',
+  overdue: 'Overdue: marked as requested, but not arrived within the time set in step 1. These are the ones for a support ticket.',
+  arrived: 'Arrived: NFTs found in your receiving wallet ("Receive in" in step 1).',
+  'not-requested': "Not requested: NFTs on the list you haven't marked as requested and that haven't arrived - the Hub only tells you where they are.",
+};
+// Kind chips use the key 'all' too; they get no explanation.
+function chipHelpFor(options, key) {
+  if (options === KIND_FILTERS) return null;
+  return CHIP_HELP[key] || null;
+}
+
 const PASTE_KINDS = [
   { key: null, label: 'Use headings' },
   { key: 'devikin', label: 'Devikins' },
@@ -166,6 +194,8 @@ export default function WithdrawalTrackerView({ onClose }) {
   const [kindFilter, setKindFilter] = useState('all');
   const [placeFilter, setPlaceFilter] = useState('any');
   const [sortMode, setSortMode] = useState('attention');
+  // The chip explanation on show: { row, text } (row = which chip row it belongs under).
+  const [chipHint, setChipHint] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [shownRows, setShownRows] = useState(ROWS_PER_PAGE);
   const [checking, setChecking] = useState(false);
@@ -624,41 +654,64 @@ export default function WithdrawalTrackerView({ onClose }) {
             [KIND_FILTERS, kindFilter, setKindFilter],
             [PLACE_FILTERS, placeFilter, setPlaceFilter],
             [SORTS, sortMode, setSortMode],
-          ].map(([options, value, setValue], rowIndex) => (
-            <View key={rowIndex} style={styles.chipRow}>
-              {options.map((o) => (
-                <TouchableOpacity
-                  key={o.key}
-                  style={[styles.chipSmall, { borderColor: value === o.key ? colors.primary : colors.border }]}
-                  onPress={() => {
-                    setValue(o.key);
-                    setShownRows(ROWS_PER_PAGE);
-                  }}
-                >
-                  <Text style={{ color: value === o.key ? colors.primary : colors.secondaryText, fontSize: 12, fontWeight: value === o.key ? '700' : '400' }}>
-                    {options === KIND_FILTERS ? `${o.label} (${kindCounts[o.key] ?? 0})` : o.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ))}
-
-          <View style={styles.chipRow}>
-            {FILTERS.map((f) => (
-              <TouchableOpacity
-                key={f.key}
-                style={[styles.chip, { borderColor: colors.border, backgroundColor: filter === f.key ? colors.primary : colors.surfaceAlt }]}
-                onPress={() => {
-                  setFilter(f.key);
-                  setShownRows(ROWS_PER_PAGE);
-                }}
-              >
-                <Text style={{ color: filter === f.key ? colors.primaryText : colors.text, fontSize: 13 }}>
-                  {f.label} ({counts[f.key]})
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+            [FILTERS, filter, setFilter],
+          ].map(([options, value, setValue], rowIndex) => {
+            const big = options === FILTERS;
+            // The explanation floats over what's below (like a tooltip), so
+            // the chips never jump around under the mouse.
+            return (
+              <View key={rowIndex} style={{ position: 'relative', zIndex: chipHint && chipHint.row === rowIndex ? 10 : 1 }}>
+                <View style={styles.chipRow}>
+                  {options.map((o) => {
+                    const on = value === o.key;
+                    const help = chipHelpFor(options, o.key);
+                    const label = options === KIND_FILTERS ? `${o.label} (${kindCounts[o.key] ?? 0})` : big ? `${o.label} (${counts[o.key]})` : o.label;
+                    return (
+                      <Pressable
+                        key={o.key}
+                        style={
+                          big
+                            ? [styles.chip, { borderColor: colors.border, backgroundColor: on ? colors.primary : colors.surfaceAlt }]
+                            : [styles.chipSmall, { borderColor: on ? colors.primary : colors.border }]
+                        }
+                        onPress={() => {
+                          setChipHint(null);
+                          setValue(o.key);
+                          setShownRows(ROWS_PER_PAGE);
+                        }}
+                        onLongPress={help ? () => setChipHint({ row: rowIndex, text: help }) : undefined}
+                        onHoverIn={help ? () => setChipHint({ row: rowIndex, text: help }) : undefined}
+                        onHoverOut={help ? () => setChipHint((h) => (h && h.text === help ? null : h)) : undefined}
+                        accessibilityHint={help || undefined}
+                      >
+                        <Text
+                          style={
+                            big
+                              ? { color: on ? colors.primaryText : colors.text, fontSize: 13 }
+                              : { color: on ? colors.primary : colors.secondaryText, fontSize: 12, fontWeight: on ? '700' : '400' }
+                          }
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                {chipHint && chipHint.row === rowIndex ? (
+                  <Pressable
+                    onPress={() => setChipHint(null)}
+                    style={[styles.chipHint, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                    testID="chip-hint"
+                  >
+                    <Text style={[styles.note, { color: colors.text }]}>{chipHint.text}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            );
+          })}
+          {!IS_WEB ? (
+            <Text style={[styles.note, { color: colors.secondaryText }]}>Hold a chip to see what it means.</Text>
+          ) : null}
 
           {overdueTotal > 0 ? (
             <View style={styles.buttonRow}>
@@ -805,6 +858,22 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
   chipSmall: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 },
+  chipHint: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 4,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
+  },
   buttonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   button: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center' },
   buttonText: { fontSize: 15, fontWeight: '700' },

@@ -292,3 +292,38 @@ test('"Check" skips arrived NFTs; "Check selected" can look at an arrived one ag
   await expect(row(page, 'Weapon #3265')).toContainText('In another wallet');
   expect(lookups(3265)).toBe(2);
 });
+
+test('resting the mouse on a chip explains it; tapping still filters', async ({ page }) => {
+  await openHub(page);
+  await openMenuEntry(page, 'Withdrawals');
+  await page.locator('textarea').fill('W3265 W1442');
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText(/2 added/)).toBeVisible();
+
+  const hint = page.getByTestId('chip-hint');
+  await page.getByText('Still in the game', { exact: true }).hover();
+  await expect(hint).toContainText("in your in-game wallet or in the game's main wallet");
+  await page.getByText('Overdue (0)', { exact: true }).hover();
+  await expect(hint).toHaveCount(1);
+  await expect(hint).toContainText('support ticket');
+  await page.mouse.move(5, 5);
+  await expect(hint).toHaveCount(0);
+
+  // Kind chips explain themselves: no box.
+  await page.getByText('Weapons (2)', { exact: true }).hover();
+  await page.waitForTimeout(300);
+  await expect(hint).toHaveCount(0);
+
+  // A tap still switches the filter.
+  await page.getByText('Arrived (0)', { exact: true }).click();
+  await expect(page.getByText('Weapon #3265')).toHaveCount(0);
+
+  // Press and hold (like on the phone) shows it too.
+  await page.mouse.move(5, 5);
+  const box = await page.getByText('Not found', { exact: true }).boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(900);
+  await page.mouse.up();
+  await expect(hint).toContainText("don't exist on the chain");
+});
