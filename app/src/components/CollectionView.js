@@ -260,6 +260,11 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
 
     setIsLoading(true);
     const result = await queryNfts(kind, ownerAddresses, filters, excludeDeleted, searchText, starFilter, sortField, sortDirection, excludeBlanks);
+    // Re-count too, so marking one as deleted / restoring it updates the
+    // "2 Devikins" count straight away (fresh-eyes review, 14 Oct 2026:
+    // it stayed stale until the page was reloaded).
+    const total = await countNfts(kind, ownerAddresses, true);
+    setNotDeletedCount(total);
     setRows(result);
     setIsLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -681,7 +686,15 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // progress hint moved down into this screen's own toolbar instead,
   // living inside the Compare button that controls it (see the JSX
   // further down, inside viewModeButtonGroup).
-  const toolbarStatusText = `${notDeletedCount} ${COLLECTIONS[kind].label}`;
+  // "1 of 2 Devikins" while search, filters, stars, Hide blanks or Hide
+  // deleted leave some out - the plain "2 Devikins" looked wrong with only
+  // one on screen (fresh-eyes review, 14 Oct 2026). Items marked deleted
+  // never count, whether they're shown greyed out or hidden.
+  const shownActiveCount = rows.filter((r) => !r.deleted).length;
+  const toolbarStatusText =
+    shownActiveCount < notDeletedCount
+      ? `${shownActiveCount} of ${notDeletedCount} ${COLLECTIONS[kind].label}`
+      : `${notDeletedCount} ${COLLECTIONS[kind].label}`;
 
   useEffect(() => {
     onStatusTextChange(toolbarStatusText);
@@ -886,7 +899,10 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
 
   const deletedSwitchControl = (
     <View style={[styles.deletedSwitchGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <Text style={[styles.deletedSwitchLabel, { color: colors.text }]}>Deleted</Text>
+      {/* "Hide deleted", not "Deleted": switched on it HIDES them, and
+          "Deleted: on" read like "show deleted" (fresh-eyes review,
+          14 Oct 2026). */}
+      <Text style={[styles.deletedSwitchLabel, { color: colors.text }]}>Hide deleted</Text>
       <Switch
         value={excludeDeleted}
         onValueChange={setExcludeDeleted}

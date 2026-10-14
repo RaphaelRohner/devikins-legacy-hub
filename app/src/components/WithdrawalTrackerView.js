@@ -79,6 +79,7 @@ const STATUS_TEXT = {
   arrived: 'Arrived',
   overdue: 'Overdue',
   requested: 'Requested - waiting',
+  'requested-elsewhere': 'Requested - in another wallet!',
   'in-game': 'In your in-game wallet',
   main: "In the game's main wallet",
   elsewhere: 'In another wallet',
@@ -94,7 +95,7 @@ const PLACE_TEXT = {
   unchecked: 'not checked yet',
 };
 // Order in the list: what needs attention first.
-const STATUS_ORDER = ['overdue', 'requested', 'elsewhere', 'not-found', 'in-game', 'main', 'unchecked', 'arrived'];
+const STATUS_ORDER = ['overdue', 'requested-elsewhere', 'requested', 'elsewhere', 'not-found', 'in-game', 'main', 'unchecked', 'arrived'];
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -141,7 +142,7 @@ const CHIP_HELP = {
   'id-asc': 'ID ↑: smallest ID first.',
   'id-desc': 'ID ↓: biggest ID first.',
   all: 'All: every NFT the other chips above let through.',
-  requested: 'Requested: NFTs you marked as requested that haven\'t arrived yet (Overdue ones included).',
+  requested: 'Requested: NFTs you marked as requested that haven\'t arrived yet (Overdue ones included). One marked in red sits in someone else\'s wallet - worth a look.',
   overdue: 'Overdue: marked as requested, but not arrived within the time set in step 1. These are the ones for a support ticket.',
   arrived: 'Arrived: NFTs found in your receiving wallet ("Receive in" in step 1).',
   'not-requested': "Not requested: NFTs on the list you haven't marked as requested and that haven't arrived - the Hub only tells you where they are.",
@@ -196,6 +197,20 @@ export default function WithdrawalTrackerView({ onClose }) {
   const [sortMode, setSortMode] = useState('attention');
   // The chip explanation on show: { row, text } (row = which chip row it belongs under).
   const [chipHint, setChipHint] = useState(null);
+  // Press-and-hold (phone): the box shows while the finger is down and
+  // closes by itself 3 seconds after letting go, so it never stays on top
+  // of the chips below (fresh-eyes review, 14 Oct 2026). Tapping it closes
+  // it at once.
+  const hintTimer = useRef(null);
+  function showHeldHint(row, text) {
+    clearTimeout(hintTimer.current);
+    setChipHint({ row, text, held: true });
+  }
+  function releaseHeldHint(text) {
+    clearTimeout(hintTimer.current);
+    hintTimer.current = setTimeout(() => setChipHint((h) => (h && h.held && h.text === text ? null : h)), 3000);
+  }
+  useEffect(() => () => clearTimeout(hintTimer.current), []);
   const [selected, setSelected] = useState(() => new Set());
   const [shownRows, setShownRows] = useState(ROWS_PER_PAGE);
   const [checking, setChecking] = useState(false);
@@ -347,6 +362,9 @@ export default function WithdrawalTrackerView({ onClose }) {
           (markOnAdd ? ' - all marked as requested.' : '.')
       );
       setPasteText('');
+      // Back off after each add, so the next paste isn't marked by accident
+      // (fresh-eyes review, 14 Oct 2026).
+      setMarkOnAdd(false);
     }
     if (unassigned.length > 0) {
       notes.push(
@@ -516,6 +534,9 @@ export default function WithdrawalTrackerView({ onClose }) {
       if (item.place !== 'elsewhere') parts.push(PLACE_TEXT[item.place]);
     }
     if (item.place === 'elsewhere') parts.push(`held by ${shortAddress(item.holder)}`);
+    if (item.status === 'requested-elsewhere') {
+      parts.push("check this - if you bought it on the marketplace, it may still sit in the seller's game wallet until the game sends it");
+    }
     if (item.previous_holder && item.previous_holder !== item.holder) {
       parts.push(`moved from ${walletName(item.previous_holder)}`);
     }
@@ -524,7 +545,7 @@ export default function WithdrawalTrackerView({ onClose }) {
   }
 
   function statusColor(status) {
-    if (status === 'overdue' || status === 'elsewhere' || status === 'not-found') return colors.cancelText;
+    if (status === 'overdue' || status === 'requested-elsewhere' || status === 'elsewhere' || status === 'not-found') return colors.cancelText;
     if (status === 'arrived') return colors.primary;
     return colors.text;
   }
@@ -679,7 +700,8 @@ export default function WithdrawalTrackerView({ onClose }) {
                           setValue(o.key);
                           setShownRows(ROWS_PER_PAGE);
                         }}
-                        onLongPress={help ? () => setChipHint({ row: rowIndex, text: help }) : undefined}
+                        onLongPress={help ? () => showHeldHint(rowIndex, help) : undefined}
+                        onPressOut={help ? () => releaseHeldHint(help) : undefined}
                         onHoverIn={help ? () => setChipHint({ row: rowIndex, text: help }) : undefined}
                         onHoverOut={help ? () => setChipHint((h) => (h && h.text === help ? null : h)) : undefined}
                         accessibilityHint={help || undefined}

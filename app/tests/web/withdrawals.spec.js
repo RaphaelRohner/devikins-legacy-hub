@@ -327,3 +327,28 @@ test('resting the mouse on a chip explains it; tapping still filters', async ({ 
   await page.mouse.up();
   await expect(hint).toContainText("don't exist on the chain");
 });
+
+test('a requested NFT in a stranger\'s wallet is flagged at once; the "requested" switch turns itself off', async ({ page }) => {
+  fake.chain.holders.set('equipment:1022', fakeAddress('x'));
+  fake.chain.holders.set('weapon:1442', IN_GAME);
+  await openHub(page);
+  await openMenuEntry(page, 'Withdrawals');
+  await page.getByPlaceholder('klv1… (in-game wallet)').fill(IN_GAME);
+  await page.getByPlaceholder('klv1… (receiving wallet)').fill(RECEIVING);
+  await page.getByText('Save', { exact: true }).click();
+
+  const requestedSwitch = page.locator('[role="switch"]').first();
+  await page.locator('textarea').fill('E1022 W1442');
+  await requestedSwitch.click();
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText(/2 added - all marked as requested/)).toBeVisible();
+  // Off again, so the next paste isn't marked by accident.
+  await expect(requestedSwitch).not.toBeChecked();
+
+  await page.getByText('Check', { exact: true }).click();
+  await expect(row(page, 'Equipment #1022')).toContainText('Requested - in another wallet!');
+  await expect(row(page, 'Equipment #1022')).toContainText("seller's game wallet");
+  await expect(row(page, 'Weapon #1442')).toContainText('Requested - waiting');
+  // Not overdue yet - that still waits for the time limit.
+  await expect(page.getByText('Overdue (0)')).toBeVisible();
+});

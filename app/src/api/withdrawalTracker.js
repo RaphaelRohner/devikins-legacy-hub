@@ -113,11 +113,12 @@ export function parseIdList(text, defaultKind = null) {
 // ---------------------------------------------------------------------------
 
 /**
- * One of: 'arrived', 'overdue', 'requested', 'in-game', 'main',
+ * One of: 'arrived', 'overdue', 'requested', 'requested-elsewhere', 'in-game', 'main',
  * 'elsewhere', 'not-found', 'unchecked'.
  *   arrived    - in the receiving wallet
  *   overdue    - marked requested, not arrived after `overdueMinutes`
  *   requested  - marked requested, still within the time
+ *   requested-elsewhere - same, but in someone else's wallet (a warning)
  * For NFTs that aren't marked requested, where they are:
  *   in-game / main / elsewhere / not-found / unchecked
  * `place` always says where it is: 'receiving' | 'in-game' | 'main' |
@@ -135,7 +136,14 @@ export function statusOf(item, { fromAddress, toAddress, overdueMinutes, now = D
   if (place === 'receiving') return { status: 'arrived', place };
   if (item.requested_at) {
     const minutes = (now - item.requested_at) / 60000;
-    return { status: minutes >= (overdueMinutes || DEFAULT_OVERDUE_MINUTES) ? 'overdue' : 'requested', place };
+    if (minutes >= (overdueMinutes || DEFAULT_OVERDUE_MINUTES)) return { status: 'overdue', place };
+    // Requested, but sitting in a wallet that is neither yours nor the
+    // game's: flagged straight away instead of a calm "waiting" (fresh-eyes
+    // review, 14 Oct 2026: "the scariest result possible"). Not overdue yet,
+    // though - a marketplace buy can legitimately still sit in the seller's
+    // game wallet until the game sends it.
+    if (place === 'elsewhere') return { status: 'requested-elsewhere', place };
+    return { status: 'requested', place };
   }
   return { status: place, place };
 }

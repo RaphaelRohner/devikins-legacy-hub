@@ -121,7 +121,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'What does Fetch/Update do?',
     keywords: ['fetch', 'update', 'scan', 'refresh', 'sync'],
     answer:
-      "It asks the Klever blockchain which Devikins, Weapons, and Equipment your wallet(s) hold, then downloads each one's details and picture. The first fetch takes the longest since nothing's cached yet - after that, it's much faster. There's no automatic background fetching - it only ever runs when you tap Fetch/Update yourself, so if anything's stuck, just tap it again.",
+      "It asks the Klever blockchain which Devikins, Weapons, and Equipment your wallet(s) hold, then downloads each one's details and picture. The first fetch takes the longest since nothing's cached yet - after that, it's much faster. It never looks for new NFTs on its own - that only happens when you tap Fetch/Update. While the Hub is open, though, it quietly retries items that failed (and missing pictures) by itself, so most stragglers fix themselves; if something stays stuck, tap Fetch/Update again.",
   },
   {
     id: 'scan-notification',
@@ -138,7 +138,7 @@ const ALL_FAQ_ENTRIES = [
     question: "What does marking something 'Deleted' do?",
     keywords: ['delete', 'deleted', 'hide', 'sold', 'restore', 'remove', 'traded'],
     answer:
-      "It's a personal organizing flag only - nothing is removed from the blockchain, or even from this app's own database. It greys the item out (or hides it entirely if you switch on the Deleted filter) so your list stays tidy, and you can tap Restore on it any time. One thing to know: if you still hold the NFT, the next Fetch/Update will automatically un-delete it, since successfully re-fetching it is proof you still own it.",
+      "It's a personal organizing flag only - nothing is removed from the blockchain, or even from this app's own database. It greys the item out (or hides it entirely if you switch on \"Hide deleted\" above the list) so your list stays tidy, and you can tap Restore on it any time. One thing to know: if you still hold the NFT, the next Fetch/Update will automatically un-delete it, since successfully re-fetching it is proof you still own it.",
   },
   {
     id: 'list-tiles',
@@ -245,7 +245,7 @@ const ALL_FAQ_ENTRIES = [
     question: "Why does an item say 'Unavailable' or 'Fetch failed'?",
     keywords: ['unavailable', 'missing', 'failed', 'no image', 'no data'],
     answer:
-      "The game's own metadata service occasionally times out or has no data for an item yet. 'Fetch failed' items get another try the next time you tap Fetch/Update (there's no automatic background retry, so it won't fix itself on its own); 'Unavailable' means the service gave a clear 'this doesn't exist' answer, so it's treated as final and isn't retried even then.",
+      "The game's own metadata service occasionally times out or has no data for an item yet. 'Fetch failed' items get retried automatically while the Hub is open (about once a minute at first, then less often), and again whenever you tap Fetch/Update; 'Unavailable' means the service gave a clear 'this doesn't exist' answer, so it's treated as final and isn't retried even then.",
   },
   {
     id: 'reset-data',

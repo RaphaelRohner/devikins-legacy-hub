@@ -401,6 +401,12 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
           <Text style={[styles.deleteActionButtonText, { color: colors.cancelText }]}>Mark as Deleted</Text>
         </TouchableOpacity>
       )}
+      {/* What "deleted" means here (fresh-eyes review, 14 Oct 2026). */}
+      <Text style={[styles.deleteSectionLabel, { color: colors.secondaryText, marginTop: 6, fontWeight: '400' }]}>
+        {isDeleted
+          ? 'Only marked in the Hub - "Restore" brings it back. Your NFT itself was never affected.'
+          : 'Only hides it in the Hub (with "Hide deleted" on) - nothing happens to your NFT on the blockchain.'}
+      </Text>
     </View>
   );
 

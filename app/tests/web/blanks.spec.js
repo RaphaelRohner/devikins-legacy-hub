@@ -52,7 +52,7 @@ test('Hide blanks hides NFTs with missing or empty pictures, and steps aside for
   // Compare: both switches step aside, and come back afterwards.
   await page.getByText('Compare', { exact: true }).click();
   await expect(page.getByText('Hide blanks', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Deleted', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Hide deleted', { exact: true })).toHaveCount(0);
   await page.getByText('Tap one to compare', { exact: true }).click();
   await expect(page.getByText('Hide blanks', { exact: true })).toBeVisible();
 

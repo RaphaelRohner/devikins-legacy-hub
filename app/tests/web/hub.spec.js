@@ -504,3 +504,33 @@ test('the Changelog shows a trait that changed between two fetches', async ({ pa
   await expect(page.getByPlaceholder('Give this NFT a name (optional)')).toBeVisible();
   await expect(page.getByText('Changelog', { exact: true })).toHaveCount(0);
 });
+
+test('the count says "1 of 2" when some are left out, and follows Mark as Deleted / Restore', async ({ page }) => {
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  await expect(page.getByText('2 Devikins', { exact: true })).toBeVisible();
+
+  // A search leaves one out.
+  await page.getByPlaceholder(/Search/).fill('102');
+  await expect(page.getByText('1 of 2 Devikins', { exact: true })).toBeVisible();
+  await page.getByPlaceholder(/Search/).fill('');
+  await expect(page.getByText('2 Devikins', { exact: true })).toBeVisible();
+
+  // Mark #101 as deleted: the detail explains it only affects the Hub.
+  await page.getByText('#101', { exact: true }).click();
+  await expect(page.getByText(/nothing happens to your NFT on the blockchain/)).toBeVisible();
+  await page.getByText('Mark as Deleted', { exact: true }).click();
+  await expect(page.getByText('Marked as deleted', { exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByText('1 of 1 Devikins', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('1 Devikins', { exact: true })).toBeVisible();
+
+  // The switch is called "Hide deleted".
+  await expect(page.getByText('Hide deleted', { exact: true })).toBeVisible();
+
+  // Restore: back to 2 without reloading the page.
+  await page.getByText('#101', { exact: true }).click();
+  await page.getByText('Restore', { exact: true }).click();
+  await page.goBack();
+  await expect(page.getByText('2 Devikins', { exact: true })).toBeVisible();
+});
