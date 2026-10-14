@@ -36,7 +36,7 @@ test('the set marked "My wallets" also shows the Withdrawals list NFTs, with whe
   await page.locator('textarea').fill('W3265');
   await page.getByText('Add to the list', { exact: true }).click();
   await expect(page.getByText('All (1)')).toBeVisible();
-  await page.getByText('Check now', { exact: true }).click();
+  await page.getByText('Check', { exact: true }).click();
   await expect(page.getByText(/Last check:/)).toBeVisible();
   await goBack(page);
 

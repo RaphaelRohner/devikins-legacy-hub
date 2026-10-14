@@ -52,7 +52,7 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   await expect(page.getByPlaceholder('klv1… (in-game wallet)')).toHaveValue(IN_GAME);
   await page.getByPlaceholder('klv1… (receiving wallet)').fill(RECEIVING);
   await page.getByText('Save', { exact: true }).click();
-  await expect(page.getByText('Check now', { exact: true })).toBeVisible();
+  await expect(page.getByText('Check', { exact: true })).toBeVisible();
 
   // 2. Paste a list with headings (like Raphael's own list)
   await page.locator('textarea').fill('Weapons\n3265\n1442, 1450\n\nEquipment\n#1022\n\nDevikins\n999');
@@ -68,7 +68,7 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   await expect(page.getByText('Requested (2)')).toBeVisible();
 
   // 4. Check
-  await page.getByText('Check now', { exact: true }).click();
+  await page.getByText('Check', { exact: true }).click();
   await expect(page.getByText(/Last check:/)).toBeVisible();
   await expect(row(page, 'Weapon #3265')).toContainText('Arrived');
   await expect(row(page, 'Weapon #3265')).toContainText('sent from klv1ssss');
@@ -107,7 +107,7 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   // 6. The game finally sends it
   fake.chain.holders.set('weapon:1442', RECEIVING);
   fake.chain.transfers.push({ hash: 'tx1442', kind: 'weapon', nonce: 1442, from: IN_GAME, to: RECEIVING, timestamp: now + 1900 });
-  await page.getByText('Check now', { exact: true }).click();
+  await page.getByText('Check', { exact: true }).click();
   await expect(row(page, 'Weapon #1442')).toContainText('Arrived', { timeout: 20_000 });
   await expect(row(page, 'Weapon #1442')).toContainText('sent from your in-game wallet');
   await expect(page.getByText('Arrived (2)')).toBeVisible();
@@ -133,7 +133,7 @@ test('the tracker travels with a full backup into a new browser', async ({ page,
   await page.locator('input[type="checkbox"], [role="switch"]').first().click(); // "I've requested these just now"
   await page.getByText('Add to the list', { exact: true }).click();
   await expect(page.getByText(/2 added - all marked as requested/)).toBeVisible();
-  await page.getByText('Check now', { exact: true }).click();
+  await page.getByText('Check', { exact: true }).click();
   await expect(page.getByText('Arrived (1)')).toBeVisible();
 
   // Full backup
@@ -255,4 +255,40 @@ test('pasting a list file with wallet addresses says they were skipped', async (
   await expect(page.getByText(/4 added\. 2 wallet addresses skipped \(only NFT IDs go on the list\)\./)).toBeVisible();
   await expect(page.getByText(/Skipped \(not an ID\)/)).toHaveCount(0);
   await expect(page.getByText('All kinds (4)', { exact: true })).toBeVisible();
+});
+
+test('"Check" skips arrived NFTs; "Check selected" can look at an arrived one again', async ({ page }) => {
+  fake.chain.holders.set('weapon:3265', RECEIVING);
+  fake.chain.transfers.push({ hash: 'tx3265b', kind: 'weapon', nonce: 3265, from: IN_GAME, to: RECEIVING, timestamp: 1791720000 });
+  fake.chain.holders.set('weapon:1442', IN_GAME);
+  await openHub(page);
+  await openMenuEntry(page, 'Withdrawals');
+  await page.getByPlaceholder('klv1… (in-game wallet)').fill(IN_GAME);
+  await page.getByPlaceholder('klv1… (receiving wallet)').fill(RECEIVING);
+  await page.getByText('Save', { exact: true }).click();
+  await expect(page.getByText('3. Check', { exact: true })).toBeVisible();
+  await expect(page.getByText('4. Results', { exact: true })).toBeVisible();
+  await expect(page.getByText('Full check', { exact: true })).toHaveCount(0);
+  await page.locator('textarea').fill('W3265 W1442');
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText(/2 added/)).toBeVisible();
+
+  const lookups = (nonce) => fake.requests.filter((u) => u.includes('/assets/nft/holder/') && u.endsWith(`/${nonce}`)).length;
+  await page.getByText('Check', { exact: true }).click();
+  await expect(row(page, 'Weapon #3265')).toContainText('Arrived');
+  expect(lookups(3265)).toBe(1);
+  expect(lookups(1442)).toBe(1);
+
+  // A second Check only looks at the one that hasn't arrived.
+  await page.getByText('Check', { exact: true }).click();
+  await expect.poll(() => lookups(1442)).toBe(2);
+  await expect(page.getByText(/Looking up|Reading arrivals/)).toHaveCount(0);
+  expect(lookups(3265)).toBe(1);
+
+  // Later #3265 is sold on (the marketplace case): Check selected sees it.
+  fake.chain.holders.set('weapon:3265', SELLER);
+  await row(page, 'Weapon #3265').click();
+  await page.getByText('Check selected', { exact: true }).click();
+  await expect(row(page, 'Weapon #3265')).toContainText('In another wallet');
+  expect(lookups(3265)).toBe(2);
 });

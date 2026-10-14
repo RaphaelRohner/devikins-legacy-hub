@@ -11,9 +11,13 @@
  *   1. Wallets: "Withdraw from" (your in-game wallet) and "Receive in"
  *      (your own wallet). One tracker for the whole Hub.
  *   2. Add NFTs: paste ID lists (with headings, or per kind).
- *   3. Mark the ones you actually requested in the game. Anything marked
+ *      Tick "I've requested these" (or mark rows later): anything marked
  *      that hasn't arrived after N minutes (default 30) is overdue.
- *   4. Check now: asks Klever's API where each NFT is.
+ *   3. Check: asks Klever's API where every NFT that hasn't arrived yet is.
+ *   4. Results: filters, the list, and the tools for ticked rows (Mark
+ *      requested, Clear mark, Check selected, Remove).
+ * Sections 3 and 4 were split on 14 Oct 2026 (Raphael): one Check button
+ * for the whole list, and everything about specific NFTs next to the list.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -585,24 +589,21 @@ export default function WithdrawalTrackerView({ onClose }) {
           {addMessage ? <Text style={[styles.note, { color: colors.text }]}>{addMessage}</Text> : null}
         </View>
 
-        {/* 3. Status */}
+        {/* 3. Check */}
         <View style={card}>
-          <Text style={[styles.heading, { color: colors.text }]}>3. Status</Text>
+          <Text style={[styles.heading, { color: colors.text }]}>3. Check</Text>
           {!walletsReady ? (
             <Text style={[styles.note, { color: colors.secondaryText }]}>Save both wallets first (step 1).</Text>
           ) : (
             <>
               <View style={styles.buttonRow}>
                 <TouchableOpacity style={[button, (checking || items.length === 0) && { opacity: 0.5 }]} onPress={() => check(false)} disabled={checking || items.length === 0}>
-                  <Text style={buttonText}>Check now</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[smallButton, (checking || items.length === 0) && { opacity: 0.5 }]} onPress={() => check(true)} disabled={checking || items.length === 0}>
-                  <Text style={{ color: colors.text, fontWeight: '700' }}>Full check</Text>
+                  <Text style={buttonText}>Check</Text>
                 </TouchableOpacity>
               </View>
               <Text style={[styles.note, { color: colors.secondaryText }]}>
-                "Check now" looks up the NFTs marked as requested (and new ones). "Full check" looks up every NFT on the
-                list - for long lists that takes a few minutes.
+                Looks up every NFT on the list that hasn't arrived yet - for long lists that takes a few minutes. To
+                look up specific NFTs (arrived ones too), tick them under Results and tap "Check selected".
                 {lastCheck ? ` Last check: ${formatTime(lastCheck)}.` : ''}
               </Text>
               {checking ? (
@@ -614,7 +615,11 @@ export default function WithdrawalTrackerView({ onClose }) {
               {checkMessage ? <Text style={[styles.note, { color: colors.cancelText }]}>{checkMessage}</Text> : null}
             </>
           )}
+        </View>
 
+        {/* 4. Results */}
+        <View style={card}>
+          <Text style={[styles.heading, { color: colors.text }]}>4. Results</Text>
           {[
             [KIND_FILTERS, kindFilter, setKindFilter],
             [PLACE_FILTERS, placeFilter, setPlaceFilter],
@@ -754,7 +759,7 @@ export default function WithdrawalTrackerView({ onClose }) {
           ) : null}
         </View>
 
-        {/* 4. Arrivals log */}
+        {/* Arrivals log */}
         <View style={card}>
           <Text style={[styles.heading, { color: colors.text }]}>Arrivals in your receiving wallet</Text>
           {arrivals.length === 0 ? (

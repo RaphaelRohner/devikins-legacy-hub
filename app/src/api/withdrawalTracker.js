@@ -200,9 +200,11 @@ export async function fetchArrivals(address, knownHashes = new Set()) {
  * save (database.js: saveWithdrawalCheckResults / addWithdrawalArrivals).
  *
  *   items        the list (rows from getWithdrawalItems)
- *   full         true = look up every NFT on the list;
- *                false = only those marked requested and not yet arrived,
- *                plus any never checked before
+ *   full         true = look up every NFT given (used by "Check selected");
+ *                false = every NFT that hasn't arrived yet (the "Check"
+ *                button - arrived ones are done; Raphael, 14 Oct 2026:
+ *                the old "Check now" vs "Full check" split did nearly the
+ *                same thing for real users and confused more than it helped)
  *   knownHashes  arrivals already in the log
  *   onProgress   ({ phase, current, total }) for the progress line
  */
@@ -230,7 +232,7 @@ export async function runWithdrawalCheck({ items, fromAddress, toAddress, full, 
   const toLookUp = items.filter((item) => {
     if (full) return true;
     if (!item.checked_at) return true; // new on the list
-    return Boolean(item.requested_at) && item.holder !== toAddress; // requested, not arrived yet
+    return item.holder !== toAddress; // not arrived yet
   });
   let done = 0;
   onProgress?.({ phase: 'lookups', current: 0, total: toLookUp.length });
