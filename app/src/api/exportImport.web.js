@@ -38,6 +38,7 @@ import {
   dumpWithdrawalTracker,
   restoreWithdrawalTracker,
   getGlobalSetting,
+  adoptImportedMyWalletsSet,
 } from '../db/database';
 import { MY_WALLETS_SET_KEY } from '../constants/idList';
 import { ensureCachedImage, putCachedImageBytes, extensionFromUrl } from './webImageCache';
@@ -120,6 +121,8 @@ async function addWalletSetFiles(files, walletSet, onProgress) {
     name: walletSet.name,
     hasDatabase: true,
     imageCount,
+    // Marked "My wallets" here - the import marks its copy the same way.
+    myWallets: await isMyWalletsSet(walletSet),
   }, null, 2));
 }
 
@@ -337,7 +340,8 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
     await restoreWalletSetData(dbFileName, dump, (rowProgress) => {
       onProgress?.({ phase: 'restoring', setName: manifest.name, current: rowProgress.current, total: rowProgress.total });
     });
-    await registerImportedWalletSet(importedName, dbFileName, imagesDirName);
+    const newSetId = await registerImportedWalletSet(importedName, dbFileName, imagesDirName);
+    if (manifest.myWallets === true) await adoptImportedMyWalletsSet(newSetId, MY_WALLETS_SET_KEY);
     await logImportedSetRowCounts(dbFileName);
     importedNames.push(importedName);
   }

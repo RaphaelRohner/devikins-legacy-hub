@@ -113,7 +113,7 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { Platform } from 'react-native';
 import { Zip, ZipPassThrough, strToU8, strFromU8 } from 'fflate';
-import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSetRowCounts, dumpWalletSetData, restoreWalletSetData, dumpWithdrawalTracker, restoreWithdrawalTracker, getGlobalSetting } from '../db/database';
+import { checkpointWalletSetForExport, registerImportedWalletSet, logImportedSetRowCounts, dumpWalletSetData, restoreWalletSetData, dumpWithdrawalTracker, restoreWithdrawalTracker, getGlobalSetting, adoptImportedMyWalletsSet } from '../db/database';
 import { MY_WALLETS_SET_KEY } from '../constants/idList';
 
 // Bumped only if a future change to what's INSIDE an export (the shape
@@ -602,6 +602,9 @@ async function streamWalletSetIntoWriter(writer, walletSet, pathPrefix, onProgre
     // check this replaced.
     hasDatabase: true,
     imageCount,
+    // Marked "My wallets" here - the import marks its copy the same way
+    // (14 Oct 2026). Older Hub versions just ignore this.
+    myWallets: await isMyWalletsSet(walletSet),
   };
   await writer.addFile(`${pathPrefix}manifest.json`, strToU8(JSON.stringify(manifest, null, 2)));
 }
@@ -1091,7 +1094,8 @@ async function importWalletSetsZipFromLocalFile(pickedUri, { onProgress } = {}) 
       onProgress?.({ phase: 'restoring', setName: manifest.name, current: rowProgress.current, total: rowProgress.total });
     });
 
-    await registerImportedWalletSet(importedName, group.dbFileName, group.imagesDirName);
+    const newSetId = await registerImportedWalletSet(importedName, group.dbFileName, group.imagesDirName);
+    if (manifest.myWallets === true) await adoptImportedMyWalletsSet(newSetId, MY_WALLETS_SET_KEY);
     await logImportedSetRowCounts(group.dbFileName);
     importedNames.push(importedName);
 

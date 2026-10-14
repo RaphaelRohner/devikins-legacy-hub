@@ -776,7 +776,8 @@ export default function WalletManager({
   useEffect(() => {
     getGlobalSetting(MY_WALLETS_SET_KEY).then((value) => setMySetId(value));
     countWithdrawalItems().then(setWithdrawalListCount);
-  }, [activeWalletSetId]);
+  }, [activeWalletSetId, walletSets]); // walletSets: an import can mark its set as "My wallets"
+
   const isMySet = mySetId !== null && String(mySetId) === String(activeWalletSetId);
   const mySetName = walletSets.find((set) => String(set.id) === String(mySetId))?.name;
 

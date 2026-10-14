@@ -91,7 +91,8 @@ test('exporting the "My wallets" set on its own also takes the IDs along', async
   const zipPath = testInfo.outputPath('my-set.zip');
   await download.saveAs(zipPath);
 
-  // A brand-new browser: import, load the set, mark it as mine.
+  // A brand-new browser: import - the set loads by itself and is already
+  // marked "My wallets", like it was when exported.
   const context2 = await browser.newContext();
   const fake2 = await installFakeServers(context2);
   fake2.chain.holders.set('weapon:3265', GAME_MAIN_WALLET);
@@ -101,9 +102,7 @@ test('exporting the "My wallets" set on its own also takes the IDs along', async
   const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import a set').click()]);
   await chooser.setFiles(zipPath);
   await expect.poll(() => dialogs.join('\n')).toMatch(/Withdrawals tracker: 1 NFT/);
-  await page2.getByText(/\(imported\)$/).first().click();
   await expect(page2.getByText(/Wallets in ".*\(imported\)"/)).toBeVisible();
-  await switchNear(page2, 'My wallets').click();
   await expect(page2.getByText(/This is your own set/)).toBeVisible();
   await expect(page2.getByText(/Your IDs \(1\)/)).toBeVisible();
   await goBack(page2);

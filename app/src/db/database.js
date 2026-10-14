@@ -2101,3 +2101,20 @@ export async function getGuideDataFacts(idListOwner) {
   }
   return { anyNfts, anyFromIds };
 }
+
+/**
+ * After importing a set that was marked "My wallets" when it was exported:
+ * mark the imported copy as "My wallets" too - unless another set here is
+ * already yours (only one set can be). Raphael, 14 Oct 2026: after export
+ * -> reset -> import, the switch had to be turned on again by hand.
+ * Returns true when the imported set became "My wallets".
+ */
+export async function adoptImportedMyWalletsSet(newSetId, settingKey) {
+  const current = await getGlobalSetting(settingKey);
+  if (current !== null && current !== undefined && current !== '') {
+    const sets = await getWalletSets();
+    if (sets.some((set) => String(set.id) === String(current))) return false;
+  }
+  await setGlobalSetting(settingKey, String(newSetId));
+  return true;
+}
