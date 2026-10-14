@@ -641,3 +641,23 @@ test('a new wallet gets a name, shown first in the list; Withdrawals fills itsel
   await expect(page.getByPlaceholder('klv1… (receiving wallet)')).toHaveValue(TEST_WALLET);
   await expect(page.getByText('Check', { exact: true })).toBeVisible(); // already saved
 });
+
+test('adding a second wallet also offers "Fetch now"', async ({ page }) => {
+  const dialogs = await openHub(page, { fetchNow: true });
+  await openMenuEntry(page, 'Wallets');
+  const input = page.getByPlaceholder('Paste a Klever wallet address (klv1...)');
+  await input.fill(require('./fakeServers').fakeAddress('g'));
+  await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page, 'In-game wallet');
+  // The first wallet's "Fetch now" was taken (options.fetchNow): back on the list.
+  await expect(page.getByText('☰').first()).toBeVisible();
+  await expect(page.getByText(/^\d+%$/)).toHaveCount(0, { timeout: 60_000 });
+
+  await openMenuEntry(page, 'Wallets');
+  await input.fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page, 'My wallet');
+  await expect.poll(() => dialogs.filter((d) => /Load this wallet's Devikins/.test(d)).length).toBe(1);
+  // "Fetch now" again: the second wallet's NFTs come in.
+  await expect(page.getByText('2 Devikins', { exact: true })).toBeVisible({ timeout: 60_000 });
+});

@@ -371,6 +371,14 @@ export default function WalletManager({
       onWalletsChanged();
     }
     if (target.isFirst) showFirstWalletAdded();
+    else if (onFetchNow) {
+      // Later wallets too (Raphael, 14 Oct 2026): offer to load the new
+      // wallet's NFTs right away.
+      Alert.alert('Wallet added', "Load this wallet's Devikins, Weapons and Equipment now?", [
+        { text: 'Later', style: 'cancel' },
+        { text: 'Fetch now', onPress: onFetchNow },
+      ]);
+    }
   }
   // Names already given in this set - a quick choice that's taken is
   // shown greyed out (two "In-game wallet"s would defeat the point).
