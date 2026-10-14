@@ -146,6 +146,9 @@ test('a backup keeps names, stars and pictures, and imports into a new browser',
   const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import a set').click()]);
   await chooser.setFiles(zipPath);
   await expect.poll(() => dialogs.join('\n')).toMatch(/matched exactly/);
+  // The new browser had nothing loaded, so the imported set is loaded by itself.
+  await expect.poll(() => dialogs.join('\n')).toMatch(/is loaded now/);
+  await expect(page2.getByText(/\(imported\)$/).first().locator('xpath=..')).toContainText('Active - loaded now');
   await page2.getByText(/\(imported\)$/).first().click();
   // Wait until the switch to the imported set has really finished.
   await expect(page2.getByText(/\(imported\)$/).first().locator('xpath=..')).toContainText('Active - loaded now');

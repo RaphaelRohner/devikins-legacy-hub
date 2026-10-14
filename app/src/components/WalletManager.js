@@ -96,6 +96,7 @@ import {
   createWalletSet,
   renameWalletSet,
   switchToWalletSet,
+  getWalletSets,
   deleteWalletSet,
   getGlobalSetting,
   setGlobalSetting,
@@ -661,6 +662,26 @@ export default function WalletManager({
         return;
       }
       const { importedNames, warnings, withdrawalsAdded } = result;
+      // Nothing in the set that's loaded now (a fresh visit, or right after
+      // Reset All Data): load an imported set straight away - "My wallets"
+      // if one of them is it, otherwise the first. Raphael, 14 Oct 2026:
+      // exported, reset, imported - and saw no Devikins, because the empty
+      // starting set was still the loaded one.
+      let loadedName = null;
+      if (importedNames.length > 0 && wallets.length === 0) {
+        try {
+          const sets = await getWalletSets();
+          const imported = sets.filter((set) => importedNames.includes(set.name));
+          const myId = await getGlobalSetting(MY_WALLETS_SET_KEY);
+          const pick = imported.find((set) => String(set.id) === String(myId)) || imported[0];
+          if (pick && pick.id !== activeWalletSetId) {
+            await switchToWalletSet(pick.id);
+            loadedName = pick.name;
+          }
+        } catch (e) {
+          // Not fatal: the sets are imported, they can be loaded by hand.
+        }
+      }
       onWalletSetsChanged();
       let message;
       const hasTracker = withdrawalsAdded !== null && withdrawalsAdded !== undefined;
@@ -668,7 +689,9 @@ export default function WalletManager({
         message = hasTracker ? '' : "That file didn't contain any wallet sets.";
         if (warnings.length > 0) message += warnings.join('\n\n');
       } else {
-        message = `Added: ${importedNames.join(', ')}. Use the switcher above to load one.`;
+        message = loadedName
+          ? `Added: ${importedNames.join(', ')}. "${loadedName}" is loaded now - switch under Wallet sets below.`
+          : `Added: ${importedNames.join(', ')}. Load one under Wallet sets below.`;
         markUsageActive();
         // Every file this app exports carries a checksum (see
         // exportImport.js's crc32Bytes/copyEntryBytesTo) that import
