@@ -370,15 +370,40 @@ export default function WalletManager({
       }
       onWalletsChanged();
     }
-    if (target.isFirst) showFirstWalletAdded();
-    else if (onFetchNow) {
-      // Later wallets too (Raphael, 14 Oct 2026): offer to load the new
-      // wallet's NFTs right away.
-      Alert.alert('Wallet added', "Load this wallet's Devikins, Weapons and Equipment now?", [
-        { text: 'Later', style: 'cancel' },
-        { text: 'Fetch now', onPress: onFetchNow },
-      ]);
+    const afterAdding = () => {
+      if (target.isFirst) showFirstWalletAdded();
+      else if (onFetchNow) {
+        // Later wallets too (Raphael, 14 Oct 2026): offer to load the new
+        // wallet's NFTs right away.
+        Alert.alert('Wallet added', "Load this wallet's Devikins, Weapons and Equipment now?", [
+          { text: 'Later', style: 'cancel' },
+          { text: 'Fetch now', onPress: onFetchNow },
+        ]);
+      }
+    };
+    // Named "In-game wallet" / "My wallet" and no set is "My wallets" yet:
+    // ask whether these are their own wallets, and switch it on if so
+    // (Raphael, 14 Oct 2026 - the setup is becoming a guided process).
+    const soundsLikeOwn = name === IN_GAME_WALLET_NAME || name === MY_WALLET_NAME;
+    const someSetIsMine = mySetId !== null && mySetId !== undefined && walletSets.some((set) => String(set.id) === String(mySetId));
+    if (soundsLikeOwn && !someSetIsMine && activeWalletSetId) {
+      Alert.alert(
+        'Are these your own wallets?',
+        `Then "${activeSetName}" becomes your "My wallets" set: it also shows the NFTs you add on the Withdrawals screen (still in the game) next to the ones in your wallets, and backups remember it. Only one set can be yours.`,
+        [
+          { text: 'Not now', style: 'cancel', onPress: afterAdding },
+          {
+            text: "Yes, they're mine",
+            onPress: async () => {
+              await handleMyWalletsChange(true);
+              afterAdding();
+            },
+          },
+        ]
+      );
+      return;
     }
+    afterAdding();
   }
   // Names already given in this set - a quick choice that's taken is
   // shown greyed out (two "In-game wallet"s would defeat the point).

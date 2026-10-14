@@ -41,3 +41,18 @@ test('a message box does not pause a running fetch', async ({ page, context }) =
   expect(browserPopups, "the browser's own pop-ups (they pause the page)").toEqual([]);
   expect(fake.blocked).toEqual([]);
 });
+
+test('the setup questions follow each other in the Hub\'s own boxes', async ({ page, context }) => {
+  await installFakeServers(context);
+  await openHub(page, { inPageDialogs: true, keepWelcome: true });
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page, 'My wallet');
+  const box = page.locator('[data-hub-dialog]');
+  await expect(box).toContainText('Are these your own wallets?');
+  await box.getByRole('button', { name: "Yes, they're mine" }).click();
+  await expect(box).toContainText('Wallet added');
+  await box.getByRole('button', { name: 'Add another wallet first' }).click();
+  await expect(box).toHaveCount(0);
+  await expect(page.getByText(/This is your own set/)).toBeVisible();
+});

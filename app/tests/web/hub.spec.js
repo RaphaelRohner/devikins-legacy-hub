@@ -611,7 +611,7 @@ test('importing a backup loads the set with wallets (not an empty one), and name
 
 test('a new wallet gets a name, shown first in the list; Withdrawals fills itself in from the names', async ({ page }) => {
   const inGame = require('./fakeServers').fakeAddress('g');
-  await openHub(page, { keepWelcome: true });
+  const dialogs = await openHub(page, { keepWelcome: true });
   const input = page.getByPlaceholder('Paste a Klever wallet address (klv1...)');
 
   await input.fill(TEST_WALLET);
@@ -628,6 +628,10 @@ test('a new wallet gets a name, shown first in the list; Withdrawals fills itsel
 
   await expect(page.getByText('My wallet', { exact: true })).toBeVisible();
   await expect(page.getByText('In-game wallet', { exact: true })).toBeVisible();
+  // Naming it "My wallet" asked once whether these are their own wallets
+  // (answered yes): the set is "My wallets" now.
+  expect(dialogs.filter((d) => /Are these your own wallets\?/.test(d))).toHaveLength(1);
+  await expect(page.getByText(/This is your own set/)).toBeVisible();
 
   // The same address again: it says so, no name box.
   await input.fill(inGame);
