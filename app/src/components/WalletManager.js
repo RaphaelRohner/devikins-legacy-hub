@@ -664,8 +664,9 @@ export default function WalletManager({
       }
       const { importedNames, importedIds = [], loadedAtExportId = null, warnings, withdrawalsAdded } = result;
       // Nothing in the set that's loaded now (a fresh visit, or right after
-      // Reset All Data): load an imported set straight away - "My wallets"
-      // if one of them is it, otherwise the first. Raphael, 14 Oct 2026:
+      // Reset All Data): load an imported set straight away - the one that
+      // was loaded when the backup was made, else "My wallets", else the
+      // first one with wallets. Raphael, 14 Oct 2026:
       // exported, reset, imported - and saw no Devikins, because the empty
       // starting set was still the loaded one.
       let loadedName = null;
@@ -685,8 +686,8 @@ export default function WalletManager({
             withWallets = [];
           }
           const pick =
-            imported.find((set) => String(set.id) === String(myId)) || // "My wallets"
             imported.find((set) => String(set.id) === String(loadedAtExportId)) || // loaded when exported
+            imported.find((set) => String(set.id) === String(myId)) || // "My wallets"
             withWallets[0] ||
             imported[0];
           if (pick && pick.id !== activeWalletSetId) {
