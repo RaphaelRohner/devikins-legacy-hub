@@ -123,6 +123,9 @@ async function addWalletSetFiles(files, walletSet, onProgress) {
     imageCount,
     // Marked "My wallets" here - the import marks its copy the same way.
     myWallets: await isMyWalletsSet(walletSet),
+    // The set that was loaded when exporting - an import into an empty Hub
+    // loads it again (Raphael, 14 Oct 2026).
+    wasLoaded: Number(walletSet.is_active) === 1,
   }, null, 2));
 }
 
@@ -283,6 +286,8 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
   }
 
   const importedNames = [];
+  const importedIds = [];
+  let loadedAtExportId = null;
   const warnings = [];
   let counter = 0;
   for (const group of groups.values()) {
@@ -293,7 +298,10 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
     } catch {
       continue;
     }
-    const importedName = `${manifest.name || 'Imported set'} (imported)`;
+    // One "(imported)" is enough: a set that was itself imported before
+    // keeps its name instead of growing "(imported) (imported)".
+    const baseName = manifest.name || 'Imported set';
+    const importedName = /\(imported\)$/.test(baseName) ? baseName : `${baseName} (imported)`;
 
     let dump = {};
     const db = group['database.json'];
@@ -344,6 +352,8 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
     if (manifest.myWallets === true) await adoptImportedMyWalletsSet(newSetId, MY_WALLETS_SET_KEY);
     await logImportedSetRowCounts(dbFileName);
     importedNames.push(importedName);
+    importedIds.push(newSetId);
+    if (manifest.wasLoaded === true) loadedAtExportId = newSetId;
   }
 
   // The Withdrawals tracker, if the backup has one (full backups only).
@@ -360,5 +370,5 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
     }
   }
 
-  return { importedNames, warnings, withdrawalsAdded };
+  return { importedNames, importedIds, loadedAtExportId, warnings, withdrawalsAdded };
 }

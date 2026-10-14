@@ -2052,7 +2052,7 @@ export async function getWalletsFromAllSets() {
       db = isActiveConnection ? await databaseConnectionPromise : await SQLite.openDatabaseAsync(set.db_file_name);
       await createSchemaOnDatabase(db);
       const rows = await db.getAllAsync(`SELECT address, alias FROM wallets ORDER BY id ASC`);
-      for (const r of rows) out.push({ address: r.address, alias: r.alias || '', setName: set.name });
+      for (const r of rows) out.push({ address: r.address, alias: r.alias || '', setName: set.name, setId: set.id });
     } catch (e) {
       // A set that can't be opened just doesn't offer its wallets.
     } finally {

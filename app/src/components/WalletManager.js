@@ -97,6 +97,7 @@ import {
   renameWalletSet,
   switchToWalletSet,
   getWalletSets,
+  getWalletsFromAllSets,
   deleteWalletSet,
   getGlobalSetting,
   setGlobalSetting,
@@ -661,7 +662,7 @@ export default function WalletManager({
       if (result === null) {
         return;
       }
-      const { importedNames, warnings, withdrawalsAdded } = result;
+      const { importedNames, importedIds = [], loadedAtExportId = null, warnings, withdrawalsAdded } = result;
       // Nothing in the set that's loaded now (a fresh visit, or right after
       // Reset All Data): load an imported set straight away - "My wallets"
       // if one of them is it, otherwise the first. Raphael, 14 Oct 2026:
@@ -671,9 +672,23 @@ export default function WalletManager({
       if (importedNames.length > 0 && wallets.length === 0) {
         try {
           const sets = await getWalletSets();
-          const imported = sets.filter((set) => importedNames.includes(set.name));
+          const imported = sets.filter((set) => importedIds.some((id) => String(id) === String(set.id)));
           const myId = await getGlobalSetting(MY_WALLETS_SET_KEY);
-          const pick = imported.find((set) => String(set.id) === String(myId)) || imported[0];
+          // Otherwise the first imported set that has wallets - not an empty
+          // leftover set that happened to come first in the backup
+          // (Raphael, 14 Oct 2026: "Wallet set 1 (imported)" got loaded).
+          let withWallets = [];
+          try {
+            const setIdsWithWallets = new Set((await getWalletsFromAllSets()).map((w) => String(w.setId)));
+            withWallets = imported.filter((set) => setIdsWithWallets.has(String(set.id)));
+          } catch (e) {
+            withWallets = [];
+          }
+          const pick =
+            imported.find((set) => String(set.id) === String(myId)) || // "My wallets"
+            imported.find((set) => String(set.id) === String(loadedAtExportId)) || // loaded when exported
+            withWallets[0] ||
+            imported[0];
           if (pick && pick.id !== activeWalletSetId) {
             await switchToWalletSet(pick.id);
             loadedName = pick.name;

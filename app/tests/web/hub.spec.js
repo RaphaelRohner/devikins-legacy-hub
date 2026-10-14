@@ -562,3 +562,39 @@ test('a first visit opens Wallets with a welcome; "Fetch now" loads the NFTs rig
   await expect(page.getByText('☰').first()).toBeVisible();
   await expect(page.getByTestId('welcome-box')).toHaveCount(0);
 });
+
+test('importing a backup loads the set with wallets (not an empty one), and names get one "(imported)" only', async ({ page, browser }, testInfo) => {
+  await openHub(page);
+  // "Wallet set 1" stays empty; the wallet goes into "Wallet set 2".
+  await openMenuEntry(page, 'Wallets');
+  await page.getByText('+ New set', { exact: true }).click();
+  await page.getByText('Create', { exact: true }).click();
+  await expect(page.getByText('Wallets in "Wallet set 2"')).toBeVisible();
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  await expect(page.getByText(TEST_WALLET).first()).toBeVisible();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByText('Export all sets').click()]);
+  const zipPath = testInfo.outputPath('backup.zip');
+  await download.saveAs(zipPath);
+
+  const context2 = await browser.newContext();
+  await installFakeServers(context2);
+  const page2 = await context2.newPage();
+  const dialogs = await openHub(page2);
+  await openMenuEntry(page2, 'Wallets');
+  const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import a set').click()]);
+  await chooser.setFiles(zipPath);
+  await expect.poll(() => dialogs.join('\n')).toMatch(/"Wallet set 2 \(imported\)" is loaded now/);
+  await expect(page2.getByText('Wallets in "Wallet set 2 (imported)"')).toBeVisible();
+  await expect(page2.getByText(TEST_WALLET).first()).toBeVisible();
+
+  // Export from here and import again: still just one "(imported)".
+  const [download2] = await Promise.all([page2.waitForEvent('download'), page2.getByText('Export all sets').click()]);
+  const zipPath2 = testInfo.outputPath('backup2.zip');
+  await download2.saveAs(zipPath2);
+  const [chooser2] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import a set').click()]);
+  await chooser2.setFiles(zipPath2);
+  await expect.poll(() => dialogs.filter((d) => /Import complete/.test(d)).length).toBe(2);
+  await expect(page2.getByText(/\(imported\) \(imported\)/)).toHaveCount(0);
+  await context2.close();
+});
