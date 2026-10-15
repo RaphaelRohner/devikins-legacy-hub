@@ -146,8 +146,20 @@ test('IDs added in the guided setup are looked up first; the collection says whe
   await page.getByText('‹').first().click();
   await openMenuEntry(page, 'Withdrawals'); // filled in from the wallet names
   await page.locator('textarea').fill('W3265 W1442');
+  // Remember how far the page scrolls: "Fetch now" jumps down to "3. Check".
+  await page.setViewportSize({ width: 390, height: 700 });
+  await page.evaluate(() => {
+    // How close "3. Check" got to the top of the screen.
+    window.__checkTop = 9999;
+    document.addEventListener('scroll', () => {
+      const box = document.querySelector('[data-testid="check-section"]');
+      if (box) window.__checkTop = Math.min(window.__checkTop, box.getBoundingClientRect().top);
+    }, true);
+  });
   await page.getByText('Add to the list', { exact: true }).click();
   // "Show them in your collection?" -> Fetch now: Check first, then the fetch.
+  await expect.poll(() => page.evaluate(() => window.__checkTop)).toBeLessThan(200);
+  await page.setViewportSize({ width: 1200, height: 900 });
   await openMenuEntry(page, 'Weapons');
   await expect(page.getByText('4 Weapons', { exact: true })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/#3265\s*·\s*In the game/)).toBeVisible();

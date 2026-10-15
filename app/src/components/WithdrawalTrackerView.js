@@ -227,6 +227,8 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
   // The newest list, for a check started from a box's button (whose
   // callback was made before the list was reloaded).
   const itemsRef = useRef([]);
+  const scrollRef = useRef(null);
+  const checkSectionYRef = useRef(0);
   const reload = useCallback(async () => {
     const [list, log] = await Promise.all([getWithdrawalItems(), getWithdrawalArrivals()]);
     itemsRef.current = list;
@@ -471,6 +473,10 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
             onPress: async () => {
               // Where each one is first (Raphael, 15 Oct 2026: they all said
               // "not checked yet"), then the fetch.
+              // Jump down to "3. Check" so the counting progress is in view
+              // (Raphael, 15 Oct 2026: the page stayed at the top and it
+              // looked like nothing was happening).
+              scrollRef.current?.scrollTo({ y: Math.max(0, checkSectionYRef.current - 8), animated: true });
               if (canCheck) await check(false);
               onFetchNow();
             },
@@ -673,7 +679,7 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
         <Text style={[styles.title, { color: colors.text }]}>Withdrawals</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.content}>
         {/* 1. Wallets */}
         <View style={card}>
           <Text style={[styles.heading, { color: colors.text }]}>1. Your wallets</Text>
@@ -746,7 +752,7 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
         </View>
 
         {/* 3. Check */}
-        <View style={card}>
+        <View testID="check-section" style={card} onLayout={(e) => { checkSectionYRef.current = e.nativeEvent.layout.y; }}>
           <Text style={[styles.heading, { color: colors.text }]}>3. Check</Text>
           {!walletsReady ? (
             <Text style={[styles.note, { color: colors.secondaryText }]}>Save both wallets first (step 1).</Text>
