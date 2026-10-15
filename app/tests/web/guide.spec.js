@@ -45,10 +45,13 @@ test('the guided setup walks through every step, ending with a backup', async ({
   await page.locator('textarea').fill('W3265');
   await page.getByText('Add to the list', { exact: true }).click();
   // "Show them in your collection?" -> Fetch now -> they're in the list.
+  // (Start listening for the backup download now - on a fast machine it can
+  // arrive before the next lines run.)
+  const downloadPromise = page.waitForEvent('download', { timeout: 90_000 });
   await expect.poll(() => dialogs.join('\n')).toMatch(/Show them in your collection\?/);
   await expect.poll(() => dialogs.join('\n'), { timeout: 60_000 }).toMatch(/Save a backup\?/);
   // "Save a backup now" -> Wallets, and the backup file downloads by itself.
-  const download = await page.waitForEvent('download', { timeout: 30_000 });
+  const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^devikins-all-sets-.*\.zip$/);
   await goBack(page);
   await openMenuEntry(page, 'Weapons');
