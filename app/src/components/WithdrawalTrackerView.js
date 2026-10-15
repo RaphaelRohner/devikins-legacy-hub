@@ -224,8 +224,12 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
   // True when step 1 was filled in from the wallet names (shown as a note).
   const [autoFilledNote, setAutoFilledNote] = useState(false);
 
+  // The newest list, for a check started from a box's button (whose
+  // callback was made before the list was reloaded).
+  const itemsRef = useRef([]);
   const reload = useCallback(async () => {
     const [list, log] = await Promise.all([getWithdrawalItems(), getWithdrawalArrivals()]);
+    itemsRef.current = list;
     setItems(list);
     setArrivals(log);
   }, []);
@@ -454,10 +458,25 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
     // Guided setup: in the "My wallets" set these NFTs show in the
     // collection after the next fetch - offer it right away.
     if (parsed.length > 0 && isMySetActive && onFetchNow) {
-      Alert.alert('Show them in your collection?', 'A Fetch/Update loads the details and pictures of the NFTs you just added, so they appear next to the ones in your wallets.', [
-        { text: 'Later', style: 'cancel' },
-        { text: 'Fetch now', onPress: onFetchNow },
-      ]);
+      const canCheck = walletsReady;
+      Alert.alert(
+        'Show them in your collection?',
+        canCheck
+          ? 'First the Hub looks up where each one is (that takes a moment for a long list - the progress shows under "3. Check"), then a Fetch/Update loads their details and pictures, so they appear next to the ones in your wallets - each with a small note saying where it is.'
+          : 'A Fetch/Update loads the details and pictures of the NFTs you just added, so they appear next to the ones in your wallets.',
+        [
+          { text: 'Later', style: 'cancel' },
+          {
+            text: 'Fetch now',
+            onPress: async () => {
+              // Where each one is first (Raphael, 15 Oct 2026: they all said
+              // "not checked yet"), then the fetch.
+              if (canCheck) await check(false);
+              onFetchNow();
+            },
+          },
+        ]
+      );
     }
   }
 
@@ -505,7 +524,7 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
     try {
       const knownHashes = new Set(arrivals.map((a) => a.tx_hash));
       const result = await runWithdrawalCheck({
-        items: onlyItems || items,
+        items: onlyItems || itemsRef.current || items,
         fromAddress,
         toAddress,
         full: onlyItems ? true : full,

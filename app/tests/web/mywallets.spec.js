@@ -42,7 +42,7 @@ test('the set marked "My wallets" also shows the Withdrawals list NFTs, with whe
 
   // Not "My wallets" yet: nothing changes.
   await openMenuEntry(page, 'Weapons');
-  await expect(page.getByText('#3265', { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/^#3265/)).toHaveCount(0);
 
   // Mark this set as my own, then fetch.
   await openMenuEntry(page, 'Wallets');
@@ -52,7 +52,9 @@ test('the set marked "My wallets" also shows the Withdrawals list NFTs, with whe
   await openMenuEntry(page, 'Fetch/Update');
   await expect(page.getByText('3 Weapons')).toBeVisible({ timeout: 60_000 });
   await openMenuEntry(page, 'Weapons');
-  await page.getByText('#3265', { exact: true }).click();
+  // Its row says why it's there: still in the game.
+  await expect(page.getByText(/^#3265\s*·\s*In the game/)).toBeVisible();
+  await page.getByText(/^#3265/).click();
   await expect(page.getByText(/In the game's main wallet \(as of/)).toBeVisible();
   await goBack(page);
 
@@ -61,7 +63,7 @@ test('the set marked "My wallets" also shows the Withdrawals list NFTs, with whe
   await switchNear(page, 'My wallets').click();
   await goBack(page);
   await openMenuEntry(page, 'Weapons');
-  await expect(page.getByText('#3265', { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/^#3265/)).toHaveCount(0);
 });
 
 test('exporting the "My wallets" set on its own also takes the IDs along', async ({ page, browser }, testInfo) => {

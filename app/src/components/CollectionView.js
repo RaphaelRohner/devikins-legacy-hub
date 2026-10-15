@@ -81,7 +81,9 @@ import WeaponSummaryRow from './WeaponSummaryRow';
 import EquipmentSummaryRow from './EquipmentSummaryRow';
 import CompareView from './CompareView';
 import NftHistoryModal from './NftHistoryModal';
-import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange, getNftHistory, getGlobalSetting, setGlobalSetting } from '../db/database';
+import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange, getNftHistory, getGlobalSetting, setGlobalSetting, getWithdrawalItems, WITHDRAW_SETTING_KEYS } from '../db/database';
+import { ID_LIST_OWNER } from '../constants/idList';
+import { GAME_MAIN_WALLET } from '../api/withdrawalTracker';
 import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER } from '../constants/schema';
 import { useTheme } from '../context/ThemeContext';
 
@@ -136,6 +138,9 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   const centeredContentPadding = getCenteredContentPadding(windowWidth);
   const [filters, setFilters] = useState({});
   const [rows, setRows] = useState([]);
+  // nonce -> { text, tone } for NFTs listed via the Withdrawals list.
+  const [placeTags, setPlaceTags] = useState({});
+  const latestLoadRef = useRef(0);
   const [isLoading, setIsLoading] = useState(true);
 
   // Remembers which kind (devikin/weapon/equipment) `rows` currently
@@ -259,12 +264,44 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     }
 
     setIsLoading(true);
+    // Only the newest load may update the list: two reloads close together
+    // (e.g. "My wallets" switched off) could otherwise finish in the wrong
+    // order and an older, slower one would put stale rows back.
+    const loadId = (latestLoadRef.current += 1);
     const result = await queryNfts(kind, ownerAddresses, filters, excludeDeleted, searchText, starFilter, sortField, sortDirection, excludeBlanks);
     // Re-count too, so marking one as deleted / restoring it updates the
     // "2 Devikins" count straight away (fresh-eyes review, 14 Oct 2026:
     // it stayed stale until the page was reloaded).
     const total = await countNfts(kind, ownerAddresses, true);
+    let newTags = {};
+    // NFTs that are here because of the Withdrawals list get a small tag
+    // saying where they are (Raphael, 15 Oct 2026).
+    if (ownerAddresses.includes(ID_LIST_OWNER) && result.some((r) => r.owner_address === ID_LIST_OWNER)) {
+      try {
+        const [items, from, to] = await Promise.all([
+          getWithdrawalItems(),
+          getGlobalSetting(WITHDRAW_SETTING_KEYS.from),
+          getGlobalSetting(WITHDRAW_SETTING_KEYS.to),
+        ]);
+        const tags = {};
+        for (const item of items) {
+          if (item.kind !== kind) continue;
+          let tag;
+          if (!item.checked_at) tag = { text: 'On your Withdrawals list', tone: 'muted' };
+          else if (!item.holder) tag = { text: 'Not found on the chain', tone: 'warn' };
+          else if (to && item.holder === to) tag = { text: 'Arrived', tone: 'good' };
+          else if ((from && item.holder === from) || item.holder === GAME_MAIN_WALLET) tag = { text: 'In the game', tone: 'muted' };
+          else tag = { text: 'In another wallet', tone: 'warn' };
+          tags[item.nonce] = tag;
+        }
+        newTags = tags;
+      } catch (e) {
+        newTags = {};
+      }
+    }
+    if (loadId !== latestLoadRef.current) return; // a newer load is on its way
     setNotDeletedCount(total);
+    setPlaceTags(newTags);
     setRows(result);
     setIsLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1087,12 +1124,13 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
           const handleRowPress = compareMode
             ? () => handleToggleCompareSelection(item.nonce)
             : () => setSelectedNonce(item.nonce);
+          const placeTag = item.owner_address === ID_LIST_OWNER ? placeTags[item.nonce] || { text: 'On your Withdrawals list', tone: 'muted' } : null;
           if (viewMode === 'tiles') {
-            return <NftTile nft={item} onPress={handleRowPress} columns={tileColumns} selected={isCompareSelected} sortedBy={sortedBy} />;
+            return <NftTile nft={item} onPress={handleRowPress} columns={tileColumns} selected={isCompareSelected} sortedBy={sortedBy} placeTag={placeTag} />;
           }
           const SummaryRow = SUMMARY_ROW_COMPONENTS[kind];
           return SummaryRow ? (
-            <SummaryRow nft={item} onPress={handleRowPress} selected={isCompareSelected} sortedBy={sortedBy} />
+            <SummaryRow nft={item} onPress={handleRowPress} selected={isCompareSelected} sortedBy={sortedBy} placeTag={placeTag} />
           ) : (
             <NftCard kind={kind} nft={item} onNftUpdated={reloadRows} />
           );

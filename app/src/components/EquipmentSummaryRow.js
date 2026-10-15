@@ -18,7 +18,7 @@ import { Image, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import useNftImage from '../hooks/useNftImage';
 
-export default function EquipmentSummaryRow({ nft, onPress, selected = false, sortedBy = null }) {
+export default function EquipmentSummaryRow({ nft, onPress, selected = false, sortedBy = null, placeTag = null }) {
   const { colors } = useTheme();
 
   // Same "prefer the locally-saved copy" logic as the other summary rows
@@ -100,7 +100,13 @@ export default function EquipmentSummaryRow({ nft, onPress, selected = false, so
         {/* The NFT's on-chain ID (nonce) - always shown, even when the
             metadata fetch failed and the stats below can't be, since the
             ID itself is always known. */}
-        <Text style={[styles.idLine, { color: colors.secondaryText }]}>#{nft.nonce}</Text>
+        <Text style={[styles.idLine, { color: colors.secondaryText }]}>
+          #{nft.nonce}
+          {placeTag ? (
+            // Here because of the Withdrawals list: where it is (or "not checked yet").
+            <Text style={{ color: placeTag.tone === 'warn' ? colors.cancelText : colors.primary, fontStyle: 'italic' }}> · {placeTag.text}</Text>
+          ) : null}
+        </Text>
         {statsAvailable ? (
           <>
             <Text style={[styles.line, { color: colors.text }]}>Rarity: {nft.rarity ?? '—'}</Text>

@@ -29,7 +29,7 @@ import { useTheme } from '../context/ThemeContext';
 import useNftImage from '../hooks/useNftImage';
 import { getTileFlexBasisPercent } from '../constants/layout';
 
-export default function NftTile({ nft, onPress, columns = 3, selected = false, sortedBy = null }) {
+export default function NftTile({ nft, onPress, columns = 3, selected = false, sortedBy = null, placeTag = null }) {
   const { colors } = useTheme();
 
   // Same "prefer the locally-saved copy" logic as the summary rows and
@@ -84,6 +84,11 @@ export default function NftTile({ nft, onPress, columns = 3, selected = false, s
         <Text style={[styles.deletedTag, { color: colors.cancelText }]}>Deleted</Text>
       )}
       <Text style={[styles.idText, { color: colors.secondaryText }]}>#{nft.nonce}</Text>
+      {placeTag ? (
+        <Text style={[styles.idText, { color: placeTag.tone === 'warn' ? colors.cancelText : colors.primary, fontStyle: 'italic', textAlign: 'center' }]} numberOfLines={2}>
+          {placeTag.text}
+        </Text>
+      ) : null}
       {sortedBy ? (
         <Text style={[styles.idText, { color: colors.primary, fontWeight: '700', textAlign: 'center' }]} numberOfLines={2}>
           {sortedBy.label}: {sortedBy.value}

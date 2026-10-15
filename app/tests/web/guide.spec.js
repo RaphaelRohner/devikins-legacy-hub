@@ -127,3 +127,31 @@ test('"Fetch now" while the Hub is busy in the background still fetches (it wait
   await openMenuEntry(page, 'Weapons');
   await expect(page.getByText('3 Weapons', { exact: true })).toBeVisible({ timeout: 90_000 });
 });
+
+test('IDs added in the guided setup are looked up first; the collection says where each one is', async ({ page }) => {
+  const { nameNewWallet, GAME } = { nameNewWallet: require('./helpers').nameNewWallet };
+  const { fakeAddress, GAME_MAIN_WALLET } = require('./fakeServers');
+  fake.extraNfts.set('weapon:3265', { name: 'Rusty Test Wand #3265', attributes: { Rarity: 'Common', Type: 'Wand', Quality: 'Rusty' } });
+  fake.extraNfts.set('weapon:1442', { name: 'Odd Test Axe #1442', attributes: { Rarity: 'Common', Type: 'Axe', Quality: 'Rusty' } });
+  fake.chain.holders.set('weapon:3265', GAME_MAIN_WALLET);
+  fake.chain.holders.set('weapon:1442', fakeAddress('x'));
+  await openHub(page, { keepWelcome: true, accept: ['Show them in your collection?'] });
+  const input = page.getByPlaceholder('Paste a Klever wallet address (klv1...)');
+  await input.fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page, 'My wallet'); // "Is this your own wallet?" -> yes
+  await input.fill(fakeAddress('g'));
+  await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page, 'In-game wallet');
+  await page.getByText('‹').first().click();
+  await openMenuEntry(page, 'Withdrawals'); // filled in from the wallet names
+  await page.locator('textarea').fill('W3265 W1442');
+  await page.getByText('Add to the list', { exact: true }).click();
+  // "Show them in your collection?" -> Fetch now: Check first, then the fetch.
+  await openMenuEntry(page, 'Weapons');
+  await expect(page.getByText('4 Weapons', { exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/#3265\s*·\s*In the game/)).toBeVisible();
+  await expect(page.getByText(/#1442\s*·\s*In another wallet/)).toBeVisible();
+  // NFTs in your own wallet get no tag.
+  await expect(page.getByText(/#201\s*·/)).toHaveCount(0);
+});
