@@ -387,13 +387,15 @@ export default function WalletManager({
     const soundsLikeOwn = name === IN_GAME_WALLET_NAME || name === MY_WALLET_NAME;
     const someSetIsMine = mySetId !== null && mySetId !== undefined && walletSets.some((set) => String(set.id) === String(mySetId));
     if (soundsLikeOwn && !someSetIsMine && activeWalletSetId) {
+      // "this wallet" for the first one - "these wallets" read oddly with
+      // only one added (fresh-eyes review, 15 Oct 2026).
       Alert.alert(
-        'Are these your own wallets?',
-        `Then "${activeSetName}" becomes your "My wallets" set: it also shows the NFTs you add on the Withdrawals screen (still in the game) next to the ones in your wallets, and backups remember it. Only one set can be yours.`,
+        target.isFirst ? 'Is this your own wallet?' : 'Are these your own wallets?',
+        `Then the Hub treats "${activeSetName}" as yours ("My wallets"): your collection can also show NFTs that are still in the game (you list them on the Withdrawals screen), and backups remember it. Only one set can be yours.`,
         [
           { text: 'Not now', style: 'cancel', onPress: afterAdding },
           {
-            text: "Yes, they're mine",
+            text: target.isFirst ? "Yes, it's mine" : "Yes, they're mine",
             onPress: async () => {
               await handleMyWalletsChange(true);
               afterAdding();

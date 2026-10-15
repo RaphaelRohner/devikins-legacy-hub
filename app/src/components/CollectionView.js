@@ -120,7 +120,7 @@ const FLOATING_BUTTON_EDGE_MARGIN = 8;
 // than a tap - see the PanResponder below.
 const FLOATING_BUTTON_DRAG_THRESHOLD = 4;
 
-export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onSetViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded, onAppliedFiltersChange = () => {}, onStatusTextChange = () => {} }) {
+export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onSetViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded, onAppliedFiltersChange = () => {}, onStatusTextChange = () => {}, listTopContent = null }) {
   const { colors } = useTheme();
 
   // Tablet support: how many tiles fit per row, and how much extra
@@ -865,7 +865,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   const activeFilterParts = hasActiveFilters ? describeActiveFilters() : [];
   const emptyStateMessage = hasActiveFilters
     ? `No ${COLLECTIONS[kind].label} match the ${activeFilterParts.length === 1 ? 'filter' : 'filters'}: ${activeFilterParts.join(', ')}`
-    : `This wallet doesn't hold any ${COLLECTIONS[kind].label} yet.`;
+    : `No ${COLLECTIONS[kind].label} here yet. Just added a wallet? Load its NFTs with Fetch/Update in the ☰ menu.`; // not "doesn't hold any": before the first fetch that read like a wrong address (fresh-eyes review, 15 Oct 2026)
 
   // Whether anything picked in the controls hasn't been applied yet -
   // the "Apply Filters" button only shows up (below the toggle row)
@@ -1082,8 +1082,15 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
             <NftCard kind={kind} nft={item} onNftUpdated={reloadRows} />
           );
         }}
+        // listTopContent (the Getting started checklist) sits at the top of
+        // the list and scrolls away with it - pinned above the list it took
+        // most of a phone screen and left only a thin strip to scroll
+        // (fresh-eyes review, 15 Oct 2026).
         ListHeaderComponent={
-          expanded ? (
+          listTopContent || expanded ? (
+            <>
+            {listTopContent}
+            {expanded ? (
             <FilterPanel
               kind={kind}
               availableOptions={availableOptions}
@@ -1093,6 +1100,8 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
               starFilter={pendingStarFilter}
               onStarFilterChange={setPendingStarFilter}
             />
+          ) : null}
+            </>
           ) : null
         }
         ListEmptyComponent={

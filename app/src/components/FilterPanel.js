@@ -286,9 +286,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 1,
+    minWidth: 0,
   },
   rangeInput: {
     flex: 1,
+    // Without these a browser keeps each box at its default width, and on
+    // a phone the "max" box ran off the screen (fresh-eyes review, 15 Oct 2026).
+    flexBasis: 0,
+    minWidth: 0,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 6,

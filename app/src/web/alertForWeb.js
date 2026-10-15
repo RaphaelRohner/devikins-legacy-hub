@@ -91,10 +91,13 @@ function showInPageDialog(title, message, buttons) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = b.text || 'OK';
-    const isMain = b.style !== 'cancel' && i === list.length - 1;
+    // A destructive button ("Reset Everything", "Delete") is never the
+    // inviting blue one - it's outlined in red (fresh-eyes review, 15 Oct 2026).
+    const isDestructive = b.style === 'destructive';
+    const isMain = b.style !== 'cancel' && !isDestructive && i === list.length - 1;
     Object.assign(btn.style, {
       fontSize: '15px', fontWeight: '700', padding: '9px 16px', borderRadius: '8px', cursor: 'pointer',
-      border: `1px solid ${isMain ? colors.primary : colors.border}`,
+      border: `1px solid ${isMain ? colors.primary : isDestructive ? colors.danger : colors.border}`,
       background: isMain ? colors.primary : 'transparent',
       color: isMain ? colors.primaryText : b.style === 'destructive' ? colors.danger : colors.text,
     });

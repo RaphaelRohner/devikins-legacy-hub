@@ -300,20 +300,40 @@ export function placeInWords(item, { fromAddress, toAddress }) {
   return `${where} (as of ${when})`;
 }
 
-/** Plain text of overdue NFTs, ready to paste into a support ticket. */
+/** Plain text of overdue NFTs, ready to paste into a support ticket.
+ *  Says for each one when it was requested and where it is now, plus both
+ *  wallets (fresh-eyes review, 15 Oct 2026: the old text was just a list of
+ *  numbers, and "Equipments"). Times in UTC, so support reads them the
+ *  same wherever they are. */
 export function overdueListText(items, ctx) {
+  const PLURAL = { devikin: 'Devikins', weapon: 'Weapons', equipment: 'Equipment' };
+  const utc = (ms) => (ms ? `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'unknown time');
+  const where = (item) => {
+    if (!item.checked_at) return 'not checked yet';
+    if (!item.holder) return 'not found on the chain';
+    if (item.holder === ctx.fromAddress) return 'still in my in-game wallet';
+    if (item.holder === GAME_MAIN_WALLET) return `still in the game's main wallet (${GAME_MAIN_WALLET})`;
+    return `held by another wallet: ${item.holder}`;
+  };
   const lines = [];
+  let lastCheck = 0;
   for (const kind of KINDS) {
     const overdue = items.filter((i) => i.kind === kind && statusOf(i, ctx).status === 'overdue');
     if (overdue.length === 0) continue;
-    lines.push(`${KIND_LABEL[kind]}s (${overdue.length}):`);
-    lines.push(overdue.map((i) => `#${i.nonce}`).join(', '));
+    lines.push(`${PLURAL[kind]} (${overdue.length}):`);
+    for (const i of overdue) {
+      lines.push(`#${i.nonce} - requested ${utc(i.requested_at)} - ${where(i)}`);
+      if (i.checked_at && i.checked_at > lastCheck) lastCheck = i.checked_at;
+    }
     lines.push('');
   }
   if (lines.length === 0) return '';
   return [
-    `Withdrawal requested but not arrived in ${ctx.toAddress}:`,
+    'Withdrawal requested in the game but not arrived.',
+    `Sent from (my in-game wallet): ${ctx.fromAddress}`,
+    `Should arrive in (my wallet): ${ctx.toAddress}`,
     '',
     ...lines,
+    `Checked on the Klever blockchain: ${utc(lastCheck)}`,
   ].join('\n').trim();
 }

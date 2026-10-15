@@ -1457,10 +1457,11 @@ Continue anyway?`
         onShowGettingStarted={handleShowGuide}
       />
 
-      {guideCard}
+      {ownerAddresses.length > 0 ? null : guideCard}
 
       {ownerAddresses.length > 0 ? (
         <CollectionView
+          listTopContent={guideCard}
           kind={currentScreen}
           ownerAddresses={ownerAddresses}
           refreshKey={refreshKey}

@@ -332,6 +332,11 @@ test('resting the mouse on a chip explains it; tapping still filters', async ({ 
 test('a requested NFT in a stranger\'s wallet is flagged at once; the "requested" switch turns itself off', async ({ page }) => {
   fake.chain.holders.set('equipment:1022', fakeAddress('x'));
   fake.chain.holders.set('weapon:1442', IN_GAME);
+  await page.clock.install({ time: new Date('2026-10-15T08:00:00Z') });
+  // Keep what "Copy" puts on the clipboard, to read it back.
+  await page.addInitScript(() => {
+    navigator.clipboard.writeText = async (t) => { window.__copied = t; };
+  });
   await openHub(page);
   await openMenuEntry(page, 'Withdrawals');
   await page.getByPlaceholder('klv1… (in-game wallet)').fill(IN_GAME);
@@ -352,4 +357,19 @@ test('a requested NFT in a stranger\'s wallet is flagged at once; the "requested
   await expect(row(page, 'Weapon #1442')).toContainText('Requested - waiting');
   // Not overdue yet - that still waits for the time limit.
   await expect(page.getByText('Overdue (0)')).toBeVisible();
+
+  // 31 minutes later: overdue, and still flagged as in another wallet.
+  await page.clock.fastForward('31:00');
+  await expect(row(page, 'Equipment #1022')).toContainText('Overdue - in another wallet!');
+  await expect(row(page, 'Weapon #1442')).toContainText('Overdue');
+  // The ticket text says when each was requested and where it is.
+  await page.getByText(/overdue list \(2\)/).click();
+  const copied = await page.evaluate(() => window.__copied);
+  expect(copied).toContain(`Sent from (my in-game wallet): ${IN_GAME}`);
+  expect(copied).toContain(`Should arrive in (my wallet): ${RECEIVING}`);
+  expect(copied).toMatch(/#1442 - requested 2026-10-15 08:0\d UTC - still in my in-game wallet/);
+  expect(copied).toContain(`#1022 - requested`);
+  expect(copied).toContain(`held by another wallet: ${fakeAddress('x')}`);
+  expect(copied).toContain('Equipment (1):');
+  expect(copied).not.toContain('Equipments');
 });

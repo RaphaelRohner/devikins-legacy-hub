@@ -564,7 +564,7 @@ export default function WithdrawalTrackerView({ onClose }) {
       if (item.place !== 'elsewhere') parts.push(PLACE_TEXT[item.place]);
     }
     if (item.place === 'elsewhere') parts.push(`held by ${shortAddress(item.holder)}`);
-    if (item.status === 'requested-elsewhere') {
+    if (item.status === 'requested-elsewhere' || (item.status === 'overdue' && item.place === 'elsewhere')) {
       parts.push("check this - if you bought it on the marketplace, it may still sit in the seller's game wallet until the game sends it");
     }
     if (item.previous_holder && item.previous_holder !== item.holder) {
@@ -572,6 +572,13 @@ export default function WithdrawalTrackerView({ onClose }) {
     }
     if (item.checked_at) parts.push(`as of ${formatTime(item.checked_at)}`);
     return parts.join(' · ');
+  }
+
+  // Overdue AND in a stranger's wallet keeps saying so - the scariest case,
+  // and the one support most needs to hear about (fresh-eyes review, 15 Oct 2026).
+  function statusLabel(item) {
+    if (item.status === 'overdue' && item.place === 'elsewhere') return 'Overdue - in another wallet!';
+    return STATUS_TEXT[item.status];
   }
 
   function statusColor(status) {
@@ -659,7 +666,7 @@ export default function WithdrawalTrackerView({ onClose }) {
             style={[input, styles.pasteBox]}
             value={pasteText}
             onChangeText={setPasteText}
-            placeholder={'Weapons\n3265\n1442, 1450\n\nEquipment\n1022'}
+            placeholder={'Example (use your own IDs):\nWeapons\n111\n222, 333\n\nEquipment\n444'}
             placeholderTextColor={colors.secondaryText}
             multiline
             autoCapitalize="none"
@@ -845,7 +852,7 @@ export default function WithdrawalTrackerView({ onClose }) {
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.rowTitle, { color: colors.text }]}>
                       {KIND_LABEL[item.kind]} #{item.nonce}
-                      <Text style={{ color: statusColor(item.status), fontWeight: '700' }}>  {STATUS_TEXT[item.status]}</Text>
+                      <Text style={{ color: statusColor(item.status), fontWeight: '700' }}>  {statusLabel(item)}</Text>
                     </Text>
                     {describe(item) ? <Text style={[styles.note, { color: colors.secondaryText }]}>{describe(item)}</Text> : null}
                   </View>

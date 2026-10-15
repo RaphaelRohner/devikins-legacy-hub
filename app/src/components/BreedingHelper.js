@@ -419,7 +419,11 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
       <Switch
         value={allowProcreationsTolerance}
         onValueChange={setAllowProcreationsTolerance}
-        trackColor={{ true: colors.primary }}
+        // A full track in both states, like the Hub's other switches - with
+        // only the "on" colour it showed as a lone white dot when off
+        // (fresh-eyes review, 15 Oct 2026).
+        trackColor={{ false: colors.border, true: colors.primary }}
+        thumbColor={colors.surface}
       />
     </View>
   );
@@ -891,11 +895,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   rangeRow: {
+    flexShrink: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
   rangeInput: {
+    flexBasis: 0, // with minWidth 0: lets both boxes shrink on a phone instead of running off the screen
+    minWidth: 0,
     flex: 1,
     borderRadius: 6,
     paddingHorizontal: 8,

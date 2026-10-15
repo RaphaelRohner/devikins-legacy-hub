@@ -49,8 +49,8 @@ test('the setup questions follow each other in the Hub\'s own boxes', async ({ p
   await page.getByText('Add', { exact: true }).click();
   await nameNewWallet(page, 'My wallet');
   const box = page.locator('[data-hub-dialog]');
-  await expect(box).toContainText('Are these your own wallets?');
-  await box.getByRole('button', { name: "Yes, they're mine" }).click();
+  await expect(box).toContainText('Is this your own wallet?');
+  await box.getByRole('button', { name: "Yes, it's mine" }).click();
   await expect(box).toContainText('Wallet added');
   await box.getByRole('button', { name: 'Add another wallet first' }).click();
   await expect(box).toHaveCount(0);

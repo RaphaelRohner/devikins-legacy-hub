@@ -630,7 +630,7 @@ test('a new wallet gets a name, shown first in the list; Withdrawals fills itsel
   await expect(page.getByText('In-game wallet', { exact: true })).toBeVisible();
   // Naming it "My wallet" asked once whether these are their own wallets
   // (answered yes): the set is "My wallets" now.
-  expect(dialogs.filter((d) => /Are these your own wallets\?/.test(d))).toHaveLength(1);
+  expect(dialogs.filter((d) => /Is this your own wallet\?|Are these your own wallets\?/.test(d))).toHaveLength(1);
   await expect(page.getByText(/This is your own set/)).toBeVisible();
 
   // The same address again: it says so, no name box.
@@ -664,4 +664,35 @@ test('adding a second wallet also offers "Fetch now"', async ({ page }) => {
   await expect.poll(() => dialogs.filter((d) => /Load this wallet's Devikins/.test(d)).length).toBe(1);
   // "Fetch now" again: the second wallet's NFTs come in.
   await expect(page.getByText('2 Devikins', { exact: true })).toBeVisible({ timeout: 60_000 });
+});
+
+test('Ask Devi answers beginner questions and no longer matches little words like "the"', async ({ page }) => {
+  await openHub(page);
+  await openMenuEntry(page, 'Ask Devi');
+  const ask = async (question, expectedPart) => {
+    const before = await page.getByText(expectedPart).count();
+    await page.getByPlaceholder('Ask Devi something...').fill(question);
+    await page.getByText('Send', { exact: true }).click();
+    await expect(page.getByText(question, { exact: true }).last()).toBeVisible();
+    await expect.poll(() => page.getByText(expectedPart).count()).toBe(before + 1);
+  };
+  await ask('which one is the rarest?', /Common, Uncommon, Rare, Mythic, Eldritch/);
+  await ask('how do i find the best devikin', /Common, Uncommon, Rare, Mythic, Eldritch/);
+  await ask('is this safe? can i lose his money', /never asks for a password, private key/);
+  await ask('what is klever', /That blockchain is Klever/);
+  await ask('what is an NFT?', /one-of-a-kind digital items/);
+});
+
+test('on a phone, the Getting started checklist scrolls away with the list', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  const guide = page.getByText(/^Getting started/).first();
+  await expect(guide).toBeVisible();
+  const before = (await guide.boundingBox()).y;
+  // Swipe (scroll) with the finger/mouse right on the checklist.
+  const box = await guide.boundingBox();
+  await page.mouse.move(box.x + 40, box.y + 60);
+  await page.mouse.wheel(0, 500);
+  await expect.poll(async () => (await guide.boundingBox())?.y ?? -9999).toBeLessThan(before - 100);
 });

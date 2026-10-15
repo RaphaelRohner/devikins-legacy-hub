@@ -76,6 +76,7 @@ import { useTheme } from '../context/ThemeContext';
 // new topic here is safe and won't change what a typed question
 // matches.
 const FAQ_TOPICS = [
+  { id: 'basics', title: 'New here? The basics' },
   { id: 'wallets', title: 'Wallets & wallet sets' },
   { id: 'browsing', title: 'Browsing & organizing your collection' },
   { id: 'troubleshooting', title: 'When something looks off' },
@@ -91,12 +92,36 @@ const FAQ_TOPICS = [
 // told here.
 const ALL_FAQ_ENTRIES = [
   {
+    id: 'is-it-safe',
+    topic: 'basics',
+    question: 'Is the Hub safe? Can it move my NFTs or money?',
+    keywords: ['safe', 'safety', 'secure', 'security', 'scam', 'steal', 'lose', 'money', 'risk', 'trust', 'private key', 'seed', 'password'],
+    answer:
+      "Yes, it's safe to look around: the Hub only ever reads public wallet addresses (the ones starting with klv1), which anyone can look up on the blockchain. It never asks for a password, private key or seed phrase - and you should never type those anywhere in the Hub. Nothing in the Hub can move, sell or send your NFTs or coins. Marking something as deleted, removing a wallet or even resetting all data only changes what the Hub shows - your real NFTs stay where they are.",
+  },
+  {
+    id: 'what-is-nft',
+    topic: 'basics',
+    question: 'What is an NFT, and what is Klever?',
+    keywords: ['nft', 'nfts', 'klever', 'blockchain', 'crypto', 'token', 'klv', 'chain', 'what is klever'],
+    answer:
+      "Devikins is a game whose creatures (Devikins), Weapons and Equipment are NFTs: one-of-a-kind digital items, each with its own ID number, recorded on a blockchain. That blockchain is Klever - a public record anyone can read, which is how the Hub can show what a wallet holds. A wallet address (starting with klv1) is like an account number: safe to share, so others can look up what it holds. KLV is Klever's coin.",
+  },
+  {
+    id: 'rarity',
+    topic: 'basics',
+    question: 'What do Rarity, Ancestry and the other traits mean?',
+    keywords: ['rarity', 'rare', 'rarest', 'common', 'uncommon', 'mythic', 'eldritch', 'best', 'valuable', 'ancestry', 'trait', 'traits', 'procreations', 'life stage', 'personality', 'quality'],
+    answer:
+      "Every NFT has traits set by the game. Rarity, from lowest to highest: Common, Uncommon, Rare, Mythic, Eldritch. Ancestry is a Devikin's family (for example Faery or Demon). Life Stage is how far it has grown, and Procreations Left is how many more times it can breed. Weapons and Equipment also have a Quality. To find the rarest ones, tap the sort button (left of the search box, it shows \"↑ ID\" at first), pick Rarity and tap ↓ for highest first - or use Filters to show only one rarity. A \"—\" means the game hasn't given that NFT a value for that trait.",
+  },
+  {
     id: 'add-wallet',
     topic: 'wallets',
     question: 'How do I add a wallet?',
     keywords: ['wallet', 'address', 'klv1', 'wallets', 'connect'],
     answer:
-      "Open the ☰ menu and tap Wallets. Paste your Klever wallet address (starts with klv1...) and tap Add. You can add as many wallets as you like, and give each one a nickname from its Edit button.",
+      "Open the ☰ menu and tap Set Up > Wallets. Paste your Klever wallet address (starts with klv1...) and tap Add. You can add as many wallets as you like, and give each one a nickname from its Edit button.",
   },
   {
     id: 'wallet-sets',
@@ -104,7 +129,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'How do wallet sets work?',
     keywords: ['set', 'sets', 'wallet set', 'wallet sets', 'switch', 'profile', 'profiles', 'friend', 'kid'],
     answer:
-      "At the top of the Wallets screen, above your wallet list, is a switcher for wallet sets - completely separate, independently saved collections of wallets and their fetched NFTs. Handy if two people share the app (each gets their own set), or if you want to peek at a friend's collection without mixing it into your own. Tap + New set to start one; tap any set's name to load it. Rename any set any time. Delete removes a set for good, including its downloaded images.",
+      "Further down the Wallets screen, below your wallets, is the Wallet sets section - completely separate, independently saved collections of wallets and their fetched NFTs. Handy if two people share the app (each gets their own set), or if you want to peek at a friend's collection without mixing it into your own. Tap + New set to start one; tap any set's name to load it. Rename any set any time. Delete removes a set for good, including its downloaded images.",
   },
   {
     id: 'export-import-sets',
@@ -195,7 +220,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'What is the Kleverscan tab?',
     keywords: ['kleverscan', 'explorer', 'holders', 'block explorer', 'holder', 'browser'],
     answer:
-      "Open the ☰ menu and tap Kleverscan for a small built-in browser pointed straight at the Devikins collection's Holders list on kleverscan.org, Klever's own block explorer - no typing in a search box needed. Handy for checking who's holding what, and it's also a good way to find your own wallet address if you don't have it handy: if you know roughly how many Devikins you hold, you can browse the holder list and spot yourself.",
+      "Open the ☰ menu and tap Help > Kleverscan for a small built-in browser pointed straight at the Devikins collection's Holders list on kleverscan.org, Klever's own block explorer - no typing in a search box needed. Handy for checking who's holding what, and it's also a good way to find your own wallet address if you don't have it handy: if you know roughly how many Devikins you hold, you can browse the holder list and spot yourself.",
   },
   {
     id: 'kleverscan-web',
@@ -213,7 +238,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'What is KLV Signer (test)?',
     keywords: ['signer', 'klv signer', 'send', 'transfer', 'sign', 'signature', 'testnet', 'private key', 'transaction'],
     answer:
-      "Open the ☰ menu and tap KLV Signer (test) to send KLV, tokens or NFTs on Klever's testnet - the practice network, where nothing has real value. It needs the separate KLV Signer app on your phone: Devikins Legacy Hub never holds your wallet's private key. Tap Connect KLV Signer once (the Signer asks whether to allow the Hub), then enter a receiver and an amount and tap Send with KLV Signer. The Signer shows you exactly what will be sent and only signs after you enter your Signer password; the Hub then sends it to the testnet and gives you a Kleverscan link. Before every request the Hub checks with Android that the Signer on your phone is the official one (by its seal, the signing certificate); a fake app pretending to be the Signer gets nothing. It's testnet-only for now because the Signer is still being tested - sending your real Devikins will come later.",
+      "Open the ☰ menu and tap Tools > KLV Signer (test) to send KLV, tokens or NFTs on Klever's testnet - the practice network, where nothing has real value. It needs the separate KLV Signer app on your phone: Devikins Legacy Hub never holds your wallet's private key. Tap Connect KLV Signer once (the Signer asks whether to allow the Hub), then enter a receiver and an amount and tap Send with KLV Signer. The Signer shows you exactly what will be sent and only signs after you enter your Signer password; the Hub then sends it to the testnet and gives you a Kleverscan link. Before every request the Hub checks with Android that the Signer on your phone is the official one (by its seal, the signing certificate); a fake app pretending to be the Signer gets nothing. It's testnet-only for now because the Signer is still being tested - sending your real Devikins will come later.",
   },
   {
     id: 'breeding-helper',
@@ -221,7 +246,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'What does Breeding Helper do?',
     keywords: ['breeding', 'breed', 'breeding helper', 'procreation', 'procreate', 'partner', 'pairing'],
     answer:
-      "Open the ☰ menu and tap Breeding Helper for a two-step finder for breeding partners among your own Devikins. Step 1 narrows your collection by Rarity, Ancestry, Procreations Left, and optionally up to two Target Affinities - tap a result to pick it as your starting Devikin. Step 2 then lists every other Devikin that's actually a match: same Rarity always, and by default the same Procreations Left too (turn on \"Allow +/-1\" if you need a bit more room there), ranked by how well they match your chosen Affinities, with an estimated breeding cost and the offspring's resulting Procreations Left. One thing it can't do: tell you whether two Devikins are actually related - there's no parent/lineage data anywhere in the game's own data, so that check is still on you, same as in the game itself.",
+      "Open the ☰ menu and tap Tools > Breeding Helper for a two-step finder for breeding partners among your own Devikins. Step 1 narrows your collection by Rarity, Ancestry, Procreations Left, and optionally up to two Target Affinities - tap a result to pick it as your starting Devikin. Step 2 then lists every other Devikin that's actually a match: same Rarity always, and by default the same Procreations Left too (turn on \"Allow +/-1\" if you need a bit more room there), ranked by how well they match your chosen Affinities, with an estimated breeding cost and the offspring's resulting Procreations Left. One thing it can't do: tell you whether two Devikins are actually related - there's no parent/lineage data anywhere in the game's own data, so that check is still on you, same as in the game itself.",
   },
   {
     id: 'compare-mode',
@@ -237,7 +262,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'How do I send feedback or report a bug?',
     keywords: ['feedback', 'bug', 'report', 'suggest', 'contact', 'email', 'request'],
     answer:
-      "Open the ☰ menu and tap Feedback. Pick a category, write your message, and tap Open Email Draft - it opens your own email app with everything already filled in. You just need to hit Send yourself.",
+      "Open the ☰ menu and tap Help > Feedback. Pick a category, write your message, and tap Open Email Draft - it opens your own email app with everything already filled in. You just need to hit Send yourself.",
   },
   {
     id: 'unavailable-failed',
@@ -253,7 +278,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'How do I reset all my data?',
     keywords: ['reset', 'wipe', 'start over', 'fresh install'],
     answer:
-      "For everything: open Wallets from the ☰ menu, scroll down to Danger zone, flip its toggle on to reveal Reset All Data, and tap it - this wipes every wallet set, every saved wallet, every stored NFT, and every downloaded image, back to exactly a fresh install. It can't be undone, though your real NFTs on the blockchain are never touched. For just one set gone wrong, its own Delete button (next to it in the wallet-set switcher, near the top of the same screen) is the gentler option - it only erases that one set, leaving the rest of your sets untouched.",
+      "For everything: open Wallets from the ☰ menu, scroll down to Danger zone, flip its toggle on to reveal Reset All Data, and tap it - this wipes every wallet set, every saved wallet, every stored NFT, and every downloaded image, back to exactly a fresh install. It can't be undone, though your real NFTs on the blockchain are never touched. For just one set gone wrong, its own Delete button (next to it under Wallet sets, further up the same screen) is the gentler option - it only erases that one set, leaving the rest of your sets untouched.",
   },
   {
     id: 'automatic-retry',
@@ -269,7 +294,7 @@ const ALL_FAQ_ENTRIES = [
     question: "Where's the light/dark mode button?",
     keywords: ['theme', 'dark mode', 'light mode', 'dark', 'light', 'appearance'],
     answer:
-      "Next to the search bar at the very top of the screen - it shows a sun or moon icon. Tap it any time to flip between light and dark.",
+      "Top right of the screen, on the same row as the ☰ menu button - it shows a sun or moon and the mode it switches to (\"☀️ Light\" while the screen is dark). Tap it any time to flip between light and dark.",
   },
   {
     id: 'multiple-wallets',
@@ -320,7 +345,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'How do I get started?',
     keywords: ['start', 'started', 'getting started', 'begin', 'first', 'how to use', 'setup', 'set up', 'guide', 'checklist', 'order', 'steps'],
     answer:
-      "1. Add your wallets: your private wallet and your in-game wallet (☰ > Set Up > Wallets). 2. Fetch/Update - this loads the NFTs those wallets hold. 3. If you have them: add the IDs of the NFTs you own on the Withdrawals screen - for NFTs still in the game's main wallet. 4. On the Wallets screen, switch on \"My wallets\" for your set, then Fetch/Update again. 5. Let the Hub do its job: it keeps retrying what Moonlabs' server didn't deliver, and \"Hide blanks\" keeps incomplete NFTs out of view. 6. Save a backup (Wallets > Export all sets). The \"Getting started\" checklist on the home screen ticks these off for you - bring it back any time with ☰ > Help > Getting started.",
+      "The Hub walks you through it: 1. Open Wallets (the Hub opens there by itself the first time) and paste a wallet address - only the public address starting with klv1, never a key. 2. Say what it is: \"In-game wallet\" (where the game keeps your NFTs), \"My wallet\" (your own) or a name of your choice. If they're yours, the Hub asks whether to mark the set as \"My wallets\". 3. Tap Fetch now to load the Devikins, Weapons and Equipment those wallets hold. 4. Optional: on the Withdrawals screen, add the IDs of NFTs you own that are still in the game - they then show in your collection too. 5. Save a backup (Wallets > Export all sets). The \"Getting started\" checklist on the home screen ticks these off for you - bring it back any time with ☰ > Help > Getting started.",
   },
   {
     id: 'my-wallets',
@@ -376,7 +401,7 @@ const GREETING =
   "Hi, I'm Devi! I'm a small offline helper, not a real AI - I only know a fixed set of answers about using this app. Try one of the questions below, or type your own.";
 
 const FALLBACK_ANSWER =
-  "I don't have an answer for that one - I'm just a lightweight offline helper with a fixed list of canned answers, not a real AI. Try one of the suggested questions below, or use Feedback from the ☰ menu to ask Raphael directly.";
+  "I don't have an answer for that one - I'm just a lightweight offline helper with a fixed list of canned answers, not a real AI. Try one of the suggested questions below, or use Feedback from the ☰ menu to ask Raphael, who makes the Hub.";
 
 // Lowercases and strips punctuation down to plain words separated by
 // single spaces - "What's Fetch/Update do??" becomes "what s fetch
@@ -427,10 +452,24 @@ function maxTypoDistance(keywordLength) {
 // Does one typed word count as matching a single-word keyword - exact,
 // a plain prefix either direction ("wallet" typed for keyword "wallets"
 // or vice versa), or close enough to count as a typo?
+// Little everyday words never count as a match on their own - "the" used
+// to match "theme" and "his" matched "history", so "which one is the
+// rarest?" got the light/dark answer (fresh-eyes review, 15 Oct 2026).
+const IGNORED_WORDS = new Set([
+  'a', 'an', 'the', 'is', 'are', 'was', 'be', 'it', 'its', 'this', 'that', 'these', 'those', 'his', 'her', 'their', 'my',
+  'your', 'our', 'i', 'me', 'you', 'we', 'he', 'she', 'they', 'what', 'which', 'who', 'how', 'why', 'when', 'where',
+  'do', 'does', 'did', 'can', 'could', 'should', 'would', 'will', 'to', 'of', 'in', 'on', 'at', 'for', 'and', 'or',
+  'with', 'from', 'by', 'about', 'one', 'some', 'any', 'all', 'there', 'here', 'so', 'if', 'not', 'no', 'yes',
+]);
+
 function wordMatchesKeyword(word, keyword) {
   if (word === keyword) return true;
-  if (word.length >= 3 && keyword.startsWith(word)) return true;
-  if (keyword.length >= 3 && word.startsWith(keyword)) return true;
+  if (IGNORED_WORDS.has(word)) return false;
+  // A shortened or longer form ("wallet" / "wallets", "fetch" /
+  // "fetching") - but not a short word that merely starts a much longer
+  // keyword ("klever" is not "kleverscan").
+  if (word.length >= 4 && keyword.startsWith(word) && keyword.length - word.length <= 3) return true;
+  if (keyword.length >= 4 && word.startsWith(keyword) && word.length - keyword.length <= 4) return true;
   return editDistance(word, keyword) <= maxTypoDistance(keyword.length);
 }
 
