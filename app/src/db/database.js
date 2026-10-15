@@ -1897,18 +1897,22 @@ export async function getWithdrawalItems() {
 /** Adds NFTs to the list; ones already on it are left as they are.
  *  Returns how many were new. */
 export async function addWithdrawalItems(items) {
+  // In chunks of several rows per statement, not one statement per ID: a
+  // paste of 1600 IDs was 1600 separate database calls, which on the
+  // website could sit behind a running fetch for a long time and made
+  // "Add to the list" look dead (Raphael, 15 Oct 2026).
   const db = await getWithdrawalDb();
   const now = Date.now();
   let added = 0;
-  await db.withTransactionAsync(async () => {
-    for (const { kind, nonce } of items) {
-      const result = await db.runAsync(
-        `INSERT OR IGNORE INTO withdrawal_items (kind, nonce, added_at) VALUES (?, ?, ?)`,
-        [kind, nonce, now]
-      );
-      added += result.changes || 0;
-    }
-  });
+  const CHUNK = 200;
+  for (let i = 0; i < items.length; i += CHUNK) {
+    const chunk = items.slice(i, i + CHUNK);
+    const result = await db.runAsync(
+      `INSERT OR IGNORE INTO withdrawal_items (kind, nonce, added_at) VALUES ${chunk.map(() => '(?, ?, ?)').join(', ')}`,
+      chunk.flatMap(({ kind, nonce }) => [kind, nonce, now])
+    );
+    added += result?.changes || 0;
+  }
   return added;
 }
 
@@ -1923,16 +1927,20 @@ export async function removeWithdrawalItems(items) {
 
 /** Marks NFTs as "withdrawal requested" now (or clears the mark with null). */
 export async function setWithdrawalRequested(items, requestedAt) {
+  // Grouped per kind, a few hundred IDs per statement (see addWithdrawalItems).
   const db = await getWithdrawalDb();
-  await db.withTransactionAsync(async () => {
-    for (const { kind, nonce } of items) {
-      await db.runAsync(`UPDATE withdrawal_items SET requested_at = ? WHERE kind = ? AND nonce = ?`, [
-        requestedAt,
-        kind,
-        nonce,
-      ]);
+  const byKind = {};
+  for (const { kind, nonce } of items) (byKind[kind] = byKind[kind] || []).push(nonce);
+  const CHUNK = 300;
+  for (const [kind, nonces] of Object.entries(byKind)) {
+    for (let i = 0; i < nonces.length; i += CHUNK) {
+      const chunk = nonces.slice(i, i + CHUNK);
+      await db.runAsync(
+        `UPDATE withdrawal_items SET requested_at = ? WHERE kind = ? AND nonce IN (${chunk.map(() => '?').join(', ')})`,
+        [requestedAt, kind, ...chunk]
+      );
     }
-  });
+  }
 }
 
 /** Saves what a check found for each NFT. `updates` items:

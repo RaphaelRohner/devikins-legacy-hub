@@ -373,3 +373,37 @@ test('a requested NFT in a stranger\'s wallet is flagged at once; the "requested
   expect(copied).toContain('Equipment (1):');
   expect(copied).not.toContain('Equipments');
 });
+
+test('IDs pasted without a heading: the Hub asks which kind they are', async ({ page }) => {
+  await openHub(page, { inPageDialogs: true });
+  await openMenuEntry(page, 'Withdrawals');
+  await page.locator('textarea').fill('3265\n1442, 1450');
+  await page.getByText('Add to the list', { exact: true }).click();
+  const box = page.locator('[data-hub-dialog]');
+  await expect(box).toContainText('Which kind are these?');
+  await expect(box).toContainText('3 IDs without a heading');
+  await box.getByRole('button', { name: 'Weapons' }).click();
+  await expect(page.getByText(/^3 added/)).toBeVisible();
+  await expect(page.getByText('Weapons (3)', { exact: true })).toBeVisible();
+});
+
+test('a long list (1600 IDs) is added quickly', async ({ page }) => {
+  await openHub(page);
+  await openMenuEntry(page, 'Withdrawals');
+  const ids = ['Devikins', ...Array.from({ length: 900 }, (_, i) => 1000 + i), 'Weapons', ...Array.from({ length: 500 }, (_, i) => 3000 + i), 'Equipment', ...Array.from({ length: 228 }, (_, i) => 5000 + i)].join('\n');
+  await page.locator('textarea').fill(ids);
+  await page.locator('[role="switch"]').first().click(); // and mark them all as requested
+  const t0 = Date.now();
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText(/^1628 added - all marked as requested/)).toBeVisible({ timeout: 30_000 });
+  expect(Date.now() - t0).toBeLessThan(10_000);
+  await expect(page.getByText('Requested (1628)')).toBeVisible();
+});
+
+test('text without any IDs says so in a box', async ({ page }) => {
+  const dialogs = await openHub(page);
+  await openMenuEntry(page, 'Withdrawals');
+  await page.locator('textarea').fill('my private wallet');
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect.poll(() => dialogs.join('\n')).toMatch(/Nothing added[\s\S]*No NFT IDs found/);
+});

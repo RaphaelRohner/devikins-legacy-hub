@@ -380,8 +380,39 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
     await reload();
   }
 
-  async function addFromPaste() {
-    const { items: parsed, unassigned, ignored } = parseIdList(pasteText, pasteKind);
+  // "Adding…" on the button while it works - with a long list and a fetch
+  // running it can take a moment, and a silent button looked dead.
+  const [isAdding, setIsAdding] = useState(false);
+  async function addFromPaste(kindOverride = null) {
+    if (isAdding) return;
+    setIsAdding(true);
+    try {
+      await addFromPasteNow(kindOverride);
+    } catch (err) {
+      setAddMessage(`Something went wrong while adding: ${err?.message || String(err)}`);
+    } finally {
+      setIsAdding(false);
+    }
+  }
+
+  async function addFromPasteNow(kindOverride = null) {
+    const { items: parsed, unassigned, ignored } = parseIdList(pasteText, kindOverride || pasteKind);
+    // Only numbers, no heading and no kind picked: ask right away instead of
+    // a small note under the button (Raphael, 15 Oct 2026: the button
+    // seemed to do nothing).
+    if (parsed.length === 0 && unassigned.length > 0) {
+      Alert.alert(
+        'Which kind are these?',
+        `${unassigned.length} ID${unassigned.length === 1 ? '' : 's'} without a heading. Are they Devikins, Weapons or Equipment? (For a mixed list, put a heading - "Devikins", "Weapons", "Equipment" - above each part.)`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Devikins', onPress: () => addFromPaste('devikin') },
+          { text: 'Weapons', onPress: () => addFromPaste('weapon') },
+          { text: 'Equipment', onPress: () => addFromPaste('equipment') },
+        ]
+      );
+      return;
+    }
     const notes = [];
     if (parsed.length > 0) {
       const added = await addWithdrawalItems(parsed);
@@ -413,6 +444,11 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
     }
     if (other.length > 0) notes.push(`Skipped (not an ID): ${other.slice(0, 5).join(', ')}${other.length > 5 ? ' …' : ''}`);
     if (notes.length === 0) notes.push('No NFT IDs found in the text.');
+    // Nothing added at all: say so in a box too, not only in the small line
+    // under the button (Raphael, 15 Oct 2026: "not just nothing").
+    if (parsed.length === 0) {
+      Alert.alert('Nothing added', `${notes.join(' ')}\n\nPaste NFT ID numbers, e.g. "Weapons" on one line and the numbers below it.`);
+    }
     await reload(); // first refresh the list, then say what happened
     setAddMessage(notes.join(' '));
     // Guided setup: in the "My wallets" set these NFTs show in the
@@ -684,8 +720,8 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
             <Text style={[styles.text, { color: colors.text, flex: 1 }]}>I've requested these in the game just now</Text>
             <Switch value={markOnAdd} onValueChange={setMarkOnAdd} />
           </View>
-          <TouchableOpacity style={[button, !pasteText.trim() && { opacity: 0.5 }]} onPress={addFromPaste} disabled={!pasteText.trim()}>
-            <Text style={buttonText}>Add to the list</Text>
+          <TouchableOpacity style={[button, (!pasteText.trim() || isAdding) && { opacity: 0.5 }]} onPress={() => addFromPaste()} disabled={!pasteText.trim() || isAdding}>
+            <Text style={buttonText}>{isAdding ? 'Adding…' : 'Add to the list'}</Text>
           </TouchableOpacity>
           {addMessage ? <Text style={[styles.note, { color: colors.text }]}>{addMessage}</Text> : null}
         </View>
