@@ -96,7 +96,7 @@ function humanizeColumnName(columnName) {
     .join(' ');
 }
 
-export default function NftCard({ kind, nft, onNftUpdated }) {
+export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartners = null }) {
   const { colors } = useTheme();
 
   // NFTs that come from the Withdrawals list ("My wallets") aren't in one
@@ -375,6 +375,16 @@ export default function NftCard({ kind, nft, onNftUpdated }) {
   // fullscreenModal) - built once here since it doesn't vary by kind.
   const deleteSection = (
     <View style={styles.deleteSection}>
+      {/* Straight to the Breeding Helper with this Devikin already picked
+          (fresh-eyes review, 15 Oct 2026: the helper was hard to find). */}
+      {kind === 'devikin' && onFindBreedingPartners ? (
+        <TouchableOpacity
+          style={[styles.deleteActionButton, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, marginBottom: 12 }]}
+          onPress={() => onFindBreedingPartners(nft)}
+        >
+          <Text style={[styles.deleteActionButtonText, { color: colors.primary }]}>Find breeding partners →</Text>
+        </TouchableOpacity>
+      ) : null}
       {isDeleted && (
         <View style={[styles.deletedBadge, { backgroundColor: colors.statusFailedBackground }]}>
           <Text style={[styles.deletedBadgeText, { color: colors.cancelText }]}>Marked as deleted</Text>

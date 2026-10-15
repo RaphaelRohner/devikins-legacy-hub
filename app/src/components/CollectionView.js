@@ -120,7 +120,7 @@ const FLOATING_BUTTON_EDGE_MARGIN = 8;
 // than a tap - see the PanResponder below.
 const FLOATING_BUTTON_DRAG_THRESHOLD = 4;
 
-export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onSetViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded, onAppliedFiltersChange = () => {}, onStatusTextChange = () => {}, listTopContent = null }) {
+export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onSetViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded, onAppliedFiltersChange = () => {}, onStatusTextChange = () => {}, listTopContent = null, onFindBreedingPartners = null }) {
   const { colors } = useTheme();
 
   // Tablet support: how many tiles fit per row, and how much extra
@@ -781,7 +781,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
         <ScrollView
           contentContainerStyle={[styles.detailScrollContent, { paddingHorizontal: centeredContentPadding }]}
         >
-          <NftCard kind={kind} nft={selectedRow} onNftUpdated={reloadRows} />
+          <NftCard kind={kind} nft={selectedRow} onNftUpdated={reloadRows} onFindBreedingPartners={onFindBreedingPartners} />
         </ScrollView>
 
         <NftHistoryModal

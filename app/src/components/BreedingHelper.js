@@ -142,7 +142,7 @@ const AFFINITY_LABELS = {
   sanity_affinity: 'Sanity',
 };
 
-export default function BreedingHelper({ ownerAddresses, onClose }) {
+export default function BreedingHelper({ ownerAddresses, onClose, startWith = null }) {
   const { colors } = useTheme();
 
   // ---- Step 1: filter options and picks ----
@@ -181,7 +181,9 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
   const [pickListLoading, setPickListLoading] = useState(true);
 
   // ---- Step 2: the selected starting Devikin and its matches ----
-  const [selected, setSelected] = useState(null);
+  // startWith: opened from a Devikin's "Find breeding partners" button -
+  // that Devikin is already picked, so Step 2 shows straight away.
+  const [selected, setSelected] = useState(startWith);
   const [matches, setMatches] = useState([]);
   const [matchesLoading, setMatchesLoading] = useState(false);
   const [expandedMatchNonce, setExpandedMatchNonce] = useState(null);
@@ -389,6 +391,17 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
     setAllowProcreationsTolerance(false);
   }
 
+  // "Reset all Step 1 fields" only once there's something to reset - shown
+  // before anything was picked it read like a leftover (fresh-eyes review).
+  const hasStep1Picks =
+    rarityFilter !== NO_FILTER ||
+    ancestryFilter !== NO_FILTER ||
+    procreationsMin !== '' ||
+    procreationsMax !== '' ||
+    Object.keys(affinityRanges).length > 0 ||
+    targetAffinities.length > 0 ||
+    allowProcreationsTolerance;
+
   function handleSelectStarter(nft) {
     setSelected(nft);
     setExpandedMatchNonce(null);
@@ -410,10 +423,8 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
       <View style={styles.toggleTextColumn}>
         <Text style={[styles.filterLabel, { color: colors.text }]}>Allow +/-1 Procreations Left</Text>
         <Text style={[styles.filterHint, { color: colors.secondaryText }]}>
-          Off by default (rule 2: matching Procreations Left is the better outcome). Turning this on also shows
-          partners one Procreations Left off from your selected Devikin, for when an exact match isn't available -
-          the game charges based on whichever of the two is lower, and the offspring's Procreations Left is that
-          lower number minus one, both shown per-candidate below once this is on.
+          Also show partners with one more or one less. An exact match is better: the game charges by the lower
+          number, and the offspring gets that number minus one (shown per partner).
         </Text>
       </View>
       <Switch
@@ -551,10 +562,8 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
           })}
         </View>
         <Text style={[styles.filterHint, { color: colors.secondaryText }]}>
-          Sorts Step 2's partner list so candidates strong in ALL of your chosen Affinities show up first - not just
-          the sum of them, so one high stat can't cover for a weak one. Pick up to two (say Agility for turn order
-          and Power for damage) - tapping a third swaps out whichever you picked first. Pairing two Devikins that
-          are both strong in the same Affinities raises your odds - it's never guaranteed.
+          Pick up to two: partners strong in both come first. Two Devikins strong in the same Affinities raise
+          your odds - never a guarantee.
         </Text>
       </View>
     </View>
@@ -578,7 +587,8 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
           style={[styles.changeButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={handleChangeSelection}
         >
-          <Text style={[styles.changeButtonText, { color: colors.cancelText }]}>‹ Step 1</Text>
+          {/* Not red - it's a plain "back", not a warning (fresh-eyes review, 15 Oct 2026). */}
+          <Text style={[styles.changeButtonText, { color: colors.text }]}>‹ Step 1</Text>
         </TouchableOpacity>
       </View>
 
@@ -619,7 +629,7 @@ export default function BreedingHelper({ ownerAddresses, onClose }) {
         Pick one of your Devikins, then see which others in your collection are actually worth pairing with it.
       </Text>
 
-      {!selected && (
+      {!selected && hasStep1Picks && (
         <TouchableOpacity style={[styles.resetFiltersButton, { borderColor: colors.border }]} onPress={handleResetFilters}>
           <Text style={[styles.resetFiltersButtonText, { color: colors.primary }]}>Reset all Step 1 fields</Text>
         </TouchableOpacity>

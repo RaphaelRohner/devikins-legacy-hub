@@ -715,3 +715,22 @@ test('on a phone, the Getting started checklist scrolls away with the list', asy
   await page.mouse.wheel(0, 500);
   await expect.poll(async () => (await guide.boundingBox())?.y ?? -9999).toBeLessThan(before - 100);
 });
+
+test('a Devikin\'s "Find breeding partners" opens the Breeding Helper with it already picked', async ({ page }) => {
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  await page.getByText('#101', { exact: true }).click();
+  await page.getByText('Find breeding partners →', { exact: true }).click();
+  await expect(page.getByText('Breeding Helper', { exact: true })).toBeVisible();
+  await expect(page.getByText('‹ Step 1', { exact: true })).toBeVisible(); // Step 2 straight away
+  await expect(page.getByText(/^#101/).first()).toBeVisible();
+  await expect(page.getByText(/eligible partner/)).toBeVisible();
+  // Back to Step 1; nothing picked yet, so no "Reset all Step 1 fields".
+  await page.getByText('‹ Step 1', { exact: true }).click();
+  await expect(page.getByText(/STEP 1 OF 2/)).toBeVisible();
+  await expect(page.getByText('Reset all Step 1 fields')).toHaveCount(0);
+  // From the menu it starts at Step 1.
+  await page.getByText('‹').first().click();
+  await openMenuEntry(page, 'Breeding Helper');
+  await expect(page.getByText(/STEP 1 OF 2/)).toBeVisible();
+});

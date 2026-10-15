@@ -957,6 +957,7 @@ Continue anyway?`
   // goToScreen when it's an actual collection kind.
   function handleMenuSelectScreen(screen) {
     setIsMenuOpen(false);
+    if (screen === 'breeding') setBreedingStart(null); // from the menu: start at Step 1
     goToScreen(screen);
   }
 
@@ -969,6 +970,8 @@ Continue anyway?`
   // NFT list, then start the fetch once the new wallet is in `wallets`
   // (it arrives a moment later via loadWallets).
   const [fetchRequested, setFetchRequested] = useState(false);
+  // The Devikin a detail page's "Find breeding partners" opened the Breeding Helper with.
+  const [breedingStart, setBreedingStart] = useState(null);
   function handleFetchNowFromWallets() {
     goToScreen(lastCollectionScreen);
     setFetchRequested(true);
@@ -1271,7 +1274,14 @@ Continue anyway?`
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
-        <BreedingHelper ownerAddresses={ownerAddresses} onClose={() => goToScreen(lastCollectionScreen)} />
+        <BreedingHelper
+          ownerAddresses={ownerAddresses}
+          startWith={breedingStart}
+          onClose={() => {
+            setBreedingStart(null);
+            goToScreen(lastCollectionScreen);
+          }}
+        />
       </SafeAreaView>
     );
   }
@@ -1574,6 +1584,10 @@ Continue anyway?`
       {ownerAddresses.length > 0 ? (
         <CollectionView
           listTopContent={guideCard}
+          onFindBreedingPartners={(nft) => {
+            setBreedingStart(nft);
+            goToScreen('breeding');
+          }}
           kind={currentScreen}
           ownerAddresses={ownerAddresses}
           refreshKey={refreshKey}
