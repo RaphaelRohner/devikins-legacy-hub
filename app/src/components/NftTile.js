@@ -28,6 +28,7 @@ import { Image, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import useNftImage from '../hooks/useNftImage';
 import { getTileFlexBasisPercent } from '../constants/layout';
+import { gameNameOf } from '../constants/schema'; // the name given in the game (15 Oct 2026)
 
 export default function NftTile({ nft, onPress, columns = 3, selected = false, sortedBy = null, placeTag = null }) {
   const { colors } = useTheme();
@@ -73,10 +74,10 @@ export default function NftTile({ nft, onPress, columns = 3, selected = false, s
       activeOpacity={0.7}
     >
       {image}
-      {nft.custom_name ? (
+      {nft.custom_name || gameNameOf(nft) ? (
         <View style={[styles.customNameBadge, { backgroundColor: colors.chipBackground, borderColor: colors.border }]}>
           <Text style={[styles.customNameBadgeText, { color: colors.primary }]} numberOfLines={1}>
-            {nft.custom_name}
+            {nft.custom_name || gameNameOf(nft)}
           </Text>
         </View>
       ) : null}

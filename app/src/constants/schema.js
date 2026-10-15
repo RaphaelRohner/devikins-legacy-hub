@@ -227,3 +227,16 @@ export function getSortableFieldNames(kind) {
   );
   return ['nonce', 'first_seen', ...traitFieldNames];
 }
+
+/**
+ * The name a player gave an NFT in the game, from its metadata name:
+ * "Minedolf #1488" -> "Minedolf". Unnamed ones come as just "#315049"
+ * (or the number again, "33658 #33658") -> null. Checked against
+ * Raphael's own backup, 15 Oct 2026.
+ */
+export function gameNameOf(nft) {
+  if (!nft || !nft.name) return null;
+  const base = String(nft.name).replace(/\s*#\d+\s*$/, '').trim();
+  if (!base || base === String(nft.nonce)) return null;
+  return base;
+}

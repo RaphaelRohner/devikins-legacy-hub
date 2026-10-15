@@ -85,6 +85,7 @@ import { placeInWords } from '../api/withdrawalTracker';
 import { useTheme } from '../context/ThemeContext';
 import useNftImage from '../hooks/useNftImage';
 import StarRating from './StarRating';
+import { gameNameOf } from '../constants/schema';
 
 // Turns a database column name like "critical_chance" into a readable
 // label like "Critical Chance". This is ONLY for display - the actual
@@ -479,6 +480,13 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
           {largeImage}
           <View style={styles.devikinTopRight}>
             <Text style={[styles.devikinId, { color: colors.text }]}>#{nft.nonce}</Text>
+            {/* The name it has in the game (if any), and the Hub nickname if set. */}
+            {gameNameOf(nft) || nft.custom_name ? (
+              <Text style={[styles.devikinSubLine, { color: colors.primary, fontWeight: '700' }]} numberOfLines={1}>
+                {nft.custom_name || gameNameOf(nft)}
+                {nft.custom_name && gameNameOf(nft) && nft.custom_name !== gameNameOf(nft) ? ` (in the game: ${gameNameOf(nft)})` : ''}
+              </Text>
+            ) : null}
             {hasTopStats && topStatKeys.map((key) => chipByKey[key] && (
               <Text key={key} style={[styles.devikinSubLine, { color: colors.secondaryText }]}>
                 {chipByKey[key].label}: {chipByKey[key].value}

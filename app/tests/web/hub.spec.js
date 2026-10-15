@@ -734,3 +734,22 @@ test('a Devikin\'s "Find breeding partners" opens the Breeding Helper with it al
   await openMenuEntry(page, 'Breeding Helper');
   await expect(page.getByText(/STEP 1 OF 2/)).toBeVisible();
 });
+
+test('a Devikin named in the game shows that name; unnamed ones show none; a Hub nickname wins', async ({ page }) => {
+  // #101 is "Testy the Brave #101" in the pretend data; make #102 unnamed, like the real game sends it.
+  fake.extraNfts.set('devikin:102', { name: '#102', attributes: { Rarity: 'Common', Ancestry: 'Demon', 'Life Stage': 'Adult', 'Procreations Left': 0 } });
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  await expect(page.getByText('Testy the Brave', { exact: true })).toBeVisible(); // list
+  await page.getByText('#101', { exact: true }).click();
+  await expect(page.getByText('Testy the Brave', { exact: true })).toBeVisible(); // detail
+  await page.getByPlaceholder('Give this NFT a name (optional)').fill('Sir Testalot');
+  await page.getByText('Save Name', { exact: false }).first().click();
+  await expect(page.getByText('Sir Testalot (in the game: Testy the Brave)')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByText('Sir Testalot', { exact: true })).toBeVisible();
+  await expect(page.getByText('Testy the Brave', { exact: true })).toHaveCount(0);
+  // #102 has no name in the game: no name label at all (only the number).
+  await expect(page.getByText('Mock the Mighty')).toHaveCount(0);
+  await expect(page.getByText('#102', { exact: true })).toBeVisible();
+});

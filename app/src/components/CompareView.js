@@ -41,6 +41,7 @@ import { Image, ScrollView, Switch, Text, TouchableOpacity, View, StyleSheet } f
 import { TRAIT_COLUMNS } from '../constants/schema';
 import { humanizeColumnName } from './FilterPanel';
 import { useTheme } from '../context/ThemeContext';
+import { gameNameOf } from '../constants/schema';
 
 // Small standalone thumbnail, same "prefer the locally-saved copy, fall
 // back to a clearly-labeled placeholder" logic every other thumbnail in
@@ -69,7 +70,7 @@ function CompareColumn({ nft, colors, traitColumns }) {
     <View style={styles.compareColumn}>
       <Thumbnail nft={nft} colors={colors} />
       <Text style={[styles.idLine, { color: colors.secondaryText }]} numberOfLines={1}>
-        #{nft.nonce}{nft.custom_name ? ` · ${nft.custom_name}` : ''}
+        #{nft.nonce}{nft.custom_name || gameNameOf(nft) ? ` · ${nft.custom_name || gameNameOf(nft)}` : ''}
       </Text>
       <Text style={[styles.nameLine, { color: colors.text }]} numberOfLines={2}>
         {nft.name || '—'}
