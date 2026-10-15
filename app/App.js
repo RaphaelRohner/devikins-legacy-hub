@@ -972,6 +972,15 @@ Continue anyway?`
   function handleFetchNowFromWallets() {
     goToScreen(lastCollectionScreen);
     setFetchRequested(true);
+    // The very first fetch: say that it takes a while and that the Hub
+    // will come back with the next step (Raphael, 15 Oct 2026).
+    getGlobalSetting(GUIDE_KEYS.fetched).then((fetchedBefore) => {
+      if (fetchedBefore === '1') return;
+      Alert.alert(
+        'Loading your NFTs',
+        "This can take a few minutes the first time, depending on how many NFTs your wallets hold - the bar at the top shows the progress. Feel free to look around meanwhile. When it's done, the Hub tells you what came in and what's next."
+      );
+    });
   }
   useEffect(() => {
     if (!fetchRequested || ownerAddresses.length === 0 || !COLLECTIONS[currentScreen]) return;

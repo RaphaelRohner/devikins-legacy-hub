@@ -39,6 +39,8 @@ test('the guided setup walks through every step, ending with a backup', async ({
   await nameNewWallet(page, 'My wallet');
   // "Is this your own wallet?" -> yes; "Wallet added" -> Fetch now.
   await expect.poll(() => dialogs.join('\n')).toMatch(/Is this your own wallet\?/);
+  // "Fetch now" says it may take a while and that the Hub will come back.
+  await expect.poll(() => dialogs.join('\n')).toMatch(/Loading your NFTs[\s\S]*tells you what came in/);
   // After the fetch: what came in, and "NFTs still in the game?" -> Add their IDs.
   await expect.poll(() => dialogs.join('\n'), { timeout: 60_000 }).toMatch(/Your collection is loaded[\s\S]*Loaded: 2 Devikins, 2 Weapons, 2 Equipment/);
   await expect(page.getByText('2. Add the IDs of your NFTs')).toBeVisible();
@@ -59,6 +61,8 @@ test('the guided setup walks through every step, ending with a backup', async ({
   // Each question came once.
   expect(dialogs.filter((d) => /^Save a backup\?/.test(d))).toHaveLength(1);
   expect(dialogs.filter((d) => /^Your collection is loaded/.test(d))).toHaveLength(1);
+  // Only the first fetch gets the "Loading your NFTs" note.
+  expect(dialogs.filter((d) => /^Loading your NFTs/.test(d))).toHaveLength(1);
 });
 
 test('"Someone else\'s wallet" next to your own goes into a set of its own', async ({ page }) => {
