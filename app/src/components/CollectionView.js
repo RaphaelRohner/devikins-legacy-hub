@@ -1063,6 +1063,21 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
         numColumns={viewMode === 'tiles' ? tileColumns : 1}
         columnWrapperStyle={viewMode === 'tiles' ? styles.tilesRow : undefined}
         renderItem={({ item }) => {
+          // Sorted by something other than the ID: each row/tile also shows
+          // that value, so the order makes sense (fresh-eyes review, 15 Oct 2026).
+          const sortedBy =
+            sortField && sortField !== 'nonce'
+              ? {
+                  field: sortField,
+                  label: sortField === 'first_seen' ? 'Added' : humanizeColumnName(sortField),
+                  value:
+                    item[sortField] === null || item[sortField] === undefined || item[sortField] === ''
+                      ? '—'
+                      : sortField === 'first_seen'
+                        ? new Date(Number(item[sortField])).toLocaleDateString()
+                        : String(item[sortField]),
+                }
+              : null;
           // While Compare mode is on, a tap selects/deselects this item
           // instead of opening its detail view (see
           // handleToggleCompareSelection above) - `selected` drives the
@@ -1073,11 +1088,11 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
             ? () => handleToggleCompareSelection(item.nonce)
             : () => setSelectedNonce(item.nonce);
           if (viewMode === 'tiles') {
-            return <NftTile nft={item} onPress={handleRowPress} columns={tileColumns} selected={isCompareSelected} />;
+            return <NftTile nft={item} onPress={handleRowPress} columns={tileColumns} selected={isCompareSelected} sortedBy={sortedBy} />;
           }
           const SummaryRow = SUMMARY_ROW_COMPONENTS[kind];
           return SummaryRow ? (
-            <SummaryRow nft={item} onPress={handleRowPress} selected={isCompareSelected} />
+            <SummaryRow nft={item} onPress={handleRowPress} selected={isCompareSelected} sortedBy={sortedBy} />
           ) : (
             <NftCard kind={kind} nft={item} onNftUpdated={reloadRows} />
           );

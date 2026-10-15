@@ -18,7 +18,7 @@ import { Image, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import useNftImage from '../hooks/useNftImage';
 
-export default function EquipmentSummaryRow({ nft, onPress, selected = false }) {
+export default function EquipmentSummaryRow({ nft, onPress, selected = false, sortedBy = null }) {
   const { colors } = useTheme();
 
   // Same "prefer the locally-saved copy" logic as the other summary rows
@@ -110,12 +110,23 @@ export default function EquipmentSummaryRow({ nft, onPress, selected = false }) 
         ) : (
           <Text style={[styles.line, { color: colors.statusText }]}>{unavailableMessage}</Text>
         )}
+        {sortedBy && !SHOWN_FIELDS.includes(sortedBy.field) ? (
+          // The value the list is sorted by, so the order makes sense
+          // (fresh-eyes review, 15 Oct 2026).
+          <Text style={[styles.line, styles.sortedByLine, { color: colors.primary }]} numberOfLines={1}>
+            {sortedBy.label}: {sortedBy.value}
+          </Text>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
 }
 
+// Fields this row already shows - no extra "sorted by" line for them.
+const SHOWN_FIELDS = ['rarity', 'type', 'quality'];
+
 const styles = StyleSheet.create({
+  sortedByLine: { fontWeight: '700' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

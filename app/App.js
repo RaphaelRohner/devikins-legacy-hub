@@ -1442,12 +1442,17 @@ Continue anyway?`
             style={[styles.sortButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => setIsSortPickerVisible(true)}
           >
+            {/* "Sort" on top, so it's clear what the button is for - "↑ ID"
+                alone wasn't recognised (fresh-eyes review, 15 Oct 2026). */}
+            <Text style={[styles.sortButtonCaption, { color: colors.secondaryText }]} numberOfLines={1}>
+              Sort {sortDirection === 'asc' ? '↑' : '↓'}
+            </Text>
             <Text
-              style={[styles.sortButtonText, { color: colors.secondaryText }]}
+              style={[styles.sortButtonText, { color: colors.text }]}
               numberOfLines={1}
               ellipsizeMode="tail"
             >
-              {sortDirection === 'asc' ? '↑' : '↓'} {sortFieldOptions.find((option) => option.name === sortField)?.label ?? 'ID'}
+              {sortFieldOptions.find((option) => option.name === sortField)?.label ?? 'ID'}
             </Text>
           </TouchableOpacity>
 
@@ -1775,7 +1780,12 @@ const styles = StyleSheet.create({
     // once - see sortButtonText's own comment below).
     height: 40,
     justifyContent: 'center',
-    maxWidth: 110,
+    maxWidth: 115,
+  },
+  sortButtonCaption: {
+    fontSize: 10,
+    fontWeight: '600',
+    lineHeight: 12,
   },
   sortButtonText: {
     fontSize: 13,

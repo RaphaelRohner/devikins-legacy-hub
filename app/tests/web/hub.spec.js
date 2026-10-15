@@ -464,25 +464,38 @@ test('sort: one tap on ↑ or ↓ picks field and direction and closes the sheet
   };
   await expect.poll(order).toBe('101,102'); // ID, lowest first
 
+  // The button says what it is: "Sort ↑" over the field.
+  const sortButton = page.getByText(/^Sort [↑↓]$/).locator('xpath=..');
+  await expect(sortButton).toHaveText(/Sort ↑\s*ID/);
+
   // Rarity ↑: Common (#102) before Rare (#101); the sheet closes by itself.
-  await page.getByText('↑ ID').click();
+  await sortButton.click();
   await expect(page.getByText('Sort by')).toBeVisible();
   await page.getByLabel('Rarity ascending').click();
   await expect(page.getByText('Sort by')).toHaveCount(0);
-  await expect(page.getByText('↑ Rarity')).toBeVisible();
+  await expect(sortButton).toHaveText(/Sort ↑\s*Rarity/);
   await expect.poll(order).toBe('102,101');
+  // Rarity is already on every row - no extra line for it.
+  await expect(page.getByText(/^Rarity: /)).toHaveCount(2);
 
   // Rarity ↓: the other way round.
-  await page.getByText('↑ Rarity').click();
+  await sortButton.click();
   await page.getByLabel('Rarity descending').click();
-  await expect(page.getByText('↓ Rarity')).toBeVisible();
+  await expect(sortButton).toHaveText(/Sort ↓\s*Rarity/);
   await expect.poll(order).toBe('101,102');
 
   // ✕ closes without changing anything.
-  await page.getByText('↓ Rarity').click();
+  await sortButton.click();
   await page.getByLabel('Close').click();
   await expect(page.getByText('Sort by')).toHaveCount(0);
-  await expect(page.getByText('↓ Rarity')).toBeVisible();
+  await expect(sortButton).toHaveText(/Sort ↓\s*Rarity/);
+
+  // Sorted by a value the rows don't show: each row shows it.
+  await sortButton.click();
+  await page.getByLabel('Procreations Left descending').click();
+  await expect(page.getByText('Procreations Left: 3', { exact: true })).toBeVisible();
+  await expect(page.getByText('Procreations Left: 0', { exact: true })).toBeVisible();
+  await expect.poll(order).toBe('101,102');
 });
 
 test('the Changelog shows a trait that changed between two fetches', async ({ page }) => {
