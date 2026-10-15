@@ -38,21 +38,16 @@
  *     and is only ever placed inside the FlatList's `ListHeaderComponent`
  *     - and only while `expanded` is true - so it scrolls together with
  *     the results underneath it, and disappears entirely once the
- *     Apply/Remove button is pressed (see handleApplyPress/
+ *     Show/Remove button is pressed (see handleDonePress/
  *     handleRemovePress below, which both close the panel again).
  *
- * The star-rating filter (starFilter prop, applied value owned by
- * App.js so it can carry over between Devikins/Weapons/Equipment - see
- * App.js's own comment) used to apply the instant you tapped a star,
- * separately from the trait filters' pending/Apply flow. Per feedback
- * that this was confusing - it narrowed the list immediately but the
- * Filters panel stayed open, so you had to manually hide it to actually
- * see the (already narrowed) results, and no "Apply Filters" button
- * ever appeared for a star-only change - it's now folded into the same
- * flow as every other filter: tapping a star only updates
- * `pendingStarFilter` (local to this component), and it only reaches
- * the actual query (and bubbles up to App.js via onStarFilterChange)
- * once Apply Filters is pressed, same as any trait filter.
+ * Since 15 Oct 2026 every filter (stars included) works straight away:
+ * a pick narrows the list at once, typed min/max numbers after a short
+ * pause. The pinned button under the toolbar reads "Show 12 Devikins"
+ * and only closes the panel - which also answers the older complaint
+ * that a star narrowed the list while the open panel hid the results.
+ * Closing Filters keeps every pick (fresh-eyes review: a stranger
+ * picked "Rare", closed the panel and lost it without a word).
  *
  * A fifth thing, added later: Compare mode. The Compare button next to
  * List/Tiles (see the JSX below) toggles compareMode on/off; while it's on, a
@@ -240,6 +235,13 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // star filter isn't one of the derived trait columns. Starts in sync
   // with whatever's already applied (the starFilter prop from App.js).
   const [pendingStarFilter, setPendingStarFilter] = useState(starFilter);
+  // Filters now work straight away (fresh-eyes review, 15 Oct 2026: a pick
+  // did nothing until "Apply", and closing Filters silently dropped it).
+  // Typed min/max numbers wait half a second after the last key, so the
+  // list doesn't jump while you're still typing "12".
+  const rangeTimerRef = useRef(null);
+  const pendingFiltersRef = useRef(pendingFilters);
+  pendingFiltersRef.current = pendingFilters;
 
   const reloadRows = useCallback(async () => {
     if (!ownerAddresses || ownerAddresses.length === 0) {
@@ -331,6 +333,10 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   useEffect(() => {
     setSelectedNonce(null);
     setExpanded(false);
+    if (rangeTimerRef.current) {
+      clearTimeout(rangeTimerRef.current);
+      rangeTimerRef.current = null;
+    }
     setPendingFilters({});
     setAppliedFilters({});
     setFilters({});
@@ -541,6 +547,43 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
       nextFilters[columnName] = value;
     }
     setPendingFilters(nextFilters);
+    applyFiltersNow(nextFilters);
+  }
+
+  // A half-typed number ("-", "1.") is left out until it's a real number,
+  // so the list never empties just because you're mid-way through typing.
+  function usableFilters(picked) {
+    const usable = {};
+    for (const [columnName, value] of Object.entries(picked)) {
+      if (value && typeof value === 'object') {
+        const range = {};
+        for (const bound of ['min', 'max']) {
+          const text = value[bound];
+          if (text !== undefined && text !== null && String(text).trim() !== '' && Number.isFinite(Number(text))) {
+            range[bound] = String(text).trim();
+          }
+        }
+        if (range.min !== undefined || range.max !== undefined) usable[columnName] = range;
+      } else {
+        usable[columnName] = value;
+      }
+    }
+    return usable;
+  }
+
+  function applyFiltersNow(picked) {
+    if (rangeTimerRef.current) {
+      clearTimeout(rangeTimerRef.current);
+      rangeTimerRef.current = null;
+    }
+    const usable = usableFilters(picked);
+    setAppliedFilters((previous) => (JSON.stringify(previous) === JSON.stringify(usable) ? previous : usable));
+    setFilters((previous) => (JSON.stringify(previous) === JSON.stringify(usable) ? previous : usable));
+  }
+
+  function handleStarPick(value) {
+    setPendingStarFilter(value);
+    onStarFilterChange(value);
   }
 
   function handleRangeFilterChange(columnName, bound, text) {
@@ -559,19 +602,28 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     }
 
     setPendingFilters(nextFilters);
+    if (rangeTimerRef.current) clearTimeout(rangeTimerRef.current);
+    rangeTimerRef.current = setTimeout(() => {
+      rangeTimerRef.current = null;
+      applyFiltersNow(pendingFiltersRef.current);
+    }, 500);
   }
 
-  // Only now does the actual database query find out about the
-  // selection - see the file comment at the top. Also closes the
-  // (scrollable) filter rows panel, per feedback that the filter rows
-  // should disappear once you've actually applied your pick. Includes
-  // the star pick too now (onStarFilterChange bubbles it up to App.js,
-  // which is what actually feeds it to the query - see CollectionView's
-  // own starFilter prop/reloadRows).
-  function handleApplyPress() {
-    setAppliedFilters(pendingFilters);
-    setFilters(pendingFilters);
-    onStarFilterChange(pendingStarFilter);
+  // Closing Filters keeps every pick; a number still waiting for its
+  // half-second pause is used right away.
+  useEffect(() => {
+    if (!expanded && rangeTimerRef.current) applyFiltersNow(pendingFiltersRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded]);
+
+  useEffect(() => () => {
+    if (rangeTimerRef.current) clearTimeout(rangeTimerRef.current);
+  }, []);
+
+  // The "Show 12 Devikins" button: everything is already applied, so it
+  // only closes the panel.
+  function handleDonePress() {
+    applyFiltersNow(pendingFiltersRef.current);
     setExpanded(false);
   }
 
@@ -583,6 +635,10 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // "All" by hand. Also closes the filter rows panel, same as Apply.
   // Clears the star pick too, same as every trait filter.
   function handleRemovePress() {
+    if (rangeTimerRef.current) {
+      clearTimeout(rangeTimerRef.current);
+      rangeTimerRef.current = null;
+    }
     setPendingFilters({});
     setAppliedFilters({});
     setFilters({});
@@ -904,16 +960,6 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     ? `No ${COLLECTIONS[kind].label} match the ${activeFilterParts.length === 1 ? 'filter' : 'filters'}: ${activeFilterParts.join(', ')}`
     : `No ${COLLECTIONS[kind].label} here yet. Just added a wallet? Load its NFTs with Fetch/Update in the ☰ menu.`; // not "doesn't hold any": before the first fetch that read like a wrong address (fresh-eyes review, 15 Oct 2026)
 
-  // Whether anything picked in the controls hasn't been applied yet -
-  // the "Apply Filters" button only shows up (below the toggle row)
-  // once this is true, so there's nothing to tap when there's nothing
-  // new to do (a plain object comparison won't work here since these
-  // are freshly-built objects each time, so this compares their
-  // contents instead). Includes the star pick, so tapping a star alone
-  // (with no trait filter touched) makes Apply Filters appear too.
-  const hasPendingChanges =
-    JSON.stringify(pendingFilters) !== JSON.stringify(appliedFilters) ||
-    pendingStarFilter !== starFilter;
   // The Deleted switch - used to share this spot with the item count
   // too (hence the old name, countAndDeletedSwitch), until that count
   // moved up into App.js's own menuRow per feedback (see this file's
@@ -1076,12 +1122,17 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
             ) : null}
           </View>
 
-          {expanded && hasPendingChanges && (
+          {expanded && (
             <TouchableOpacity
+              testID="filters-done"
               style={[styles.applyButton, { backgroundColor: colors.primary }]}
-              onPress={handleApplyPress}
+              onPress={handleDonePress}
             >
-              <Text style={[styles.applyButtonText, { color: colors.primaryText }]}>Apply Filters</Text>
+              <Text style={[styles.applyButtonText, { color: colors.primaryText }]}>
+                {isLoading
+                  ? 'Done'
+                  : `Show ${rows.length} ${rows.length === 1 ? ({ devikin: 'Devikin', weapon: 'Weapon', equipment: 'Equipment' })[kind] || COLLECTIONS[kind].label : COLLECTIONS[kind].label}`}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -1151,7 +1202,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
               onTextFilterChange={handleTextFilterChange}
               onRangeFilterChange={handleRangeFilterChange}
               starFilter={pendingStarFilter}
-              onStarFilterChange={setPendingStarFilter}
+              onStarFilterChange={handleStarPick}
             />
           ) : null}
             </>

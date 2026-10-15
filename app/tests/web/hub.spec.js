@@ -753,3 +753,38 @@ test('a Devikin named in the game shows that name; unnamed ones show none; a Hub
   await expect(page.getByText('Mock the Mighty')).toHaveCount(0);
   await expect(page.getByText('#102', { exact: true })).toBeVisible();
 });
+
+test('filters work straight away, keep their picks when closed, and the button shows how many are left', async ({ page }) => {
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  await page.getByText('Filters ▼', { exact: true }).click();
+  await expect(page.getByTestId('filters-done')).toHaveText('Show 2 Devikins');
+  // A pick narrows the list at once - no Apply.
+  const rarity = page.locator('select', { has: page.locator('option', { hasText: 'Common' }) }).first();
+  await rarity.selectOption({ label: 'Common' });
+  await expect(page.getByTestId('filters-done')).toHaveText('Show 1 Devikin');
+  await expect(page.getByText('Testy the Brave', { exact: true })).toHaveCount(0);
+  await rarity.selectOption({ label: 'All' });
+  await expect(page.getByTestId('filters-done')).toHaveText('Show 2 Devikins');
+  // A half-typed number doesn't empty the list; a real one filters after a short pause.
+  const min = page.getByText(/^Procreations Left \(found/).locator('..').getByPlaceholder('min');
+  await min.fill('-');
+  await page.waitForTimeout(900);
+  await expect(page.getByTestId('filters-done')).toHaveText('Show 2 Devikins');
+  await min.fill('2');
+  await expect(page.getByTestId('filters-done')).toHaveText('Show 1 Devikin');
+  // Closing the panel keeps the pick.
+  await page.getByText('Filters ▲', { exact: true }).click();
+  await expect(page.getByTestId('filters-done')).toHaveCount(0);
+  await expect(page.getByText('Testy the Brave', { exact: true })).toBeVisible();
+  await expect(page.getByText('Mock the Mighty', { exact: true })).toHaveCount(0);
+  await page.getByText('Filters ▼', { exact: true }).click();
+  await expect(min).toHaveValue('2');
+  // "Show 1 Devikin" just closes the panel.
+  await page.getByTestId('filters-done').click();
+  await expect(page.getByTestId('filters-done')).toHaveCount(0);
+  await expect(page.getByText('Mock the Mighty', { exact: true })).toHaveCount(0);
+  // Filters ✕ removes everything.
+  await page.getByText('Filters ✕', { exact: true }).click();
+  await expect(page.getByText('Mock the Mighty', { exact: true })).toBeVisible();
+});

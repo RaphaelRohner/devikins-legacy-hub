@@ -8,7 +8,7 @@
  * (and only while the panel is expanded), so these rows scroll together
  * with the results underneath them.
  *
- * The pinned "Show/Hide filters" toggle and "Apply/Remove Filters"
+ * The pinned "Show/Hide filters" toggle and "Show N / Remove Filters"
  * button live in CollectionView.js instead, rendered as a fixed bar
  * above the list - a plain sibling of the list, outside any scrolling
  * area, so it never moves no matter how far you scroll or how many
@@ -34,16 +34,8 @@
  * One row is different: the star-rating filter at the top (starFilter/
  * onStarFilterChange props) isn't derived from the database like the
  * rows below it are - its options are just a fixed row of 5 stars. It
- * IS part of the same pending/Apply flow those rows use, though: what's
- * passed in here is CollectionView.js's own `pendingStarFilter`, not
- * the applied value straight from App.js, so tapping a star only
- * updates the pending pick - it takes effect (and bubbles up to
- * App.js, where the applied value lives so it can carry over between
- * Devikins/Weapons/Equipment) only once "Apply Filters" is pressed,
- * same as every filter below it. This used to apply the instant you
- * tapped a star; per feedback that was confusing next to filters that
- * all wait for Apply, so it was folded into the same flow - see
- * CollectionView.js's own file comment for the full reasoning.
+ * works like every other row: a tap filters straight away (there is
+ * no Apply button any more - see CollectionView.js).
  *
  * Devikins' 21 trait filters grouped, per feedback that a flat list of
  * all of them was too long to scan: rarity/ancestry/personality/
