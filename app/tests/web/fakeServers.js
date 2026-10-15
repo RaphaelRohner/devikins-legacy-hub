@@ -115,6 +115,7 @@ async function installFakeServers(context) {
     offline: false, // true = every outside server is unreachable (no internet)
     blankPictures: new Map(), // picture URL -> 'white' | 'background' | 'missing'
     metadataDelayMs: 0, // slow down the pretend NFT-details server
+    pictureDelayMs: 0, // slow down the pretend picture servers
     requests: [], // every outside URL the Hub asked for, for checks
     blocked: [], // anything unexpected that was blocked
     // A tiny pretend blockchain for the withdrawal tracker:
@@ -191,6 +192,7 @@ async function installFakeServers(context) {
     // Moonlabs picture servers
     if (/^img(weapon|equipment)?\.devikins\.com$/.test(url.hostname)) {
       const special = fake.blankPictures.get(url.href);
+      if (fake.pictureDelayMs) await new Promise((r) => setTimeout(r, fake.pictureDelayMs));
       if (fake.picturesDown || special === 'missing') return route.fulfill({ status: 403, contentType: 'text/plain', body: 'Access Denied' });
       const nonce = Number(url.pathname.match(/(\d+)\.png$/)?.[1] || 1);
       return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: makePng(nonce, special || 'item') });

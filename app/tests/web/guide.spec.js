@@ -95,3 +95,31 @@ test('the menu is grouped in categories that open and close', async ({ page }) =
   await menu.getByText('Tools', { exact: true }).click();
   await expect(menu.getByText('Withdrawals', { exact: true })).toHaveCount(0);
 });
+
+test('"Fetch now" while the Hub is busy in the background still fetches (it waits its turn)', async ({ page }) => {
+  fake.extraNfts.set('weapon:3265', { name: 'Rusty Test Wand #3265', attributes: { Rarity: 'Common', Type: 'Wand', Quality: 'Rusty' } });
+  // First fetch without pictures, so the Hub has picture retries to do.
+  fake.picturesDown = true;
+  await openHub(page, { accept: ['Show them in your collection?'] });
+  await addWalletAndFetch(page, fake).catch(() => {}); // pictures missing - the helper's picture count may not be reached
+  await expect(page.getByText(/^\d+%$/)).toHaveCount(0, { timeout: 60_000 });
+  await openMenuEntry(page, 'Wallets');
+  await page.getByText('My wallets', { exact: true }).locator('..').locator('input').click();
+  await expect(page.getByText(/This is your own set/)).toBeVisible();
+  await goBack(page);
+  // Pictures come back, but slowly: the background retry (started when the
+  // Hub opens) stays busy for a while.
+  fake.picturesDown = false;
+  fake.pictureDelayMs = 8000;
+  const before = fake.requests.filter((u) => /\.png$/.test(u)).length;
+  await page.reload();
+  // The background retry asks for pictures again (and waits on each).
+  await expect.poll(() => fake.requests.filter((u) => /\.png$/.test(u)).length, { timeout: 30_000 }).toBeGreaterThan(before);
+
+  await openMenuEntry(page, 'Withdrawals');
+  await page.locator('textarea').fill('W3265');
+  await page.getByText('Add to the list', { exact: true }).click();
+  // "Show them in your collection?" -> Fetch now (accepted by the test).
+  await openMenuEntry(page, 'Weapons');
+  await expect(page.getByText('3 Weapons', { exact: true })).toBeVisible({ timeout: 90_000 });
+});

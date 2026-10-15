@@ -975,9 +975,19 @@ Continue anyway?`
   }
   useEffect(() => {
     if (!fetchRequested || ownerAddresses.length === 0 || !COLLECTIONS[currentScreen]) return;
+    // The Hub may still be busy with its background work (retrying items,
+    // re-checking pictures) - right after a first fetch it usually is.
+    // Wait for that to finish instead of silently dropping the request
+    // (Raphael, 15 Oct 2026: "Fetch now" after adding IDs did nothing).
+    if (busyRef.current || isFetching || isRetrying) {
+      // A background retry steps aside (it picks up again later by
+      // itself); a real fetch already running is simply waited for.
+      if (isRetrying && !isFetching) cancelRequestedRef.current = true;
+      return;
+    }
     setFetchRequested(false);
     handleFetchPress();
-  }, [fetchRequested, ownerAddresses, currentScreen, handleFetchPress]);
+  }, [fetchRequested, ownerAddresses, currentScreen, handleFetchPress, isFetching, isRetrying]);
 
   // The automatic background maintenance timer: every AUTO_RETRY_INTERVAL_MS
   // (once a minute), if nothing else is currently fetching, does up to

@@ -20,7 +20,7 @@ async function openHub(page, options = {}) {
     const msg = dialog.message();
     const isGuideQuestion = /^(Your collection is loaded|Save a backup\?|Show them in your collection\?)/.test(msg);
     if (dialog.type() === 'confirm' && /^Wallet added/.test(msg) && !options.fetchNow && !options.followGuide) await dialog.dismiss();
-    else if (dialog.type() === 'confirm' && isGuideQuestion && !options.followGuide) await dialog.dismiss();
+    else if (dialog.type() === 'confirm' && isGuideQuestion && !options.followGuide && !(options.accept || []).some((p) => msg.startsWith(p))) await dialog.dismiss();
     else await dialog.accept();
   });
   // Use the browser's own message boxes, which the tests read and close
