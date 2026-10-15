@@ -176,7 +176,7 @@ function keyOf(item) {
   return `${item.kind}:${item.nonce}`;
 }
 
-export default function WithdrawalTrackerView({ onClose }) {
+export default function WithdrawalTrackerView({ onClose, isMySetActive = false, onFetchNow }) {
   const { colors } = useTheme();
   const [loaded, setLoaded] = useState(false);
   const [fromAddress, setFromAddress] = useState('');
@@ -415,6 +415,14 @@ export default function WithdrawalTrackerView({ onClose }) {
     if (notes.length === 0) notes.push('No NFT IDs found in the text.');
     await reload(); // first refresh the list, then say what happened
     setAddMessage(notes.join(' '));
+    // Guided setup: in the "My wallets" set these NFTs show in the
+    // collection after the next fetch - offer it right away.
+    if (parsed.length > 0 && isMySetActive && onFetchNow) {
+      Alert.alert('Show them in your collection?', 'A Fetch/Update loads the details and pictures of the NFTs you just added, so they appear next to the ones in your wallets.', [
+        { text: 'Later', style: 'cancel' },
+        { text: 'Fetch now', onPress: onFetchNow },
+      ]);
+    }
   }
 
   function toggleSelected(item) {

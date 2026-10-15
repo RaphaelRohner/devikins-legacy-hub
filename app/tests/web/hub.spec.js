@@ -24,7 +24,7 @@ test.afterEach(async () => {
 
 test('a first-time visitor sees the start hint, and About shows the version', async ({ page }) => {
   await openHub(page);
-  await expect(page.getByText(/^Getting started/)).toBeVisible(); // the start checklist
+  await expect(page.getByText(/First add a wallet/)).toBeVisible(); // the start hint
   await openMenuEntry(page, 'About');
   await expect(page.getByText(new RegExp(`Version ${APP_VERSION.replace(/\./g, '\\.')}`))).toBeVisible();
   await expect(page.getByText('Website', { exact: false }).first()).toBeVisible();
@@ -156,7 +156,12 @@ test('a backup keeps names, stars and pictures, and imports into a new browser',
   await goBack(page2);
   // Data that's already there counts as fetched in the Getting started
   // checklist (no new fetch needed): wallet + fetch done, backup not yet.
+  await openMenuEntry(page2, 'Getting started');
   await expect(page2.getByText(/2 of 3 done/)).toBeVisible();
+  // The empty starting set was removed - only the imported one is left.
+  await openMenuEntry(page2, 'Wallets');
+  await expect(page2.getByText('Wallet set 1', { exact: true })).toHaveCount(0);
+  await goBack(page2);
 
   await expect(page2.getByText('Sir Testalot')).toBeVisible();
   await expect.poll(async () => (await shownPictureSources(page2)).filter((s) => s.startsWith('blob:')).length).toBe(2);
@@ -687,6 +692,7 @@ test('on a phone, the Getting started checklist scrolls away with the list', asy
   await page.setViewportSize({ width: 390, height: 844 });
   await openHub(page);
   await addWalletAndFetch(page, fake);
+  await openMenuEntry(page, 'Getting started');
   const guide = page.getByText(/^Getting started/).first();
   await expect(guide).toBeVisible();
   const before = (await guide.boundingBox()).y;

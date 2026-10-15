@@ -33,10 +33,13 @@ test('a message box does not pause a running fetch', async ({ page, context }) =
   await page.getByText(/^\d+%$/).first().click();
   await expect(box).toContainText('Fetch status');
   // Leave it open - the fetch must still finish.
-  await expect(page.getByText('2 Devikins')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('2 Devikins', { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/^\d+%$/)).toHaveCount(0, { timeout: 30_000 });
-  await expect(box).toHaveCount(1); // still open
-  await box.getByRole('button').first().click();
+  await expect(box.filter({ hasText: 'Fetch status' })).toHaveCount(1); // still open
+  // (The guided setup's "Save a backup?" may have opened on top - close every box.)
+  while ((await box.count()) > 0) {
+    await box.last().getByRole('button').first().click();
+  }
   await expect(box).toHaveCount(0);
   expect(browserPopups, "the browser's own pop-ups (they pause the page)").toEqual([]);
   expect(fake.blocked).toEqual([]);

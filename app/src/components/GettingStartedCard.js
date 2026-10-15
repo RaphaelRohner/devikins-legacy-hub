@@ -28,6 +28,9 @@ export const GUIDE_KEYS = {
   fetched: 'guide_fetched',
   fetchedWithIds: 'guide_fetched_with_ids',
   backup: 'guide_backup',
+  // The guided setup's one-time questions after a fetch (App.js).
+  idsAsked: 'guide_ids_asked',
+  backupReminded: 'guide_backup_reminded',
 };
 
 /** Loads what's done so far. */

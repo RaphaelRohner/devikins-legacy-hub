@@ -14,7 +14,13 @@ async function openHub(page, options = {}) {
     // "Wallet added" offers "Fetch now"; the tests choose "Add another
     // wallet first" and start the fetch themselves, step by step
     // (options.fetchNow picks "Fetch now" instead).
-    if (/^Wallet added/.test(dialog.message()) && dialog.type() === 'confirm' && !options.fetchNow) await dialog.dismiss();
+    // The guided setup's later questions ("Your collection is loaded" ->
+    // "Add their IDs", "Save a backup?", "Show them in your collection?")
+    // are answered "not now" too, unless options.followGuide.
+    const msg = dialog.message();
+    const isGuideQuestion = /^(Your collection is loaded|Save a backup\?|Show them in your collection\?)/.test(msg);
+    if (dialog.type() === 'confirm' && /^Wallet added/.test(msg) && !options.fetchNow && !options.followGuide) await dialog.dismiss();
+    else if (dialog.type() === 'confirm' && isGuideQuestion && !options.followGuide) await dialog.dismiss();
     else await dialog.accept();
   });
   // Use the browser's own message boxes, which the tests read and close

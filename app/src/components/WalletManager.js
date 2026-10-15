@@ -105,7 +105,7 @@ import {
   countWithdrawalItems,
 } from '../db/database';
 import { MY_WALLETS_SET_KEY } from '../constants/idList';
-import { IN_GAME_WALLET_NAME, MY_WALLET_NAME } from '../constants/walletNames';
+import { IN_GAME_WALLET_NAME, MY_WALLET_NAME, JUST_LOOKING_NAME } from '../constants/walletNames';
 import { GUIDE_KEYS } from './GettingStartedCard';
 import { useTheme } from '../context/ThemeContext';
 import QrScannerModal from './QrScannerModal';
@@ -152,6 +152,8 @@ export default function WalletManager({
   onClose,
   onOpenWithdrawals,
   onFetchNow,
+  startExportAll = false,
+  onStartExportHandled,
 }) {
   const { colors } = useTheme();
 
@@ -362,6 +364,10 @@ export default function WalletManager({
     setIsTypingCustomName(false);
     setCustomNameInput('');
     if (!target) return;
+    if (name === JUST_LOOKING_NAME) {
+      await handleJustLooking(target);
+      return;
+    }
     if (name && name.trim()) {
       try {
         await updateWalletAddress(target.id, target.address, name.trim());
@@ -407,6 +413,60 @@ export default function WalletManager({
     }
     afterAdding();
   }
+  // "Someone else's wallet (just looking)": named "Just looking", no "is
+  // this yours?" question. If this set already holds your own wallets (or
+  // is your "My wallets" set), their NFTs would mix with yours - so it
+  // offers to move this wallet into a set of its own (Raphael, 15 Oct 2026).
+  async function handleJustLooking(target) {
+    const ownNames = [IN_GAME_WALLET_NAME, MY_WALLET_NAME];
+    const setHasOwn =
+      wallets.some((w) => w.id !== target.id && ownNames.includes((w.alias || '').trim())) ||
+      (mySetId !== null && mySetId !== undefined && String(mySetId) === String(activeWalletSetId));
+    const offerFetch = () => {
+      if (!onFetchNow) return;
+      Alert.alert('Wallet added', "Load this wallet's Devikins, Weapons and Equipment now?", [
+        { text: 'Later', style: 'cancel' },
+        { text: 'Fetch now', onPress: onFetchNow },
+      ]);
+    };
+    const keepHere = async () => {
+      try {
+        await updateWalletAddress(target.id, target.address, JUST_LOOKING_NAME);
+      } catch (err) {
+        reportSetActionError(err, 'Naming that wallet');
+      }
+      onWalletsChanged();
+      offerFetch();
+    };
+    if (!setHasOwn) {
+      await keepHere();
+      return;
+    }
+    Alert.alert(
+      'Keep it separate from yours?',
+      `"${activeSetName}" holds your own wallets, so this wallet's NFTs would mix with yours. Put it in a set of its own? You can switch between sets on the Wallets screen.`,
+      [
+        { text: 'Keep it here', style: 'cancel', onPress: keepHere },
+        {
+          text: 'Own set',
+          onPress: async () => {
+            try {
+              await deleteWallet(target.id);
+              const short = `${target.address.slice(0, 7)}…${target.address.slice(-4)}`;
+              await createWalletSet(`Just looking (${short})`);
+              const { id } = await addWallet(target.address);
+              if (id != null) await updateWalletAddress(id, target.address, JUST_LOOKING_NAME);
+              onWalletSetsChanged();
+              offerFetch();
+            } catch (err) {
+              reportSetActionError(err, 'Making a set for that wallet');
+            }
+          },
+        },
+      ]
+    );
+  }
+
   // Names already given in this set - a quick choice that's taken is
   // shown greyed out (two "In-game wallet"s would defeat the point).
   const usedNames = new Set(wallets.map((w) => (w.alias || '').trim()).filter(Boolean));
@@ -712,6 +772,15 @@ export default function WalletManager({
     }
   }
 
+  // "Save a backup now" in the guided setup (App.js) opens this screen and
+  // starts "Export all sets" straight away.
+  useEffect(() => {
+    if (!startExportAll || walletSets.length === 0) return;
+    onStartExportHandled?.();
+    handleExportAllSets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startExportAll, walletSets.length]);
+
   // Imports one or more wallet sets from a zip Raphael previously
   // exported (from this phone or another one) - see exportImport.js's
   // own file comment for the full reasoning. A cancelled file picker
@@ -757,8 +826,20 @@ export default function WalletManager({
             withWallets[0] ||
             imported[0];
           if (pick && pick.id !== activeWalletSetId) {
+            const previous = sets.find((set) => set.id === activeWalletSetId);
             await switchToWalletSet(pick.id);
             loadedName = pick.name;
+            // The empty starting set ("Wallet set 1", no wallets) isn't
+            // needed any more - remove it, so it doesn't sit next to the
+            // imported one (Raphael, 15 Oct 2026). Only an empty set with
+            // the default name; anything the user named stays.
+            if (previous && /^Wallet set \d+$/.test(previous.name || '')) {
+              try {
+                await deleteWalletSet(previous.id);
+              } catch (e) {
+                // Leaving it is harmless.
+              }
+            }
           }
         } catch (e) {
           // Not fatal: the sets are imported, they can be loaded by hand.
@@ -1381,6 +1462,13 @@ export default function WalletManager({
                 </TouchableOpacity>
               );
             })}
+            <TouchableOpacity
+              style={[styles.namingChoice, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+              onPress={() => finishNaming(JUST_LOOKING_NAME)}
+            >
+              <Text style={[styles.namingChoiceText, { color: colors.text }]}>Someone else's wallet</Text>
+              <Text style={[styles.namingChoiceNote, { color: colors.secondaryText }]}>just looking - a friend's or a relative's</Text>
+            </TouchableOpacity>
             {isTypingCustomName ? (
               <View style={styles.namingCustomRow}>
                 <TextInput

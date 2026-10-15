@@ -5,3 +5,6 @@
  */
 export const IN_GAME_WALLET_NAME = 'In-game wallet';
 export const MY_WALLET_NAME = 'My wallet';
+// "Someone else's wallet (just looking)" - a friend's or a relative's
+// wallet: no "is this yours?" question, and kept apart from your own set.
+export const JUST_LOOKING_NAME = 'Just looking';

@@ -67,6 +67,7 @@ import {
   setGlobalSetting,
   countPendingRetries,
   countWithdrawalItems,
+  countNfts,
   pruneUnusedStoredImages,
 } from './src/db/database';
 import { ID_LIST_OWNER, MY_WALLETS_SET_KEY } from './src/constants/idList';
@@ -228,6 +229,9 @@ function AppContent() {
   // the lists, fetches and retries use; `walletAddresses` stays the real
   // wallets only.
   const [includeIdList, setIncludeIdList] = useState(false);
+  // Whether the loaded set is the "My wallets" one (Withdrawals offers a
+  // fetch after adding IDs only then).
+  const [isMySetActive, setIsMySetActive] = useState(false);
   const ownerAddresses = useMemo(
     () => (includeIdList ? [...walletAddresses, ID_LIST_OWNER] : walletAddresses),
     [walletAddresses, includeIdList]
@@ -257,12 +261,14 @@ function AppContent() {
     (async () => {
       if (!activeWalletSetId) {
         if (alive) setIncludeIdList(false);
+        if (alive) setIsMySetActive(false);
         return;
       }
       const mySetId = await getGlobalSetting(MY_WALLETS_SET_KEY);
       const isMySet = mySetId !== null && String(mySetId) === String(activeWalletSetId);
       const listed = isMySet ? await countWithdrawalItems() : 0;
       if (alive) setIncludeIdList(isMySet && listed > 0);
+      if (alive) setIsMySetActive(isMySet);
     })();
     return () => {
       alive = false;
@@ -661,6 +667,72 @@ function AppContent() {
     return () => subscription.remove();
   }, [isMenuOpen, currentScreen, lastCollectionScreen, goToScreen]);
 
+  // The guided setup after a fetch (Raphael, 15 Oct 2026: "add all steps
+  // from the Getting started list in the guided setup ... with a reminder
+  // at the end to export a backup"). Each question comes once:
+  //   1. Own set without IDs yet: "Do you also own NFTs still in the game?"
+  //      -> the Withdrawals screen (adding IDs there offers the next fetch).
+  //   2. No backup yet: "Save a backup?" -> Wallets, export starts by itself.
+  // The first one also says what came in, and that the Hub keeps retrying
+  // what Moonlabs' server didn't deliver yet.
+  const afterFetchGuideRef = useRef(null);
+  const [exportOnWallets, setExportOnWallets] = useState(false);
+  afterFetchGuideRef.current = async () => {
+    try {
+      const [idsAsked, reminded, backupDone, mySetId] = await Promise.all([
+        getGlobalSetting(GUIDE_KEYS.idsAsked),
+        getGlobalSetting(GUIDE_KEYS.backupReminded),
+        getGlobalSetting(GUIDE_KEYS.backup),
+        getGlobalSetting(MY_WALLETS_SET_KEY),
+      ]);
+      const isMySet = mySetId !== null && mySetId !== undefined && String(mySetId) === String(activeWalletSetId);
+      const idCount = isMySet ? await countWithdrawalItems() : 0;
+      const askIds = isMySet && idCount === 0 && idsAsked !== '1';
+      const remindBackup = backupDone !== '1' && reminded !== '1';
+      if (!askIds && !remindBackup) return;
+
+      const counts = await Promise.all(Object.keys(COLLECTIONS).map((kind) => countNfts(kind, ownerAddresses, true)));
+      const summary =
+        'Loaded: ' +
+        Object.keys(COLLECTIONS).map((kind, i) => `${counts[i]} ${COLLECTIONS[kind].label}`).join(', ') +
+        '. If some show without details or picture, Moonlabs\' server hasn\'t delivered them yet - the Hub keeps retrying by itself.';
+
+      const askBackup = (withSummary) => {
+        setGlobalSetting(GUIDE_KEYS.backupReminded, '1');
+        Alert.alert(
+          'Save a backup?',
+          `${withSummary ? `${summary}\n\n` : ''}A backup file keeps your wallets, names, notes, stars and the Withdrawals list safe - for a new computer or phone, or if the browser clears its data. You can always do it later under Wallets > Export all sets.`,
+          [
+            { text: 'Later', style: 'cancel' },
+            {
+              text: 'Save a backup now',
+              onPress: () => {
+                setExportOnWallets(true);
+                goToScreen('wallets');
+              },
+            },
+          ]
+        );
+      };
+
+      if (askIds) {
+        await setGlobalSetting(GUIDE_KEYS.idsAsked, '1');
+        Alert.alert(
+          'Your collection is loaded',
+          `${summary}\n\nDo you also own NFTs that are still in the game? The game keeps many of them in its main wallet, so a fetch can't find them. Add their IDs on the Withdrawals screen and they show in your collection too.`,
+          [
+            { text: 'Not now', style: 'cancel', onPress: () => remindBackup && askBackup(false) },
+            { text: 'Add their IDs', onPress: () => goToScreen('withdrawals') },
+          ]
+        );
+        return;
+      }
+      askBackup(true);
+    } catch (e) {
+      // The guide is a nicety - never let it break a fetch.
+    }
+  };
+
   const handleFetchPress = useCallback(async () => {
     if (ownerAddresses.length === 0 || busyRef.current) return;
 
@@ -819,6 +891,7 @@ Continue anyway?`
       if (!cancelRequestedRef.current) {
         await setGlobalSetting(GUIDE_KEYS.fetched, '1');
         if (includeIdList) await setGlobalSetting(GUIDE_KEYS.fetchedWithIds, '1');
+        afterFetchGuideRef.current?.();
       }
 
       if (truncationNotices.length > 0) {
@@ -857,7 +930,11 @@ Continue anyway?`
     setGuideReloadKey((k) => k + 1);
   }
 
-  const showGuide = guideState && (forceGuide || (!guideState.hidden && !guideState.complete));
+  // Since 15 Oct 2026 the guided setup (welcome, "What's this wallet?",
+  // "Is this your own wallet?", Fetch now, "NFTs still in the game?",
+  // "Save a backup?") walks through every step, so the checklist no longer
+  // shows by itself - only from Help > Getting started, as an overview.
+  const showGuide = guideState && forceGuide;
   const guideCard = showGuide ? (
     <GettingStartedCard
       state={guideState}
@@ -1132,6 +1209,8 @@ Continue anyway?`
           onClose={() => goToScreen(lastCollectionScreen)}
           onOpenWithdrawals={() => goToScreen('withdrawals')}
           onFetchNow={handleFetchNowFromWallets}
+          startExportAll={exportOnWallets}
+          onStartExportHandled={() => setExportOnWallets(false)}
         />
       </SafeAreaView>
     );
@@ -1215,7 +1294,16 @@ Continue anyway?`
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
-        <WithdrawalTrackerView onClose={() => goToScreen(lastCollectionScreen)} />
+        <WithdrawalTrackerView
+          onClose={() => goToScreen(lastCollectionScreen)}
+          isMySetActive={isMySetActive}
+          onFetchNow={() => {
+            // The IDs were just added: include them in this fetch straight
+            // away (the usual re-check runs a moment too late for it).
+            setIncludeIdList(true);
+            handleFetchNowFromWallets();
+          }}
+        />
       </SafeAreaView>
     );
   }
