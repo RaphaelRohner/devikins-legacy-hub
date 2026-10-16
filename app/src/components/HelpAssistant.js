@@ -61,6 +61,7 @@ import {
   Platform,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { GLOSSARY } from '../constants/glossary';
 
 // The topics FAQ_ENTRIES below are grouped into for display (see the
 // "topic" field on each entry, and the grouped render further down) -
@@ -77,6 +78,7 @@ import { useTheme } from '../context/ThemeContext';
 // matches.
 const FAQ_TOPICS = [
   { id: 'basics', title: 'New here? The basics' },
+  { id: 'devikin-words', title: 'Devikin words explained' },
   { id: 'wallets', title: 'Wallets & wallet sets' },
   { id: 'browsing', title: 'Browsing & organizing your collection' },
   { id: 'troubleshooting', title: 'When something looks off' },
@@ -90,6 +92,20 @@ const FAQ_TOPICS = [
 // FAQ_TOPICS' own comment). This is intentionally small and specific to
 // THIS app, not general knowledge - Devi doesn't know anything it isn't
 // told here.
+// "What does … mean?" for the game's own words, from the shared glossary
+// (constants/glossary.js - the same text as the ⓘ on a detail page).
+// Listed before the general traits answer, so "what is a procreation"
+// lands here (on a tie the earlier entry wins).
+const GLOSSARY_ENTRIES = Object.entries(GLOSSARY)
+  .filter(([, term]) => term.question)
+  .map(([key, term]) => ({
+    id: `term-${key}`,
+    topic: 'devikin-words',
+    question: term.question,
+    keywords: term.keywords,
+    answer: term.more ? `${term.short} ${term.more}` : term.short,
+  }));
+
 const ALL_FAQ_ENTRIES = [
   {
     id: 'is-it-safe',
@@ -117,11 +133,12 @@ const ALL_FAQ_ENTRIES = [
     answer:
       "Moonlabs is the company that makes and runs Devikins - the game itself, its servers, and the details and pictures of every Devikin, Weapon and Equipment. The Hub reads those details and pictures from Moonlabs' server. When that server doesn't answer or sends something incomplete, you see blank pictures or missing details (\"Hide blanks\" keeps those out of view), and the Hub tries again by itself later. The Hub is a fan-made project, not affiliated with or endorsed by Moonlabs or Klever.",
   },
+  ...GLOSSARY_ENTRIES,
   {
     id: 'rarity',
     topic: 'basics',
     question: 'What do Rarity, Ancestry and the other traits mean?',
-    keywords: ['rarity', 'rare', 'rarest', 'common', 'uncommon', 'mythic', 'eldritch', 'best', 'valuable', 'ancestry', 'trait', 'traits', 'procreations', 'life stage', 'personality', 'quality'],
+    keywords: ['rarity', 'rare', 'rarest', 'common', 'uncommon', 'mythic', 'eldritch', 'best', 'valuable', 'ancestry', 'trait', 'traits'],
     answer:
       "Every NFT has traits set by the game. Rarity, from lowest to highest: Common, Uncommon, Rare, Mythic, Eldritch. Ancestry is a Devikin's family (for example Faery or Demon). Life Stage is how far it has grown, and Procreations Left is how many more times it can breed. Weapons and Equipment also have a Quality. To find the rarest ones, tap the sort button (left of the search box, it shows \"↑ ID\" at first), pick Rarity and tap ↓ for highest first - or use Filters to show only one rarity. A \"—\" means the game hasn't given that NFT a value for that trait.",
   },

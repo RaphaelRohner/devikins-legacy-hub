@@ -840,3 +840,53 @@ test('the theme switch shows both modes and highlights the current one', async (
   await expect.poll(bg).not.toBe(before);
   await page.screenshot({ path: 'test-results/theme-switch-2.png', clip: { x: 1000, y: 0, width: 200, height: 80 } });
 });
+
+test('game words explain themselves: ⓘ on the detail page and in Ask Devi', async ({ page }) => {
+  fake.extraNfts.set('devikin:101', {
+    name: 'Testy the Brave #101',
+    attributes: {
+      Rarity: 'Rare', Ancestry: 'Faery', 'Life Stage': 'Adult', 'Procreations Left': 3, Personality: 'Sassy',
+      'Eyes Gene': 'Bonded', 'Overall Affinity': 41, 'Vitality Affinity': 10, 'Vitality Attribute': 208,
+    },
+  });
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  await page.getByText('#101', { exact: true }).click();
+  const box = page.getByTestId('info-box');
+  // Hover (website) shows it, moving away hides it.
+  await page.getByTestId('info-procreations_left').hover();
+  await expect(box).toContainText('at most 10');
+  await page.mouse.move(5, 5);
+  await expect(box).toHaveCount(0);
+  // A tap pins it; tapping the box closes it.
+  await page.getByTestId('info-genes').click();
+  await page.mouse.move(5, 5);
+  await expect(box).toContainText('bonded');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'test-results/info-genes-phone.png', fullPage: true });
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await box.click();
+  await expect(box).toHaveCount(0);
+  for (const key of ['life_stage', 'overall_affinity', 'personality', 'rarity', 'affinities', 'attributes']) {
+    await expect(page.getByTestId(`info-${key}`)).toBeVisible();
+  }
+  // Weapons: Quality.
+  await page.goBack();
+  await openMenuEntry(page, 'Weapons');
+  await page.getByText('#201', { exact: true }).click();
+  await page.getByTestId('info-quality').click();
+  await expect(box).toContainText('upgraded');
+  // Ask Devi finds the same words.
+  await openMenuEntry(page, 'Ask Devi');
+  const ask = async (question, expectedPart) => {
+    const before = await page.getByText(expectedPart).count();
+    await page.getByPlaceholder('Ask Devi something...').fill(question);
+    await page.getByText('Send', { exact: true }).click();
+    await expect.poll(() => page.getByText(expectedPart).count()).toBe(before + 1);
+  };
+  await ask('what is a procreation', /at most 10 in its life/);
+  await ask('what does bonded mean?', /all genes the same/);
+  await ask('what are affinities', /natural talent/);
+  await ask('what is a toddler', /grows up in seven days/);
+  await ask('how does the breeding helper work', /two-step finder/);
+});

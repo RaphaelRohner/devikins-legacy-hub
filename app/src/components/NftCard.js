@@ -77,7 +77,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { View, Text, Image, TextInput, StyleSheet, Modal, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, Image, TextInput, StyleSheet, Modal, TouchableOpacity, Linking, Pressable } from 'react-native';
 import { TRAIT_COLUMNS, kleverscanNftUrl } from '../constants/schema';
 import { setNftDeletedState, setNftCustomName, setNftStarRating, getWithdrawalItem, getGlobalSetting, WITHDRAW_SETTING_KEYS } from '../db/database';
 import { ID_LIST_OWNER } from '../constants/idList';
@@ -86,6 +86,7 @@ import { useTheme } from '../context/ThemeContext';
 import useNftImage from '../hooks/useNftImage';
 import StarRating from './StarRating';
 import { gameNameOf } from '../constants/schema';
+import { GLOSSARY } from '../constants/glossary';
 
 // Turns a database column name like "critical_chance" into a readable
 // label like "Critical Chance". This is ONLY for display - the actual
@@ -99,6 +100,55 @@ function humanizeColumnName(columnName) {
 
 export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartners = null }) {
   const { colors } = useTheme();
+
+  // The small ⓘ next to a game word (Genes, Affinities, Procreations
+  // Left, ...): hovering (website) or tapping shows what it means, in a box
+  // right under that row - text from constants/glossary.js, shared with Ask
+  // Devi (Raphael's explanations, 16 Oct 2026). A tap pins the box; tapping
+  // the box or the ⓘ again closes it.
+  const [info, setInfo] = useState(null); // { key, hover }
+  function infoIcon(key) {
+    const term = GLOSSARY[key];
+    if (!term) return null;
+    return (
+      <Pressable
+        testID={`info-${key}`}
+        hitSlop={8}
+        onPress={() => setInfo((i) => (i && i.key === key && !i.hover ? null : { key, hover: false }))}
+        onHoverIn={() => setInfo((i) => (i && !i.hover ? i : { key, hover: true }))}
+        onHoverOut={() => setInfo((i) => (i && i.key === key && i.hover ? null : i))}
+        accessibilityRole="button"
+        accessibilityLabel={`What is ${term.title}?`}
+        style={styles.infoIcon}
+      >
+        <Text style={[styles.infoIconText, { color: colors.primary }]}>ⓘ</Text>
+      </Pressable>
+    );
+  }
+  function infoBox(keys) {
+    if (!info || !keys.includes(info.key) || !GLOSSARY[info.key]) return null;
+    const term = GLOSSARY[info.key];
+    return (
+      <Pressable
+        testID="info-box"
+        onPress={() => setInfo(null)}
+        style={[styles.infoBox, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+      >
+        <Text style={[styles.infoBoxText, { color: colors.text }]}>
+          <Text style={{ fontWeight: '700' }}>{term.title}: </Text>
+          {term.short}
+        </Text>
+      </Pressable>
+    );
+  }
+  function labelWithInfo(key, label, style) {
+    return (
+      <View style={styles.labelRow}>
+        <Text style={style}>{label}</Text>
+        {infoIcon(key)}
+      </View>
+    );
+  }
 
   // NFTs that come from the Withdrawals list ("My wallets") aren't in one
   // of the set's wallets, so say where they are (tracker's last check).
@@ -488,10 +538,14 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
               </Text>
             ) : null}
             {hasTopStats && topStatKeys.map((key) => chipByKey[key] && (
-              <Text key={key} style={[styles.devikinSubLine, { color: colors.secondaryText }]}>
-                {chipByKey[key].label}: {chipByKey[key].value}
-              </Text>
+              <View key={key} style={styles.labelRow}>
+                <Text style={[styles.devikinSubLine, { color: colors.secondaryText }]}>
+                  {chipByKey[key].label}: {chipByKey[key].value}
+                </Text>
+                {infoIcon(key)}
+              </View>
             ))}
+            {infoBox(topStatKeys)}
           </View>
         </View>
 
@@ -503,17 +557,20 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
             <View style={styles.triRow}>
               {triStatKeys.map((key) => chipByKey[key] && (
                 <View key={key} style={styles.triColumn}>
-                  <Text style={[styles.triLabel, { color: colors.secondaryText }]}>{chipByKey[key].label}</Text>
+                  {labelWithInfo(key, chipByKey[key].label, [styles.triLabel, { color: colors.secondaryText }])}
                   <Text style={[styles.triValue, { color: colors.text }]}>{chipByKey[key].value}</Text>
                 </View>
               ))}
             </View>
+            {infoBox(triStatKeys)}
           </>
         )}
 
         {hasGeneStats && (
           <>
             <View style={[styles.separator, { backgroundColor: colors.border }]} />
+            {labelWithInfo('genes', 'Genes', [styles.triLabel, styles.sectionLabel, { color: colors.secondaryText }])}
+            {infoBox(['genes'])}
             <View style={styles.geneGrid}>
               {geneGridPairs.map(([leftKey, rightKey]) => {
                 const leftChip = chipByKey[leftKey];
@@ -550,6 +607,15 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
         {hasPairedStats && (
           <>
             <View style={[styles.separator, { backgroundColor: colors.border }]} />
+            <View style={styles.pairedStatRow}>
+              <View style={styles.pairedStatText}>
+                {labelWithInfo('affinities', 'Affinities', [styles.triLabel, styles.sectionLabel, { color: colors.secondaryText }])}
+              </View>
+              <View style={styles.pairedStatText}>
+                {labelWithInfo('attributes', 'Attributes', [styles.triLabel, styles.sectionLabel, { color: colors.secondaryText }])}
+              </View>
+            </View>
+            {infoBox(['affinities', 'attributes'])}
             <View style={styles.pairedStatsBlock}>
               {pairedStatKeys.map(([leftKey, rightKey]) => {
                 const leftChip = chipByKey[leftKey];
@@ -646,11 +712,12 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
             <View style={styles.triRow}>
               {triStatKeys.map((key) => chipByKey[key] && (
                 <View key={key} style={styles.triColumn}>
-                  <Text style={[styles.triLabel, { color: colors.secondaryText }]}>{chipByKey[key].label}</Text>
+                  {labelWithInfo(key, chipByKey[key].label, [styles.triLabel, { color: colors.secondaryText }])}
                   <Text style={[styles.triValue, { color: colors.text }]}>{chipByKey[key].value}</Text>
                 </View>
               ))}
             </View>
+            {infoBox(triStatKeys)}
           </>
         )}
 
@@ -699,11 +766,12 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
             <View style={styles.triRow}>
               {durabilityKeys.map((key) => chipByKey[key] && (
                 <View key={key} style={styles.triColumn}>
-                  <Text style={[styles.triLabel, { color: colors.secondaryText }]}>{chipByKey[key].label}</Text>
+                  {labelWithInfo(key, chipByKey[key].label, [styles.triLabel, { color: colors.secondaryText }])}
                   <Text style={[styles.triValue, { color: colors.text }]}>{chipByKey[key].value}</Text>
                 </View>
               ))}
             </View>
+            {infoBox(durabilityKeys)}
           </>
         )}
 
@@ -784,11 +852,12 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
             <View style={styles.triRow}>
               {triStatKeys.map((key) => chipByKey[key] && (
                 <View key={key} style={styles.triColumn}>
-                  <Text style={[styles.triLabel, { color: colors.secondaryText }]}>{chipByKey[key].label}</Text>
+                  {labelWithInfo(key, chipByKey[key].label, [styles.triLabel, { color: colors.secondaryText }])}
                   <Text style={[styles.triValue, { color: colors.text }]}>{chipByKey[key].value}</Text>
                 </View>
               ))}
             </View>
+            {infoBox(triStatKeys)}
           </>
         )}
 
@@ -837,11 +906,12 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
             <View style={styles.triRow}>
               {upgradeStatKeys.map((key) => chipByKey[key] && (
                 <View key={key} style={styles.triColumn}>
-                  <Text style={[styles.triLabel, { color: colors.secondaryText }]}>{chipByKey[key].label}</Text>
+                  {labelWithInfo(key, chipByKey[key].label, [styles.triLabel, { color: colors.secondaryText }])}
                   <Text style={[styles.triValue, { color: colors.text }]}>{chipByKey[key].value}</Text>
                 </View>
               ))}
             </View>
+            {infoBox(upgradeStatKeys)}
           </>
         )}
 
@@ -1050,6 +1120,32 @@ const styles = StyleSheet.create({
   triColumn: {
     flex: 1,
     alignItems: 'center',
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  sectionLabel: {
+    marginBottom: 6,
+  },
+  infoIcon: {
+    paddingHorizontal: 2,
+  },
+  infoIconText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  infoBox: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 8,
+  },
+  infoBoxText: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   triLabel: {
     fontSize: 11,
