@@ -807,3 +807,20 @@ test('small fixes: export says "Backup saved"; a short last row of tiles sits on
   await expect.poll(() => messages.join('\n')).toMatch(/Backup saved/);
   await expect(page.getByText('Import Set(s)', { exact: true })).toBeVisible();
 });
+
+test('the theme switch shows both modes and highlights the current one', async ({ page }) => {
+  await openHub(page);
+  const light = page.getByTestId('theme-light');
+  const dark = page.getByTestId('theme-dark');
+  const bg = () => page.evaluate(() => getComputedStyle(document.querySelector('[data-testid="theme-light"]').parentElement).backgroundColor);
+  const before = await bg();
+  const darkAtStart = before.match(/\d+/g).slice(0, 3).reduce((sum, n) => sum + Number(n), 0) < 300;
+  // Tapping the mode you're already in changes nothing.
+  await (darkAtStart ? dark : light).click();
+  expect(await bg()).toBe(before);
+  await page.screenshot({ path: 'test-results/theme-switch-1.png', clip: { x: 1000, y: 0, width: 200, height: 80 } });
+  // Tapping the other one switches.
+  await (darkAtStart ? light : dark).click();
+  await expect.poll(bg).not.toBe(before);
+  await page.screenshot({ path: 'test-results/theme-switch-2.png', clip: { x: 1000, y: 0, width: 200, height: 80 } });
+});

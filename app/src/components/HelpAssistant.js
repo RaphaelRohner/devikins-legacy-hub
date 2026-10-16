@@ -294,7 +294,7 @@ const ALL_FAQ_ENTRIES = [
     question: "Where's the light/dark mode button?",
     keywords: ['theme', 'dark mode', 'light mode', 'dark', 'light', 'appearance'],
     answer:
-      "Top right of the screen, on the same row as the ☰ menu button - it shows a sun or moon and the mode it switches to (\"☀️ Light\" while the screen is dark). Tap it any time to flip between light and dark.",
+      "Top right of the screen, on the same row as the ☰ menu button - ☀️ | 🌙 side by side, with the mode you're in highlighted. Tap the other one to switch.",
   },
   {
     id: 'multiple-wallets',

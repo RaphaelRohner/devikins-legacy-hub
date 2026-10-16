@@ -1426,19 +1426,39 @@ Continue anyway?`
           ) : null}
         </View>
 
-        <TouchableOpacity
+        {/* Light | Dark side by side, the current one highlighted - the old
+            single "☀️ Light" button showed where you'd go, and testers read
+            it as where they were (fresh-eyes review, 15 Oct 2026). No
+            "Auto": it flips in twilight (Raphael). */}
+        <View
           style={[styles.themeToggle, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={toggleTheme}
+          accessibilityRole="radiogroup"
         >
-          <Text style={styles.themeToggleIcon}>{isDark ? '☀️' : '🌙'}</Text>
-          <Text
-            style={[styles.themeToggleLabel, { color: colors.text }]}
-            numberOfLines={1}
-            ellipsizeMode="tail"
-          >
-            {isDark ? 'Light' : 'Dark'}
-          </Text>
-        </TouchableOpacity>
+          {[
+            { dark: false, icon: '☀️', label: 'Light mode' },
+            { dark: true, icon: '🌙', label: 'Dark mode' },
+          ].map((option) => {
+            const active = option.dark === isDark;
+            return (
+              <TouchableOpacity
+                key={option.label}
+                testID={option.dark ? 'theme-dark' : 'theme-light'}
+                accessibilityRole="radio"
+                accessibilityLabel={option.label}
+                accessibilityState={{ selected: active }}
+                style={[
+                  styles.themeSegment,
+                  active && { backgroundColor: colors.surfaceAlt, borderColor: colors.primary },
+                ]}
+                onPress={() => {
+                  if (!active) toggleTheme();
+                }}
+              >
+                <Text style={[styles.themeToggleIcon, { opacity: active ? 1 : 0.4 }]}>{option.icon}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       {/* Sort, Search, and Filters, in that order per feedback - meant
@@ -1913,14 +1933,21 @@ const styles = StyleSheet.create({
   // device/font - graceful truncation rather than a broken layout.
   themeToggle: {
     width: 96,
+    height: 44,
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
+    alignItems: 'stretch',
+    gap: 3,
     borderWidth: 1,
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    padding: 3,
+  },
+  themeSegment: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   themeToggleIcon: {
     fontSize: 16,
