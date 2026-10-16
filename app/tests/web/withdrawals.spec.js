@@ -419,3 +419,25 @@ test('text without any IDs says so in a box', async ({ page }) => {
   await page.getByText('Add to the list', { exact: true }).click();
   await expect.poll(() => dialogs.join('\n')).toMatch(/Nothing added[\s\S]*No NFT IDs found/);
 });
+
+test('the buttons for ticked rows explain themselves; "Undo request" undoes the mark; Remove is last', async ({ page }) => {
+  await openHub(page);
+  await openMenuEntry(page, 'Withdrawals');
+  await page.locator('textarea').fill('W3265 W1442');
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText(/2 added/)).toBeVisible();
+  await page.getByText('Select all 2 shown', { exact: true }).click();
+  const order = await page.locator('[data-testid^="bar-"]').evaluateAll((els) => els.map((e) => e.dataset.testid));
+  expect(order).toEqual(['bar-mark', 'bar-undo', 'bar-check', 'bar-unselect', 'bar-remove', 'bar-hint'].filter((k) => order.includes(k)));
+  expect(order.filter((k) => k !== 'bar-hint').pop()).toBe('bar-remove');
+  await page.getByTestId('bar-undo').hover();
+  await expect(page.getByTestId('bar-hint')).toContainText("doesn't cancel anything in the game");
+  await page.getByTestId('bar-remove').hover();
+  await expect(page.getByTestId('bar-hint')).toContainText("Takes these off your Withdrawals list");
+  // Mark, then undo: back to "Not requested".
+  await page.getByTestId('bar-mark').click();
+  await expect(page.getByText('Requested (2)', { exact: true })).toBeVisible();
+  await page.getByText('Select all 2 shown', { exact: true }).click();
+  await page.getByTestId('bar-undo').click();
+  await expect(page.getByText('Not requested (2)', { exact: true })).toBeVisible();
+});

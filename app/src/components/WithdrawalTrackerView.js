@@ -15,7 +15,7 @@
  *      that hasn't arrived after N minutes (default 30) is overdue.
  *   3. Check: asks Klever's API where every NFT that hasn't arrived yet is.
  *   4. Results: filters, the list, and the tools for ticked rows (Mark
- *      requested, Clear mark, Check selected, Remove).
+ *      requested, Undo request, Check selected, Unselect, Remove).
  * Sections 3 and 4 were split on 14 Oct 2026 (Raphael): one Check button
  * for the whole list, and everything about specific NFTs next to the list.
  */
@@ -149,6 +149,16 @@ const CHIP_HELP = {
   'not-requested': "Not requested: NFTs on the list you haven't marked as requested and that haven't arrived - the Hub only tells you where they are.",
 };
 // Kind chips use the key 'all' too; they get no explanation.
+// What each button for ticked rows does - on hover (website) or when the
+// button is held (phone). Raphael, 16 Oct 2026.
+const BAR_HELP = {
+  mark: "You've asked the game to withdraw these. The Hub notes the time and shows them as Overdue if they haven't arrived after the waiting time.",
+  undo: 'You marked these as requested by mistake (or not yet). This only removes the Hub\'s note - it doesn\'t cancel anything in the game.',
+  check: 'Looks up on the Klever blockchain where just these NFTs are right now.',
+  unselect: 'Unticks all rows. Nothing else changes.',
+  remove: "Takes these off your Withdrawals list. The NFTs themselves aren't touched.",
+};
+
 function chipHelpFor(options, key) {
   if (options === KIND_FILTERS) return null;
   return CHIP_HELP[key] || null;
@@ -893,7 +903,7 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
             ) : null}
           </TouchableOpacity>
           {!IS_WEB ? (
-            <Text style={[styles.note, { color: colors.secondaryText }]}>Hold a chip to see what it means.</Text>
+            <Text style={[styles.note, { color: colors.secondaryText }]}>Hold a chip or button to see what it means.</Text>
           ) : null}
 
           {overdueTotal > 0 ? (
@@ -918,26 +928,64 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
           {selected.size > 0 ? (
             <View style={[styles.selectionBar, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
               <Text style={[styles.text, { color: colors.text }]}>{selected.size} selected</Text>
-              <View style={styles.buttonRow}>
-                <TouchableOpacity style={button} onPress={() => markSelected(true)}>
-                  <Text style={buttonText}>Mark requested</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={smallButton} onPress={() => markSelected(false)}>
-                  <Text style={{ color: colors.text }}>Clear mark</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[smallButton, (checking || !walletsReady) && { opacity: 0.5 }]}
-                  onPress={() => check(true, selectedItems)}
-                  disabled={checking || !walletsReady}
-                >
-                  <Text style={{ color: colors.text, fontWeight: '700' }}>Check selected</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={smallButton} onPress={removeSelected}>
-                  <Text style={{ color: colors.cancelText }}>Remove</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={smallButton} onPress={() => setSelected(new Set())}>
-                  <Text style={{ color: colors.text }}>Unselect</Text>
-                </TouchableOpacity>
+              {/* Each button explains itself on hover (website) or when held
+                  (phone); Remove sits last so it isn't hit by accident
+                  (Raphael, 16 Oct 2026: "Clear mark" was jargon). */}
+              <View style={{ position: 'relative', zIndex: chipHint && chipHint.row === 'bar' ? 10 : 1 }}>
+                <View style={styles.buttonRow}>
+                  {[
+                    { key: 'mark', label: 'Mark requested', main: true, onPress: () => markSelected(true) },
+                    { key: 'undo', label: 'Undo request', onPress: () => markSelected(false) },
+                    {
+                      key: 'check',
+                      label: 'Check selected',
+                      bold: true,
+                      disabled: checking || !walletsReady,
+                      onPress: () => check(true, selectedItems),
+                    },
+                    { key: 'unselect', label: 'Unselect', onPress: () => setSelected(new Set()) },
+                    { key: 'remove', label: 'Remove', danger: true, onPress: removeSelected },
+                  ].map((b) => {
+                    const help = BAR_HELP[b.key];
+                    return (
+                      <Pressable
+                        key={b.key}
+                        testID={`bar-${b.key}`}
+                        style={[b.main ? button : smallButton, b.disabled && { opacity: 0.5 }]}
+                        disabled={b.disabled}
+                        onPress={() => {
+                          setChipHint(null);
+                          b.onPress();
+                        }}
+                        onLongPress={() => showHeldHint('bar', help)}
+                        onPressOut={() => releaseHeldHint(help)}
+                        onHoverIn={() => setChipHint({ row: 'bar', text: help })}
+                        onHoverOut={() => setChipHint((h) => (h && h.text === help ? null : h))}
+                        accessibilityRole="button"
+                        accessibilityHint={help}
+                      >
+                        <Text
+                          style={
+                            b.main
+                              ? buttonText
+                              : { color: b.danger ? colors.cancelText : colors.text, fontWeight: b.bold ? '700' : '400' }
+                          }
+                        >
+                          {b.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                {chipHint && chipHint.row === 'bar' ? (
+                  <Pressable
+                    onPress={() => setChipHint(null)}
+                    style={[styles.chipHint, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                    testID="bar-hint"
+                  >
+                    <Text style={[styles.note, { color: colors.text }]}>{chipHint.text}</Text>
+                  </Pressable>
+                ) : null}
               </View>
             </View>
           ) : filtered.length > 0 ? (
