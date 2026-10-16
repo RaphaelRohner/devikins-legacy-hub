@@ -67,6 +67,10 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   await expect(page.getByText('2 selected')).toBeVisible();
   await page.getByText('Mark requested', { exact: true }).click();
   await expect(page.getByText('Requested (2)')).toBeVisible();
+  // Requested NFTs are looked up by themselves straight away (never
+  // checked before) - wait for that before the full Check.
+  await expect(page.getByText(/Last check:/)).toBeVisible();
+  await expect(page.getByText(/Looking up NFTs/)).toHaveCount(0);
 
   // 4. Check
   await page.getByText('Check', { exact: true }).click();
@@ -117,7 +121,9 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   // 6. The game finally sends it
   fake.chain.holders.set('weapon:1442', RECEIVING);
   fake.chain.transfers.push({ hash: 'tx1442', kind: 'weapon', nonce: 1442, from: IN_GAME, to: RECEIVING, timestamp: now + 1900 });
-  await page.getByText('Check', { exact: true }).click();
+  // No need to press Check: requested NFTs are looked up by themselves
+  // every 5 minutes while the screen is open.
+  await page.clock.fastForward('05:30');
   await expect(row(page, 'Weapon #1442')).toContainText('Arrived', { timeout: 20_000 });
   await expect(row(page, 'Weapon #1442')).toContainText('sent from your in-game wallet');
   await expect(page.getByText('Arrived (2)')).toBeVisible();

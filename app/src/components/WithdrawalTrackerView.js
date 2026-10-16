@@ -74,6 +74,11 @@ const KEY_FROM = WITHDRAW_SETTING_KEYS.from;
 const KEY_TO = WITHDRAW_SETTING_KEYS.to;
 const KEY_OVERDUE = WITHDRAW_SETTING_KEYS.overdue;
 const KEY_LAST_CHECK = WITHDRAW_SETTING_KEYS.lastCheck;
+// Requested NFTs that haven't arrived are looked up by themselves this
+// often while the screen is open (Raphael, 16 Oct 2026: "Overdue" came by
+// itself, but "Arrived" needed a manual Check). Only those few, so it
+// puts little load on Klever's servers.
+const AUTO_CHECK_MINUTES = 5;
 const ROWS_PER_PAGE = 100;
 
 const STATUS_TEXT = {
@@ -581,6 +586,20 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
     }
   }
 
+  // The automatic check (see AUTO_CHECK_MINUTES): runs when the screen
+  // opens if the last check is older than that, then again every 5 minutes.
+  const lastAutoCheckRef = useRef(0);
+  useEffect(() => {
+    if (!loaded || !walletsReady || checking) return;
+    const waiting = withStatus.filter((i) => i.requested_at && i.status !== 'arrived');
+    if (waiting.length === 0) return;
+    const last = Math.max(lastCheck || 0, lastAutoCheckRef.current);
+    if (Date.now() - last < AUTO_CHECK_MINUTES * 60 * 1000) return;
+    lastAutoCheckRef.current = Date.now();
+    check(true, waiting);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now, loaded, walletsReady, checking, withStatus, lastCheck]);
+
   async function copyOverdue() {
     const text = overdueListText(items, ctx);
     if (!text) return;
@@ -800,6 +819,7 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
               <Text style={[styles.note, { color: colors.secondaryText }]}>
                 Looks up every NFT on the list that hasn't arrived yet - for long lists that takes a few minutes. To
                 look up specific NFTs (arrived ones too), tick them under Results and tap "Check selected".
+                {' '}NFTs you've requested are also checked by themselves every {AUTO_CHECK_MINUTES} minutes while this screen is open.
                 {lastCheck ? ` Last check: ${formatTime(lastCheck)}.` : ''}
               </Text>
               {checking ? (
