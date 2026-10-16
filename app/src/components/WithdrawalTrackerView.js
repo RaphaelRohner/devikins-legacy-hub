@@ -11,7 +11,7 @@
  *   1. Wallets: "Withdraw from" (your in-game wallet) and "Receive in"
  *      (your own wallet). One tracker for the whole Hub.
  *   2. Add NFTs: paste ID lists (with headings, or per kind).
- *      Tick "I've requested these" (or mark rows later): anything marked
+ *      Tick "Requested in game" (or mark rows later): anything marked
  *      that hasn't arrived after N minutes (default 30) is overdue.
  *   3. Check: asks Klever's API where every NFT that hasn't arrived yet is.
  *   4. Results: filters, the list, and the tools for ticked rows (Mark
@@ -764,7 +764,7 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
             autoCorrect={false}
           />
           <View style={styles.switchRow}>
-            <Text style={[styles.text, { color: colors.text, flex: 1 }]}>I've requested these in the game just now</Text>
+            <Text style={[styles.text, { color: colors.text, flex: 1 }]}>Requested in game</Text>
             <Switch value={markOnAdd} onValueChange={setMarkOnAdd} />
           </View>
           <TouchableOpacity style={[button, (!pasteText.trim() || isAdding) && { opacity: 0.5 }]} onPress={() => addFromPaste()} disabled={!pasteText.trim() || isAdding}>

@@ -140,7 +140,7 @@ test('the tracker travels with a full backup into a new browser', async ({ page,
   await page.getByPlaceholder('klv1… (receiving wallet)').fill(RECEIVING);
   await page.getByText('Save', { exact: true }).click();
   await page.locator('textarea').fill('W3265 W1442');
-  await page.locator('input[type="checkbox"], [role="switch"]').first().click(); // "I've requested these just now"
+  await page.locator('input[type="checkbox"], [role="switch"]').first().click(); // "Requested in game"
   await page.getByText('Add to the list', { exact: true }).click();
   await expect(page.getByText(/2 added - all marked as requested/)).toBeVisible();
   await page.getByText('Check', { exact: true }).click();

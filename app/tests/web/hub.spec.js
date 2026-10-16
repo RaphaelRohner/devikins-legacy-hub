@@ -711,6 +711,10 @@ test('Ask Devi answers beginner questions and no longer matches little words lik
   await ask('is this safe? can i lose his money', /never asks for a password, private key/);
   await ask('what is klever', /That blockchain is Klever/);
   await ask('what is an NFT?', /one-of-a-kind digital items/);
+  await ask('who is moonlabs?', /company that makes and runs Devikins/);
+  await ask('what is moon labs', /company that makes and runs Devikins/);
+  // Other questions still find their own answers.
+  await ask('why are some pictures blank?', /plain white/);
 });
 
 test('on a phone, the Getting started checklist scrolls away with the list', async ({ page }) => {

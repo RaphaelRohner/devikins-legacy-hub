@@ -108,6 +108,16 @@ const ALL_FAQ_ENTRIES = [
       "Devikins is a game whose creatures (Devikins), Weapons and Equipment are NFTs: one-of-a-kind digital items, each with its own ID number, recorded on a blockchain. That blockchain is Klever - a public record anyone can read, which is how the Hub can show what a wallet holds. A wallet address (starting with klv1) is like an account number: safe to share, so others can look up what it holds. KLV is Klever's coin.",
   },
   {
+    // A stranger met the name "Moonlabs" with no explanation (fresh-eyes
+    // review, 15 Oct 2026; Raphael asked for this answer 16 Oct).
+    id: 'what-is-moonlabs',
+    topic: 'basics',
+    question: 'Who or what is Moonlabs?',
+    keywords: ['moonlabs', 'moon labs', 'moonlab', 'company', 'developer', 'developers', 'studio', 'who made', 'makers'],
+    answer:
+      "Moonlabs is the company that makes and runs Devikins - the game itself, its servers, and the details and pictures of every Devikin, Weapon and Equipment. The Hub reads those details and pictures from Moonlabs' server. When that server doesn't answer or sends something incomplete, you see blank pictures or missing details (\"Hide blanks\" keeps those out of view), and the Hub tries again by itself later. The Hub is a fan-made project, not affiliated with or endorsed by Moonlabs or Klever.",
+  },
+  {
     id: 'rarity',
     topic: 'basics',
     question: 'What do Rarity, Ancestry and the other traits mean?',
@@ -337,7 +347,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'How do I check whether my withdrawals from the game arrived?',
     keywords: ['withdraw', 'withdrawal', 'withdrawals', 'arrived', 'arrive', 'transfer', 'in-game wallet', 'custody', 'missing', 'overdue', 'support ticket', 'tracker'],
     answer:
-      "Open Withdrawals in the ☰ menu. Enter your in-game wallet (where the game sends from) and your own wallet (where it should arrive), then paste the IDs of the NFTs you want to follow - with headings like \"Weapons\" one paste can hold all kinds. Tick \"I've requested these in the game just now\" when you paste them, or later select them under Results and tap Mark requested. Check asks the Klever blockchain where every NFT that hasn't arrived yet is: Arrived, still in your in-game wallet, still in the game's main wallet, or somewhere else. Anything requested that hasn't arrived after 30 minutes (you can change that) shows as Overdue, and you can copy that list for a support ticket. To look up specific NFTs, tick them under Results and tap Check selected. The arrivals log shows everything that came into your wallet, with date and sender.",
+      "Open Withdrawals in the ☰ menu. Enter your in-game wallet (where the game sends from) and your own wallet (where it should arrive), then paste the IDs of the NFTs you want to follow - with headings like \"Weapons\" one paste can hold all kinds. Switch on \"Requested in game\" when you paste them, or later select them under Results and tap Mark requested. Check asks the Klever blockchain where every NFT that hasn't arrived yet is: Arrived, still in your in-game wallet, still in the game's main wallet, or somewhere else. Anything requested that hasn't arrived after 30 minutes (you can change that) shows as Overdue, and you can copy that list for a support ticket. To look up specific NFTs, tick them under Results and tap Check selected. The arrivals log shows everything that came into your wallet, with date and sender.",
   },
   {
     id: 'getting-started',
