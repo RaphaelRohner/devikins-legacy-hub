@@ -27,7 +27,9 @@ export const lightColors = {
   surface: '#ffffff',
   surfaceAlt: '#f7f7fa',
   text: '#111111',
-  secondaryText: '#888888',
+  // #6e6e73 (was #888888): 4.7:1 against surfaceAlt, above the 4.5:1 that
+  // Google and WCAG ask for small text (16 Oct 2026).
+  secondaryText: '#6e6e73',
   border: '#dddddd',
   primary: '#3366cc',
   primaryDisabled: '#99aedd',
