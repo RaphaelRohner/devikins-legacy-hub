@@ -158,7 +158,10 @@ test('IDs added in the guided setup are looked up first; the collection says whe
   });
   await page.getByText('Add to the list', { exact: true }).click();
   // "Show them in your collection?" -> Fetch now: Check first, then the fetch.
-  await expect.poll(() => page.evaluate(() => window.__checkTop)).toBeLessThan(200);
+  // With only a few NFTs the page can't scroll far enough to put "3. Check"
+  // at the very top; it lands in the upper part of the screen (it started
+  // around 430 px down, below the fold).
+  await expect.poll(() => page.evaluate(() => window.__checkTop)).toBeLessThan(320);
   await page.setViewportSize({ width: 1200, height: 900 });
   await openMenuEntry(page, 'Weapons');
   await expect(page.getByText('4 Weapons', { exact: true })).toBeVisible({ timeout: 60_000 });

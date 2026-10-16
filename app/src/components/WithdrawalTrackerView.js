@@ -487,7 +487,7 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
               // Jump down to "3. Check" so the counting progress is in view
               // (Raphael, 15 Oct 2026: the page stayed at the top and it
               // looked like nothing was happening).
-              scrollRef.current?.scrollTo({ y: Math.max(0, checkSectionYRef.current - 8), animated: true });
+              scrollRef.current?.scrollTo({ y: Math.max(0, checkSectionYRef.current - 8), animated: false }); // instant: an animation could be cut short when the check finishes quickly
               if (canCheck) await check(false);
               onFetchNow();
             },
@@ -691,6 +691,17 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
       </View>
 
       <ScrollView ref={scrollRef} contentContainerStyle={styles.content}>
+        {/* Sections 1 and 2 share a wrapper whose size is tracked: on the
+            website a section's own position isn't reported again when
+            something above it grows, but a size change is - so "3. Check"
+            starts right below this wrapper. */}
+        <View
+          style={{ gap: 12 }}
+          onLayout={(e) => {
+            const { y, height } = e.nativeEvent.layout;
+            checkSectionYRef.current = y + height + 12;
+          }}
+        >
         {/* 1. Wallets */}
         <View style={card}>
           <Text style={[styles.heading, { color: colors.text }]}>1. Your wallets</Text>
@@ -762,8 +773,10 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
           {addMessage ? <Text style={[styles.note, { color: colors.text }]}>{addMessage}</Text> : null}
         </View>
 
+        </View>
+
         {/* 3. Check */}
-        <View testID="check-section" style={card} onLayout={(e) => { checkSectionYRef.current = e.nativeEvent.layout.y; }}>
+        <View testID="check-section" style={card}>
           <Text style={[styles.heading, { color: colors.text }]}>3. Check</Text>
           {!walletsReady ? (
             <Text style={[styles.note, { color: colors.secondaryText }]}>Save both wallets first (step 1).</Text>
