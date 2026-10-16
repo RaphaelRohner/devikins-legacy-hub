@@ -311,7 +311,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'How do I back up or transfer a wallet set?',
     keywords: ['export', 'import', 'backup', 'back up', 'transfer', 'move', 'zip', 'restore', 'save file', 'download'],
     answer:
-      "On the Wallets screen, each wallet set has its own Export button, and \"Export all sets\" saves every set at once. The backup downloads as a zip file (usually into your Downloads folder) with your wallets, fetched NFTs, names, stars, comments and pictures. \"Import a set\" reads such a file back in as a new set. Backups work both ways between the website and the Android app. Every file is checked against the backup's own checksum, so you'll be warned if anything didn't come through intact.",
+      "On the Wallets screen, each wallet set has its own Export button, and \"Export all sets\" saves every set at once. The backup downloads as a zip file (usually into your Downloads folder) with your wallets, fetched NFTs, names, stars, comments and pictures. \"Import Set(s)\" reads such a file back in (one set or all of them). After an export on the website, the Hub confirms where the file went. Backups work both ways between the website and the Android app. Every file is checked against the backup's own checksum, so you'll be warned if anything didn't come through intact.",
   },
   {
     id: 'website-storage',

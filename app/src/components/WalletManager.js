@@ -696,7 +696,16 @@ export default function WalletManager({
   function presentSaveOrShareChoice(fileUri, fileName) {
     // Website: no Share/Save choice - the browser simply downloads it.
     if (IS_WEB) {
-      return shareExportedFile(fileUri, fileName).catch((err) => reportSetActionError(err, 'Downloading the export'));
+      // The browser's own download notice is easy to miss, so say it
+      // (fresh-eyes review, 15 Oct 2026: no "Backup saved" message).
+      return shareExportedFile(fileUri, fileName)
+        .then(() => {
+          Alert.alert(
+            'Backup saved',
+            `${fileName} was downloaded - usually into your Downloads folder. Keep it somewhere safe; to restore it later use "Import Set(s)" here on the Wallets screen.`
+          );
+        })
+        .catch((err) => reportSetActionError(err, 'Downloading the export'));
     }
     return new Promise((resolve) => {
       const buttons = [
@@ -1289,7 +1298,7 @@ export default function WalletManager({
                 disabled={isImporting || isExportingId !== null}
               >
                 <Text style={[styles.rowButtonText, { color: colors.text }]} numberOfLines={2}>
-                  {isImporting ? (importProgressLabel || 'Importing...') : 'Import a set'}
+                  {isImporting ? (importProgressLabel || 'Importing...') : 'Import Set(s)'}
                 </Text>
               </TouchableOpacity>
             ) : null}

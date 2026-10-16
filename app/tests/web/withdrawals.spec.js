@@ -150,7 +150,7 @@ test('the tracker travels with a full backup into a new browser', async ({ page,
   const page2 = await context2.newPage();
   const dialogs = await openHub(page2);
   await openMenuEntry(page2, 'Wallets');
-  const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import a set').click()]);
+  const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import Set(s)').click()]);
   await chooser.setFiles(zipPath);
   await expect.poll(() => dialogs.join('\n')).toMatch(/Withdrawals tracker: 2 NFT\(s\) added/);
   await page2.getByText('‹').first().click();

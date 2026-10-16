@@ -68,7 +68,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Switch, BackHandler, PanResponder, useWindowDimensions } from 'react-native';
 import FilterPanel, { NO_FILTER, humanizeColumnName } from './FilterPanel';
-import { getTileColumns, getCenteredContentPadding } from '../constants/layout';
+import { getTileColumns, getCenteredContentPadding, getTileFlexBasisPercent } from '../constants/layout';
 import NftCard from './NftCard';
 import NftTile from './NftTile';
 import DevikinSummaryRow from './DevikinSummaryRow';
@@ -752,6 +752,16 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // floating-button state above.
   const hasAppliedFilters = Object.keys(appliedFilters).length > 0 || starFilter > 0;
 
+  // Tiles: an unfinished last row is filled up with invisible spacers, so
+  // its tiles sit on the left under the ones above instead of being
+  // pushed to opposite edges (fresh-eyes review, 15 Oct 2026).
+  const tileRows = (() => {
+    if (viewMode !== 'tiles' || tileColumns <= 1) return rows;
+    const missing = (tileColumns - (rows.length % tileColumns)) % tileColumns;
+    if (missing === 0 || rows.length === 0) return rows;
+    return rows.concat(Array.from({ length: missing }, (_, i) => ({ __filler: true, nonce: `filler-${i}` })));
+  })();
+
   // Tells App.js whether a filter is currently applied, purely so the
   // Filters button itself (which lives up in App.js's own row) can
   // show the same active-state highlight List/Tiles already gets when
@@ -1146,11 +1156,14 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
         // tileColumns itself changes (e.g. rotating a tablet) - either
         // one sidesteps that restriction the same way.
         key={`${viewMode}-${tileColumns}`}
-        data={rows}
+        data={tileRows}
         keyExtractor={(item) => String(item.nonce)}
         numColumns={viewMode === 'tiles' ? tileColumns : 1}
         columnWrapperStyle={viewMode === 'tiles' ? styles.tilesRow : undefined}
         renderItem={({ item }) => {
+          if (item.__filler) {
+            return <View style={{ flexBasis: getTileFlexBasisPercent(tileColumns) }} />;
+          }
           // Sorted by something other than the ID: each row/tile also shows
           // that value, so the order makes sense (fresh-eyes review, 15 Oct 2026).
           const sortedBy =

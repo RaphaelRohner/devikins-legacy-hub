@@ -1409,11 +1409,14 @@ Continue anyway?`
             <View
               style={[
                 styles.menuRowStatusChip,
-                { backgroundColor: colors.surface, borderColor: colors.border },
+                // Same size and outline as its neighbours, but no filled
+                // background and grey text, so it reads as information, not
+                // as a button (fresh-eyes review, 15 Oct 2026: testers tapped it).
+                { backgroundColor: 'transparent', borderColor: colors.border, borderStyle: 'dashed' },
               ]}
             >
               <Text
-                style={[styles.menuRowStatusText, { color: colors.text }]}
+                style={[styles.menuRowStatusText, { color: colors.secondaryText, fontWeight: '500' }]}
                 numberOfLines={1}
                 ellipsizeMode="tail"
               >

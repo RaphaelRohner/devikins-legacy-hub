@@ -144,7 +144,7 @@ test('a backup keeps names, stars and pictures, and imports into a new browser',
   const page2 = await context2.newPage();
   const dialogs = await openHub(page2);
   await openMenuEntry(page2, 'Wallets');
-  const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import a set').click()]);
+  const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import Set(s)').click()]);
   await chooser.setFiles(zipPath);
   await expect.poll(() => dialogs.join('\n')).toMatch(/matched exactly/);
   // The new browser had nothing loaded, so the imported set is loaded by itself.
@@ -186,7 +186,7 @@ test('a damaged backup is noticed instead of silently importing bad pictures', a
 
   const dialogs = [];
   page.on('dialog', (d) => dialogs.push(d.message()));
-  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByText('Import a set').click()]);
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByText('Import Set(s)').click()]);
   await chooser.setFiles(damagedPath);
   await expect.poll(() => dialogs.join('\n')).toMatch(/1 picture\(s\) didn't match the export's checksum/);
 });
@@ -447,7 +447,7 @@ test('a backup with four sets imports completely (enough database room)', async 
   const page2 = await context2.newPage();
   const dialogs = await openHub(page2);
   await openMenuEntry(page2, 'Wallets');
-  const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import a set').click()]);
+  const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import Set(s)').click()]);
   await chooser.setFiles(zipPath);
   await expect.poll(() => dialogs.join('\n'), { timeout: 30_000 }).toMatch(/Import complete|went wrong/);
   expect(dialogs.join('\n')).toMatch(/Wallet set 4 \(imported\)/);
@@ -610,7 +610,7 @@ test('importing a backup loads the set with wallets (not an empty one), and name
   const page2 = await context2.newPage();
   const dialogs = await openHub(page2);
   await openMenuEntry(page2, 'Wallets');
-  const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import a set').click()]);
+  const [chooser] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import Set(s)').click()]);
   await chooser.setFiles(zipPath);
   await expect.poll(() => dialogs.join('\n')).toMatch(/"Wallet set 2 \(imported\)" is loaded now/);
   await expect(page2.getByText('Wallets in "Wallet set 2 (imported)"')).toBeVisible();
@@ -620,7 +620,7 @@ test('importing a backup loads the set with wallets (not an empty one), and name
   const [download2] = await Promise.all([page2.waitForEvent('download'), page2.getByText('Export all sets').click()]);
   const zipPath2 = testInfo.outputPath('backup2.zip');
   await download2.saveAs(zipPath2);
-  const [chooser2] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import a set').click()]);
+  const [chooser2] = await Promise.all([page2.waitForEvent('filechooser'), page2.getByText('Import Set(s)').click()]);
   await chooser2.setFiles(zipPath2);
   await expect.poll(() => dialogs.filter((d) => /Import complete/.test(d)).length).toBe(2);
   await expect(page2.getByText(/\(imported\) \(imported\)/)).toHaveCount(0);
@@ -787,4 +787,23 @@ test('filters work straight away, keep their picks when closed, and the button s
   // Filters ✕ removes everything.
   await page.getByText('Filters ✕', { exact: true }).click();
   await expect(page.getByText('Mock the Mighty', { exact: true })).toBeVisible();
+});
+
+test('small fixes: export says "Backup saved"; a short last row of tiles sits on the left; the count is not a button', async ({ page }) => {
+  const messages = [];
+  page.on('dialog', (d) => messages.push(d.message()));
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  // Tiles: 2 Devikins sit next to each other, not at opposite edges.
+  await page.getByText('Tiles', { exact: true }).click();
+  const first = await page.getByText('#101', { exact: true }).boundingBox();
+  const second = await page.getByText('#102', { exact: true }).boundingBox();
+  expect(second.x - first.x).toBeLessThan(400);
+  await page.screenshot({ path: 'test-results/small-fixes-tiles.png' });
+  // Export: the Hub says where the file went.
+  await openMenuEntry(page, 'Wallets');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByText('Export all sets').click()]);
+  expect(download.suggestedFilename()).toMatch(/\.zip$/);
+  await expect.poll(() => messages.join('\n')).toMatch(/Backup saved/);
+  await expect(page.getByText('Import Set(s)', { exact: true })).toBeVisible();
 });
