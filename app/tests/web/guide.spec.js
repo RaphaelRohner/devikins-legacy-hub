@@ -170,3 +170,38 @@ test('IDs added in the guided setup are looked up first; the collection says whe
   // NFTs in your own wallet get no tag.
   await expect(page.getByText(/#201\s*·/)).toHaveCount(0);
 });
+
+test('a reload while "What\'s this wallet?" is open asks again, and the guided setup carries on', async ({ page }) => {
+  const { nameNewWallet } = require('./helpers');
+  const dialogs = await openHub(page, { keepWelcome: true });
+  const input = page.getByPlaceholder('Paste a Klever wallet address (klv1...)');
+  await input.fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  await expect(page.getByTestId('naming-box')).toBeVisible();
+  // Reload before answering: the question comes back.
+  await page.reload();
+  await expect(page.getByTestId('naming-box')).toBeVisible({ timeout: 20_000 });
+  await nameNewWallet(page, 'My wallet');
+  // ...and the guided setup carries on with the next question.
+  await expect.poll(() => dialogs.join('\n')).toMatch(/Is this your own wallet\?/);
+  await expect.poll(() => dialogs.join('\n')).toMatch(/Wallet added/);
+  // Answered: another reload asks nothing.
+  const before = dialogs.length;
+  await page.reload();
+  await expect(page.getByText('☰').first()).toBeVisible({ timeout: 20_000 }); // back on the collection, not on Wallets
+  await page.waitForTimeout(1500);
+  await expect(page.getByTestId('naming-box')).toHaveCount(0);
+  expect(dialogs.length).toBe(before);
+});
+
+test('a skipped name stays skipped after a reload', async ({ page }) => {
+  await openHub(page, { keepWelcome: true });
+  const input = page.getByPlaceholder('Paste a Klever wallet address (klv1...)');
+  await input.fill(TEST_WALLET);
+  await page.getByText('Add', { exact: true }).click();
+  await page.getByText('Skip', { exact: true }).click();
+  await expect(page.getByTestId('naming-box')).toHaveCount(0);
+  await page.reload();
+  await page.waitForTimeout(2500);
+  await expect(page.getByTestId('naming-box')).toHaveCount(0);
+});

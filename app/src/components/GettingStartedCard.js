@@ -31,6 +31,11 @@ export const GUIDE_KEYS = {
   // The guided setup's one-time questions after a fetch (App.js).
   idsAsked: 'guide_ids_asked',
   backupReminded: 'guide_backup_reminded',
+  // A wallet that was just added and whose "What's this wallet?" question
+  // (or its follow-ups) isn't answered yet - JSON {id, address, isFirst,
+  // setId}. A reload picks the guided setup up again from there
+  // (Raphael, 16 Oct 2026). '' = nothing pending.
+  namingPending: 'guide_naming_pending',
 };
 
 /** Loads what's done so far. */

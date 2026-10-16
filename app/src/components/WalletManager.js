@@ -73,7 +73,7 @@
  * set everything below it belongs to.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { isValidKleverAddress } from '../utils/kleverAddress';
 import {
   View,
@@ -335,7 +335,7 @@ export default function WalletManager({
     // Ask for a name first ("In-game wallet", "My wallet", ...), so the
     // two klv1... addresses can be told apart everywhere (fresh-eyes
     // review, 14 Oct 2026). The "Wallet added" box follows after it.
-    setNamingWallet({ id, address: trimmedAddress, isFirst: isFirstWalletEver });
+    startNaming({ id, address: trimmedAddress, isFirst: isFirstWalletEver });
   }
 
   // The "Wallet added" box after the first wallet ever (see handleAdd).
@@ -358,6 +358,67 @@ export default function WalletManager({
   const [namingWallet, setNamingWallet] = useState(null); // { id, address, isFirst }
   const [customNameInput, setCustomNameInput] = useState('');
   const [isTypingCustomName, setIsTypingCustomName] = useState(false);
+  // Remember that this wallet's questions are open, so a reload in the
+  // middle picks them up again instead of losing them (16 Oct 2026).
+  function startNaming(info) {
+    setNamingWallet(info);
+    setGlobalSetting(GUIDE_KEYS.namingPending, JSON.stringify({ ...info, setId: activeWalletSetId ?? null })).catch(() => {});
+  }
+  function clearPendingNaming() {
+    setGlobalSetting(GUIDE_KEYS.namingPending, '').catch(() => {});
+  }
+
+  // After a reload: a wallet whose questions were still open gets them
+  // again - "What's this wallet?" if it has no name yet, otherwise the
+  // next question after naming.
+  const namingResumeCheckedRef = useRef(false);
+  useEffect(() => {
+    if (namingResumeCheckedRef.current || namingWallet || !activeWalletSetId) return;
+    let cancelled = false;
+    (async () => {
+      let raw = null;
+      try {
+        raw = await getGlobalSetting(GUIDE_KEYS.namingPending);
+      } catch (err) {
+        raw = null;
+      }
+      if (cancelled) return;
+      if (!raw) {
+        namingResumeCheckedRef.current = true;
+        return;
+      }
+      let info = null;
+      try {
+        info = JSON.parse(raw);
+      } catch (err) {
+        info = null;
+      }
+      if (!info || String(info.setId) !== String(activeWalletSetId)) {
+        if (!info) clearPendingNaming();
+        namingResumeCheckedRef.current = true; // belongs to another set: leave it
+        return;
+      }
+      const wallet = wallets.find((w) => String(w.id) === String(info.id) || w.address === info.address);
+      if (!wallet) {
+        if (wallets.length > 0) {
+          clearPendingNaming(); // deleted in the meantime
+          namingResumeCheckedRef.current = true;
+        }
+        return; // wallets maybe not loaded yet - look again when they are
+      }
+      namingResumeCheckedRef.current = true;
+      const target = { id: wallet.id, address: wallet.address, isFirst: !!info.isFirst };
+      const alias = (wallet.alias || '').trim();
+      if (!alias) setNamingWallet(target);
+      else if (alias === JUST_LOOKING_NAME) clearPendingNaming();
+      else continueAfterNaming(target, alias);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallets, activeWalletSetId, namingWallet]);
+
   async function finishNaming(name) {
     const target = namingWallet;
     setNamingWallet(null);
@@ -376,7 +437,15 @@ export default function WalletManager({
       }
       onWalletsChanged();
     }
+    continueAfterNaming(target, name);
+  }
+
+  // The questions after naming ("Is this your own wallet?", then "Wallet
+  // added" with Fetch now). Also where a reload picks up again once the
+  // wallet already has its name.
+  function continueAfterNaming(target, name) {
     const afterAdding = () => {
+      clearPendingNaming(); // the last step for this wallet
       if (target.isFirst) showFirstWalletAdded();
       else if (onFetchNow) {
         // Later wallets too (Raphael, 14 Oct 2026): offer to load the new
@@ -423,6 +492,7 @@ export default function WalletManager({
       wallets.some((w) => w.id !== target.id && ownNames.includes((w.alias || '').trim())) ||
       (mySetId !== null && mySetId !== undefined && String(mySetId) === String(activeWalletSetId));
     const offerFetch = () => {
+      clearPendingNaming();
       if (!onFetchNow) return;
       Alert.alert('Wallet added', "Load this wallet's Devikins, Weapons and Equipment now?", [
         { text: 'Later', style: 'cancel' },
@@ -484,7 +554,7 @@ export default function WalletManager({
       const { id } = await addWallet(address);
       onWalletsChanged();
       markUsageActive();
-      setNamingWallet({ id, address, isFirst: isFirstWalletEver });
+      startNaming({ id, address, isFirst: isFirstWalletEver });
     } catch (err) {
       Alert.alert('Klever extension', err?.message || String(err));
     } finally {

@@ -584,6 +584,17 @@ function AppContent() {
         // welcome box says what the Hub is and what to do first
         // (Raphael, 14 Oct 2026). Same test as WalletManager's showWelcome.
         if (rows.length === 0 && sets.length <= 1) setCurrentScreen('wallets');
+        // A wallet's "What's this wallet?" questions were still open when
+        // the page was reloaded: go back to Wallets, where they continue
+        // (WalletManager.js, 16 Oct 2026).
+        try {
+          const pending = JSON.parse((await getGlobalSetting(GUIDE_KEYS.namingPending)) || 'null');
+          if (pending && String(pending.setId) === String(activeSetId) && rows.some((r) => String(r.id) === String(pending.id))) {
+            setCurrentScreen('wallets');
+          }
+        } catch (err) {
+          // nothing pending, or unreadable - carry on as usual
+        }
       } else {
         // Nothing's active (the previously-active set was deleted and
         // nothing new was picked yet) - land straight on Wallets rather
