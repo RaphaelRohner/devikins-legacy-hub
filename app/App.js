@@ -248,7 +248,7 @@ function AppContent() {
 
   // The "Getting started" checklist (GettingStartedCard.js): what's done
   // so far, re-read whenever something relevant may have changed.
-  // forceGuide = shown again from Help > Getting started, even if done.
+  // forceGuide = shown again from Set Up > Getting started, even if done.
   const [guideState, setGuideState] = useState(null);
   const [forceGuide, setForceGuide] = useState(false);
   const [guideReloadKey, setGuideReloadKey] = useState(0);
@@ -933,7 +933,7 @@ Continue anyway?`
   // Since 15 Oct 2026 the guided setup (welcome, "What's this wallet?",
   // "Is this your own wallet?", Fetch now, "NFTs still in the game?",
   // "Save a backup?") walks through every step, so the checklist no longer
-  // shows by itself - only from Help > Getting started, as an overview.
+  // shows by itself - only from Set Up > Getting started, as an overview.
   const showGuide = guideState && forceGuide;
   const guideCard = showGuide ? (
     <GettingStartedCard

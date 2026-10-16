@@ -12,7 +12,7 @@
  *   5. Let the Hub work (background retries, Hide blanks)
  *   6. Save a backup (Export all sets)
  *
- * Shown until everything is done or the user hides it; Help > Getting
+ * Shown until everything is done or the user hides it; Set Up > Getting
  * started shows it again. Progress flags are global settings starting
  * with "guide_" (set by App.js after a fetch and by WalletManager.js
  * after an export).
@@ -169,7 +169,7 @@ export default function GettingStartedCard({ state, onHide, onOpenWallets, onFet
   );
 }
 
-/** Marks the guide hidden (Help > Getting started brings it back). */
+/** Marks the guide hidden (Set Up > Getting started brings it back). */
 export async function setGuideHidden(hidden) {
   await setGlobalSetting(GUIDE_KEYS.hidden, hidden ? '1' : '0');
 }

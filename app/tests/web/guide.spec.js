@@ -88,15 +88,15 @@ test('the menu is grouped in categories that open and close', async ({ page }) =
   await openHub(page);
   await page.getByText('☰').first().click();
   const menu = page.locator('[role="dialog"][aria-modal="true"]').filter({ hasText: 'Menu' }).last();
-  for (const title of ['Set Up', 'Browse NFTs', 'Tools', 'Help']) {
+  for (const title of ['Set Up', 'Browse NFTs', 'Features', 'Help']) {
     await expect(menu.getByText(title, { exact: true })).toBeVisible();
   }
   await expect(menu.getByText('Donate', { exact: true })).toBeVisible();
-  await expect(menu.getByText('Withdrawals', { exact: true })).toHaveCount(0); // Tools closed
-  await menu.getByText('Tools', { exact: true }).click();
+  await expect(menu.getByText('Withdrawals', { exact: true })).toHaveCount(0); // Features closed
+  await menu.getByText('Features', { exact: true }).click();
   await expect(menu.getByText('Withdrawals', { exact: true })).toBeVisible();
   await expect(menu.getByText('KLV Signer (test)', { exact: true })).toHaveCount(0); // app only
-  await menu.getByText('Tools', { exact: true }).click();
+  await menu.getByText('Features', { exact: true }).click();
   await expect(menu.getByText('Withdrawals', { exact: true })).toHaveCount(0);
 });
 

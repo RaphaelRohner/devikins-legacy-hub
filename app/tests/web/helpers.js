@@ -50,7 +50,7 @@ async function openMenuEntry(page, label) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const target = menu.getByText(new RegExp(`^${escaped}( \\(\\d+\\))?$`)).first();
   // The menu has collapsible categories: open the one holding the entry.
-  for (const category of ['Set Up', 'Browse NFTs', 'Tools', 'Help']) {
+  for (const category of ['Set Up', 'Browse NFTs', 'Features', 'Help']) {
     if (await target.isVisible()) break;
     const header = menu.getByText(category, { exact: true }).first();
     await header.click();

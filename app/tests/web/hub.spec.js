@@ -259,17 +259,29 @@ test('menu categories open and close, and the menu starts tidy each time', async
   const menu = page.locator('[role="dialog"][aria-modal="true"]').filter({ hasText: 'Menu' }).last();
   const menuText = async () => (await menu.innerText()).replace(/\s+/g, ' ');
   await page.getByText('☰').first().click();
-  await expect.poll(menuText).toMatch(/Browse NFTs ▾ Devikins Weapons Equipment Tools ▸/);
-  await menu.getByText('Tools', { exact: true }).click();
-  await expect.poll(menuText).toMatch(/Tools ▾ Withdrawals/);
-  await menu.getByText('Tools', { exact: true }).click();
-  await expect.poll(menuText).toMatch(/Tools ▸ Help/);
-  // Open Tools again, close the menu, reopen: only the current screen's
+  await expect.poll(menuText).toMatch(/Browse NFTs ▾ Devikins Weapons Equipment Features Withdrawals, Breeding Helper ▸/);
+  // Closed categories say what's inside.
+  await expect.poll(menuText).toMatch(/Set Up Getting started, Wallets, Fetch\/Update, Kleverscan ▸/);
+  await expect.poll(menuText).toMatch(/Help Ask Devi, Feedback, About ▸/);
+  await menu.getByText('Features', { exact: true }).click();
+  await expect.poll(menuText).toMatch(/Features ▾ Withdrawals Breeding Helper/);
+  await menu.getByText('Features', { exact: true }).click();
+  await expect.poll(menuText).toMatch(/Features Withdrawals, Breeding Helper ▸ Help/);
+  // Kleverscan sits at the end of Set Up, with a line saying what it's for.
+  await menu.getByText('Set Up', { exact: true }).click();
+  await expect.poll(menuText).toMatch(/Set Up ▾ Getting started Wallets Fetch\/Update[^K]*Kleverscan Find a wallet to try the Hub with/);
+  // Open Features again, close the menu, reopen: only the current screen's
   // category (Browse NFTs) is open.
-  await menu.getByText('Tools', { exact: true }).click();
+  await menu.getByText('Features', { exact: true }).click();
   await menu.getByText('✕', { exact: true }).click();
   await page.getByText('☰').first().click();
-  await expect.poll(menuText).toMatch(/Browse NFTs ▾ Devikins Weapons Equipment Tools ▸ Help ▸/);
+  await expect.poll(menuText).toMatch(/Set Up Getting.* ▸ Browse NFTs ▾ Devikins Weapons Equipment Features .* ▸ Help .* ▸/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await menu.getByText('Help', { exact: true }).click();
+  await page.screenshot({ path: 'test-results/menu-phone.png' });
+  await menu.getByText('Help', { exact: true }).click();
+  await menu.getByText('Set Up', { exact: true }).click();
+  await page.screenshot({ path: 'test-results/menu-phone-setup.png' });
 });
 
 test("the browser's back button works like the phone's Back button", async ({ page }) => {

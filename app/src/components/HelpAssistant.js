@@ -220,7 +220,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'What is the Kleverscan tab?',
     keywords: ['kleverscan', 'explorer', 'holders', 'block explorer', 'holder', 'browser'],
     answer:
-      "Open the ☰ menu and tap Help > Kleverscan for a small built-in browser pointed straight at the Devikins collection's Holders list on kleverscan.org, Klever's own block explorer - no typing in a search box needed. Handy for checking who's holding what, and it's also a good way to find your own wallet address if you don't have it handy: if you know roughly how many Devikins you hold, you can browse the holder list and spot yourself.",
+      "Open the ☰ menu and tap Set Up > Kleverscan for a small built-in browser pointed straight at the Devikins collection's Holders list on kleverscan.org, Klever's own block explorer - no typing in a search box needed. Handy for checking who's holding what, and it's also a good way to find your own wallet address if you don't have it handy: if you know roughly how many Devikins you hold, you can browse the holder list and spot yourself.",
   },
   {
     id: 'kleverscan-web',
@@ -238,7 +238,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'What is KLV Signer (test)?',
     keywords: ['signer', 'klv signer', 'send', 'transfer', 'sign', 'signature', 'testnet', 'private key', 'transaction'],
     answer:
-      "Open the ☰ menu and tap Tools > KLV Signer (test) to send KLV, tokens or NFTs on Klever's testnet - the practice network, where nothing has real value. It needs the separate KLV Signer app on your phone: Devikins Legacy Hub never holds your wallet's private key. Tap Connect KLV Signer once (the Signer asks whether to allow the Hub), then enter a receiver and an amount and tap Send with KLV Signer. The Signer shows you exactly what will be sent and only signs after you enter your Signer password; the Hub then sends it to the testnet and gives you a Kleverscan link. Before every request the Hub checks with Android that the Signer on your phone is the official one (by its seal, the signing certificate); a fake app pretending to be the Signer gets nothing. It's testnet-only for now because the Signer is still being tested - sending your real Devikins will come later.",
+      "Open the ☰ menu and tap Features > KLV Signer (test) to send KLV, tokens or NFTs on Klever's testnet - the practice network, where nothing has real value. It needs the separate KLV Signer app on your phone: Devikins Legacy Hub never holds your wallet's private key. Tap Connect KLV Signer once (the Signer asks whether to allow the Hub), then enter a receiver and an amount and tap Send with KLV Signer. The Signer shows you exactly what will be sent and only signs after you enter your Signer password; the Hub then sends it to the testnet and gives you a Kleverscan link. Before every request the Hub checks with Android that the Signer on your phone is the official one (by its seal, the signing certificate); a fake app pretending to be the Signer gets nothing. It's testnet-only for now because the Signer is still being tested - sending your real Devikins will come later.",
   },
   {
     id: 'breeding-helper',
@@ -246,7 +246,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'What does Breeding Helper do?',
     keywords: ['breeding', 'breed', 'breeding helper', 'procreation', 'procreate', 'partner', 'pairing'],
     answer:
-      "Open the ☰ menu and tap Tools > Breeding Helper for a two-step finder for breeding partners among your own Devikins. Step 1 narrows your collection by Rarity, Ancestry, Procreations Left, and optionally up to two Target Affinities - tap a result to pick it as your starting Devikin. Step 2 then lists every other Devikin that's actually a match: same Rarity always, and by default the same Procreations Left too (turn on \"Allow +/-1\" if you need a bit more room there), ranked by how well they match your chosen Affinities, with an estimated breeding cost and the offspring's resulting Procreations Left. One thing it can't do: tell you whether two Devikins are actually related - there's no parent/lineage data anywhere in the game's own data, so that check is still on you, same as in the game itself.",
+      "Open the ☰ menu and tap Features > Breeding Helper for a two-step finder for breeding partners among your own Devikins. Step 1 narrows your collection by Rarity, Ancestry, Procreations Left, and optionally up to two Target Affinities - tap a result to pick it as your starting Devikin. Step 2 then lists every other Devikin that's actually a match: same Rarity always, and by default the same Procreations Left too (turn on \"Allow +/-1\" if you need a bit more room there), ranked by how well they match your chosen Affinities, with an estimated breeding cost and the offspring's resulting Procreations Left. One thing it can't do: tell you whether two Devikins are actually related - there's no parent/lineage data anywhere in the game's own data, so that check is still on you, same as in the game itself.",
   },
   {
     id: 'compare-mode',
@@ -345,7 +345,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'How do I get started?',
     keywords: ['start', 'started', 'getting started', 'begin', 'first', 'how to use', 'setup', 'set up', 'guide', 'checklist', 'order', 'steps'],
     answer:
-      "The Hub walks you through it: 1. Open Wallets (the Hub opens there by itself the first time) and paste a wallet address - only the public address starting with klv1, never a key. 2. Say what it is: \"In-game wallet\" (where the game keeps your NFTs), \"My wallet\" (your own), \"Someone else's wallet\" (just looking - it gets a set of its own) or a name of your choice. If they're yours, the Hub asks whether to mark the set as \"My wallets\". 3. Tap Fetch now to load the Devikins, Weapons and Equipment those wallets hold. 4. Optional: on the Withdrawals screen, add the IDs of NFTs you own that are still in the game - they then show in your collection too. 5. Save a backup (Wallets > Export all sets). After each fetch the Hub asks the next question by itself, ending with a reminder to save a backup. ☰ > Help > Getting started shows a checklist of what's done.",
+      "The Hub walks you through it: 1. Open Wallets (the Hub opens there by itself the first time) and paste a wallet address - only the public address starting with klv1, never a key. 2. Say what it is: \"In-game wallet\" (where the game keeps your NFTs), \"My wallet\" (your own), \"Someone else's wallet\" (just looking - it gets a set of its own) or a name of your choice. If they're yours, the Hub asks whether to mark the set as \"My wallets\". 3. Tap Fetch now to load the Devikins, Weapons and Equipment those wallets hold. 4. Optional: on the Withdrawals screen, add the IDs of NFTs you own that are still in the game - they then show in your collection too. 5. Save a backup (Wallets > Export all sets). After each fetch the Hub asks the next question by itself, ending with a reminder to save a backup. ☰ > Set Up > Getting started shows a checklist of what's done.",
   },
   {
     id: 'my-wallets',
