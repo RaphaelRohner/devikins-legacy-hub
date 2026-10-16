@@ -83,6 +83,9 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   await expect(page.getByText(/Weapon #3265 · from klv1ssss/)).toBeVisible(); // arrivals log
 
   // Narrow and sort: weapons still in the game, by number
+  // Kind / Where / Order fold away behind "More filters".
+  await expect(page.getByText('All kinds (5)', { exact: true })).toHaveCount(0);
+  await page.getByTestId('more-filters').click();
   // The kind chips say how many of each are on the whole list.
   await expect(page.getByText('All kinds (5)', { exact: true })).toBeVisible();
   await expect(page.getByText('Equipment (1)', { exact: true })).toBeVisible();
@@ -97,6 +100,12 @@ test('the tracker shows where each NFT is, spots overdue ones and arrivals', asy
   expect(shown2.map((t) => t.match(/#(\d+)/)[1])).toEqual(['3265', '1450', '1442']);
   await page.getByText('All kinds (5)', { exact: true }).click();
   await page.getByText('Needs attention first', { exact: true }).click();
+  // Folded away while a choice is in use: a grey line says so.
+  await page.getByText('Weapons (3)', { exact: true }).click();
+  await page.getByTestId('more-filters').click();
+  await expect(page.getByTestId('more-filters')).toContainText('More filters ▾Weapons');
+  await page.getByTestId('more-filters').click();
+  await page.getByText('All kinds (5)', { exact: true }).click();
 
   // 5. 31 minutes later, #1442 still hasn't come: overdue
   await page.clock.fastForward('31:00');
@@ -255,6 +264,7 @@ test('pasting a list file with wallet addresses says they were skipped', async (
   await page.getByText('Add to the list', { exact: true }).click();
   await expect(page.getByText(/4 added\. 2 wallet addresses skipped \(only NFT IDs go on the list\)\./)).toBeVisible();
   await expect(page.getByText(/Skipped \(not an ID\)/)).toHaveCount(0);
+  await page.getByTestId('more-filters').click();
   await expect(page.getByText('All kinds (4)', { exact: true })).toBeVisible();
 });
 
@@ -302,6 +312,7 @@ test('resting the mouse on a chip explains it; tapping still filters', async ({ 
   await expect(page.getByText(/2 added/)).toBeVisible();
 
   const hint = page.getByTestId('chip-hint');
+  await page.getByTestId('more-filters').click();
   await page.getByText('Still in the game', { exact: true }).hover();
   await expect(hint).toContainText("in your in-game wallet or in the game's main wallet");
   await page.getByText('Overdue (0)', { exact: true }).hover();
@@ -384,6 +395,7 @@ test('IDs pasted without a heading: the Hub asks which kind they are', async ({ 
   await expect(box).toContainText('3 IDs without a heading');
   await box.getByRole('button', { name: 'Weapons' }).click();
   await expect(page.getByText(/^3 added/)).toBeVisible();
+  await page.getByTestId('more-filters').click();
   await expect(page.getByText('Weapons (3)', { exact: true })).toBeVisible();
 });
 

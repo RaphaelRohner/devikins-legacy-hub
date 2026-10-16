@@ -196,6 +196,17 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
   const [kindFilter, setKindFilter] = useState('all');
   const [placeFilter, setPlaceFilter] = useState('any');
   const [sortMode, setSortMode] = useState('attention');
+  // Kind / Where / Order fold away behind "More filters" so the list starts
+  // right under the Status row on a phone (fresh-eyes review, 15 Oct 2026:
+  // 17 chips on 9 lines before the first NFT).
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const moreFiltersSummary = [
+    kindFilter !== 'all' ? KIND_FILTERS.find((o) => o.key === kindFilter)?.label : null,
+    placeFilter !== 'any' ? PLACE_FILTERS.find((o) => o.key === placeFilter)?.label : null,
+    sortMode !== 'attention' ? SORTS.find((o) => o.key === sortMode)?.label : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   // The chip explanation on show: { row, text } (row = which chip row it belongs under).
   const [chipHint, setChipHint] = useState(null);
   // Press-and-hold (phone): the box shows while the finger is down and
@@ -783,17 +794,22 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
         <View style={card}>
           <Text style={[styles.heading, { color: colors.text }]}>4. Results</Text>
           {[
-            [KIND_FILTERS, kindFilter, setKindFilter],
-            [PLACE_FILTERS, placeFilter, setPlaceFilter],
-            [SORTS, sortMode, setSortMode],
-            [FILTERS, filter, setFilter],
-          ].map(([options, value, setValue], rowIndex) => {
+            [FILTERS, filter, setFilter, null, 0],
+            ...(moreFiltersOpen
+              ? [
+                  [KIND_FILTERS, kindFilter, setKindFilter, 'Kind:', 1],
+                  [PLACE_FILTERS, placeFilter, setPlaceFilter, 'Where:', 2],
+                  [SORTS, sortMode, setSortMode, 'Order:', 3],
+                ]
+              : []),
+          ].map(([options, value, setValue, rowLabel, rowIndex]) => {
             const big = options === FILTERS;
             // The explanation floats over what's below (like a tooltip), so
             // the chips never jump around under the mouse.
             return (
               <View key={rowIndex} style={{ position: 'relative', zIndex: chipHint && chipHint.row === rowIndex ? 10 : 1 }}>
                 <View style={styles.chipRow}>
+                  {rowLabel ? <Text style={[styles.chipRowLabel, { color: colors.secondaryText }]}>{rowLabel}</Text> : null}
                   {options.map((o) => {
                     const on = value === o.key;
                     const help = chipHelpFor(options, o.key);
@@ -842,6 +858,27 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
               </View>
             );
           })}
+          <TouchableOpacity
+            testID="more-filters"
+            onPress={() => {
+              setChipHint(null);
+              setMoreFiltersOpen((open) => !open);
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: moreFiltersOpen }}
+            style={styles.moreFiltersButton}
+          >
+            <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 13 }}>
+              {moreFiltersOpen ? 'Fewer filters ▴' : 'More filters ▾'}
+            </Text>
+            {/* Folded away but in use: say so, so the list never looks
+                mysteriously short. */}
+            {!moreFiltersOpen && moreFiltersSummary ? (
+              <Text style={[styles.note, { color: colors.secondaryText, flexShrink: 1 }]} numberOfLines={1}>
+                {moreFiltersSummary}
+              </Text>
+            ) : null}
+          </TouchableOpacity>
           {!IS_WEB ? (
             <Text style={[styles.note, { color: colors.secondaryText }]}>Hold a chip to see what it means.</Text>
           ) : null}
@@ -988,7 +1025,9 @@ const styles = StyleSheet.create({
   pasteBox: { minHeight: 120, textAlignVertical: 'top' },
   inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  chipRowLabel: { fontSize: 12, fontWeight: '600', minWidth: 46 },
+  moreFiltersButton: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   chip: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
   chipSmall: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 },
   chipHint: {
