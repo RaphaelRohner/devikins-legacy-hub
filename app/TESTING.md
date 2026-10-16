@@ -384,13 +384,13 @@ it - your data is safe thanks to the backup:
 - [x] Compare a few with Kleverscan: the place is right.
 
 **T4. Withdrawals: requested and overdue**
-- [ ] Select rows → **Mark requested** / **Undo request** / Check
+- [x] Select rows → **Mark requested** / **Undo request** / Check
       selected / Unselect / **Remove** (last, red, asks first). Each
       button explains itself (🌐 hover, 📱 hold).
 - [x] A requested NFT not arrived after the set minutes → **Overdue**
       (red); the "Copy (🌐) / Share (📱) the overdue list" button gives a
       text for a support ticket.
-- [ ] Once it arrives, Check shows it as Arrived.
+- [x] Once it arrives, Check shows it as Arrived.
 
 **T5. Withdrawals: filter and sort**
 - [x] The status chips (All / Requested / Overdue / Arrived / Not
