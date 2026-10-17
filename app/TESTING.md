@@ -50,7 +50,7 @@ window) as a brand-new visitor:
   are, and switching it off takes them out again.
 - **Hide blanks:** NFTs whose picture is missing, broken, plain white or
   only the background disappear when the 🖼️ button is on (and come back
-  when it's off); the count says "· blanks hidden"; the setting is
+  when it's off); a small line under the count says "blanks hidden"; the setting is
   remembered; Compare hides the buttons.
 - **Withdrawals:** on a pretend blockchain, the tracker shows where each
   listed NFT is (arrived, in-game wallet, game's main wallet, another
@@ -161,7 +161,8 @@ it - your data is safe thanks to the backup:
 - [x] **Q5.** Filters: pick one - the list narrows at once; Filters ✕
       removes it.
 - [ ] **Q6.** The 🖼️ (Hide blanks) and 🗑️ (Hide deleted) buttons change
-      the list, and the count says "· blanks hidden" / "· deleted hidden".
+      the list, and a small line under the count says "blanks hidden" /
+      "deleted hidden".
 - [x] **Q7.** Fetch/Update runs and finishes (progress bar, then gone).
 - [x] **Q8.** Withdrawals: Check finishes; statuses look right.
 - [x] **Q9.** ☀️ | 🌙 switch; everything readable in both.
@@ -312,7 +313,7 @@ it - your data is safe thanks to the backup:
 **B6. Hide blanks**
 - [x] On (🖼️ highlighted): NFTs without details, without a picture
       ("Unavailable"), or with a plain white / background-only picture
-      disappear; the count says "· blanks hidden".
+      disappear; a small line under the count says "blanks hidden".
 - [ ] 🌐 Hover / 📱 hold on 🖼️ or 🗑️ shows what it does.
 - [x] Off: they're back. The setting stays after reopening the Hub.
 - [x] Faceless Devikins (e.g. #1117747) stay visible (they're complete).

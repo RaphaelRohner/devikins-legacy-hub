@@ -1426,13 +1426,25 @@ Continue anyway?`
                 { backgroundColor: 'transparent', borderColor: colors.border, borderStyle: 'dashed' },
               ]}
             >
+              {/* A second, smaller line says what's hidden ("blanks hidden"),
+                  so the count itself never gets cut off (Raphael, 17 Oct 2026). */}
               <Text
                 style={[styles.menuRowStatusText, { color: colors.secondaryText, fontWeight: '500' }]}
                 numberOfLines={1}
                 ellipsizeMode="tail"
               >
-                {collectionStatusText}
+                {collectionStatusText.split('\n')[0]}
               </Text>
+              {collectionStatusText.includes('\n') ? (
+                <Text
+                  testID="hidden-note"
+                  style={[styles.menuRowStatusText, { color: colors.secondaryText, fontSize: 11, fontWeight: '500' }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {collectionStatusText.split('\n')[1]}
+                </Text>
+              ) : null}
             </View>
           ) : null}
         </View>
@@ -1775,7 +1787,7 @@ const styles = StyleSheet.create({
     // Extra room on the right so typed text never runs under the clear
     // button - see searchClearButton below.
     paddingRight: 34,
-    height: 40,
+    height: 44,
     textAlignVertical: 'center',
   },
   searchClearButton: {
@@ -1810,7 +1822,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 14,
-    height: 40,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1845,7 +1857,7 @@ const styles = StyleSheet.create({
     // add up to the same total (which is exactly what went wrong with
     // the arrow-glyph line-height issue this button already ran into
     // once - see sortButtonText's own comment below).
-    height: 40,
+    height: 44,
     justifyContent: 'center',
     maxWidth: 115,
   },

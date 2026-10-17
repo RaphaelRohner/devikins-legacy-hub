@@ -796,9 +796,10 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // never count, whether they're shown greyed out or hidden.
   const shownActiveCount = rows.filter((r) => !r.deleted).length;
   // Says which of the two "hide" settings is on, so it's never forgotten
-  // (Raphael, 17 Oct 2026: the switches became small icons).
+  // (Raphael, 17 Oct 2026: the switches became small icons). After a line
+  // break: App.js shows it as a second, smaller line under the count.
   const hiddenNote =
-    excludeBlanks && excludeDeleted ? ' · blanks & deleted hidden' : excludeBlanks ? ' · blanks hidden' : excludeDeleted ? ' · deleted hidden' : '';
+    excludeBlanks && excludeDeleted ? '\nblanks & deleted hidden' : excludeBlanks ? '\nblanks hidden' : excludeDeleted ? '\ndeleted hidden' : '';
   const toolbarStatusText =
     (shownActiveCount < notDeletedCount
       ? `${shownActiveCount} of ${notDeletedCount} ${COLLECTIONS[kind].label}`
@@ -1354,14 +1355,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     rowGap: 8,
-    paddingTop: 8,
+    paddingTop: 2, // with the 14 above it, the same 16 gap as between the rows above (17 Oct 2026)
     paddingBottom: 8,
   },
   // Hide blanks + Deleted, kept together; on narrow screens the pair
   // moves to its own line below List/Tiles/Compare.
   segment: {
     flexDirection: 'row',
-    height: 40,
+    height: 44,
     borderWidth: 1,
     borderRadius: 8,
     padding: 3,
@@ -1381,7 +1382,7 @@ const styles = StyleSheet.create({
   },
   iconToggle: {
     width: 44,
-    height: 40,
+    height: 44,
     borderWidth: 1,
     borderRadius: 8,
     justifyContent: 'center',
@@ -1442,7 +1443,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 12,
-    height: 40,
+    height: 44,
     justifyContent: 'center',
   },
   anchorToggleText: {
@@ -1471,7 +1472,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 12,
-    height: 40,
+    height: 44,
   },
   // height/borderWidth/borderRadius/paddingHorizontal give this the
   // same button treatment as anchorToggleButton above (List/Tiles) and
@@ -1485,7 +1486,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    height: 40,
+    height: 44,
     paddingHorizontal: 12,
     borderWidth: 1,
     borderRadius: 8,

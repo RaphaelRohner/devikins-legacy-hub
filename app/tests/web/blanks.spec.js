@@ -50,7 +50,7 @@ test('Hide blanks hides NFTs with missing or empty pictures, and steps aside for
   await expect(page.getByText('#302', { exact: true })).toHaveCount(0);
 
   // The count says so, so the setting is never forgotten.
-  await expect(page.getByText(/· blanks hidden$/)).toBeVisible();
+  await expect(page.getByTestId('hidden-note')).toHaveText('blanks hidden');
 
   // Compare: both buttons step aside, and come back afterwards.
   await page.getByText('Compare', { exact: true }).click();
