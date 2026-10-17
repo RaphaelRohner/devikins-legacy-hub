@@ -66,7 +66,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Switch, BackHandler, PanResponder, useWindowDimensions } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Switch, BackHandler, PanResponder, useWindowDimensions, Pressable } from 'react-native';
 import FilterPanel, { NO_FILTER, humanizeColumnName } from './FilterPanel';
 import { getTileColumns, getCenteredContentPadding, getTileFlexBasisPercent } from '../constants/layout';
 import NftCard from './NftCard';
@@ -147,6 +147,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // components) rather than disappearing the moment they're marked.
   // Switching this on excludes them from the query entirely.
   const [excludeDeleted, setExcludeDeleted] = useState(false);
+  const [rowHint, setRowHint] = useState(null); // explanation under the toolbar row (hover / hold)
 
   // The "Hide blanks" switch (11 Oct 2026): leaves out NFTs that aren't
   // complete - no details, no picture, or a blank picture (see
@@ -794,10 +795,14 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // one on screen (fresh-eyes review, 14 Oct 2026). Items marked deleted
   // never count, whether they're shown greyed out or hidden.
   const shownActiveCount = rows.filter((r) => !r.deleted).length;
+  // Says which of the two "hide" settings is on, so it's never forgotten
+  // (Raphael, 17 Oct 2026: the switches became small icons).
+  const hiddenNote =
+    excludeBlanks && excludeDeleted ? ' · blanks & deleted hidden' : excludeBlanks ? ' · blanks hidden' : excludeDeleted ? ' · deleted hidden' : '';
   const toolbarStatusText =
-    shownActiveCount < notDeletedCount
+    (shownActiveCount < notDeletedCount
       ? `${shownActiveCount} of ${notDeletedCount} ${COLLECTIONS[kind].label}`
-      : `${notDeletedCount} ${COLLECTIONS[kind].label}`;
+      : `${notDeletedCount} ${COLLECTIONS[kind].label}`) + hiddenNote;
 
   useEffect(() => {
     onStatusTextChange(toolbarStatusText);
@@ -970,41 +975,6 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     ? `No ${COLLECTIONS[kind].label} match the ${activeFilterParts.length === 1 ? 'filter' : 'filters'}: ${activeFilterParts.join(', ')}`
     : `No ${COLLECTIONS[kind].label} here yet. Just added a wallet? Load its NFTs with Fetch/Update in the ☰ menu.`; // not "doesn't hold any": before the first fetch that read like a wrong address (fresh-eyes review, 15 Oct 2026)
 
-  // The Deleted switch - used to share this spot with the item count
-  // too (hence the old name, countAndDeletedSwitch), until that count
-  // moved up into App.js's own menuRow per feedback (see this file's
-  // top comment, and App.js's collectionStatusText comment, for the
-  // full reasoning: it was fighting the List/Tiles/Compare buttons for
-  // room in an already-tight row, and menuRow already had a matching
-  // blank slot doing nothing outside a fetch). Kept as its own variable
-  // regardless, now just for this one control.
-  const blanksSwitchControl = (
-    <View style={[styles.deletedSwitchGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <Text style={[styles.deletedSwitchLabel, { color: colors.text }]}>Hide blanks</Text>
-      <Switch
-        value={excludeBlanks}
-        onValueChange={setExcludeBlanks}
-        trackColor={{ false: colors.border, true: colors.primary }}
-        thumbColor={colors.surface}
-      />
-    </View>
-  );
-
-  const deletedSwitchControl = (
-    <View style={[styles.deletedSwitchGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      {/* "Hide deleted", not "Deleted": switched on it HIDES them, and
-          "Deleted: on" read like "show deleted" (fresh-eyes review,
-          14 Oct 2026). */}
-      <Text style={[styles.deletedSwitchLabel, { color: colors.text }]}>Hide deleted</Text>
-      <Switch
-        value={excludeDeleted}
-        onValueChange={setExcludeDeleted}
-        trackColor={{ false: colors.border, true: colors.primary }}
-        thumbColor={colors.surface}
-      />
-    </View>
-  );
-
   // The status text shown inside the Compare button, next to its
   // glyph (see the JSX comment above) - a running "what happens if I
   // tap now" hint, not just an on/off label. compareSelection can only
@@ -1063,30 +1033,30 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
               own. */}
           <View style={styles.toggleRow}>
             <View style={styles.viewModeButtonGroup}>
-              <TouchableOpacity
-                style={[
-                  styles.anchorToggleButton,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                  viewMode === 'list' && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
-                ]}
-                onPress={() => onSetViewMode('list')}
-              >
-                <Text style={[styles.anchorToggleText, { color: viewMode === 'list' ? colors.primary : colors.secondaryText }]}>
-                  List
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.anchorToggleButton,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                  viewMode === 'tiles' && { borderColor: colors.primary, backgroundColor: colors.chipBackground },
-                ]}
-                onPress={() => onSetViewMode('tiles')}
-              >
-                <Text style={[styles.anchorToggleText, { color: viewMode === 'tiles' ? colors.primary : colors.secondaryText }]}>
-                  Tiles
-                </Text>
-              </TouchableOpacity>
+              {/* List | Tiles as one switch, like ☀️ | 🌙 (Raphael, 17 Oct 2026). */}
+              <View style={[styles.segment, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                {[
+                  { mode: 'list', icon: '▤', label: 'List' },
+                  { mode: 'tiles', icon: '▦', label: 'Tiles' },
+                ].map((o) => {
+                  const on = viewMode === o.mode;
+                  return (
+                    <Pressable
+                      key={o.mode}
+                      testID={`view-${o.mode}`}
+                      accessibilityRole="radio"
+                      accessibilityLabel={o.label}
+                      accessibilityState={{ selected: on }}
+                      onPress={() => onSetViewMode(o.mode)}
+                      onHoverIn={() => setRowHint(o.label)}
+                      onHoverOut={() => setRowHint(null)}
+                      style={[styles.segmentPart, on && { backgroundColor: colors.chipBackground, borderColor: colors.primary }]}
+                    >
+                      <Text style={[styles.segmentIcon, { color: on ? colors.primary : colors.secondaryText }]}>{o.icon}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
 
               {/* Compare - see this file's own top comment and
                   CompareView.js. One button now (glyph + status text
@@ -1126,11 +1096,39 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
                 aside so the row stays tidy (Raphael, 11 Oct 2026). */}
             {!compareMode ? (
               <View style={styles.switchGroup}>
-                {blanksSwitchControl}
-                {deletedSwitchControl}
+                {[
+                  { key: 'blanks', icon: '🖼️', on: excludeBlanks, set: setExcludeBlanks, hint: excludeBlanks ? 'Blanks hidden - NFTs without details or picture (or a blank one). Tap to show them.' : 'Hide blanks - hides NFTs without details or picture (or a blank one).' },
+                  { key: 'deleted', icon: '🗑️', on: excludeDeleted, set: setExcludeDeleted, hint: excludeDeleted ? 'Deleted hidden - NFTs you marked as Deleted. Tap to show them.' : 'Hide deleted - hides NFTs you marked as Deleted.' },
+                ].map((t) => (
+                  <Pressable
+                    key={t.key}
+                    testID={`hide-${t.key}`}
+                    accessibilityRole="switch"
+                    accessibilityLabel={t.key === 'blanks' ? 'Hide blanks' : 'Hide deleted'}
+                    accessibilityState={{ checked: t.on }}
+                    onPress={() => t.set(!t.on)}
+                    onLongPress={() => setRowHint(t.hint)}
+                    onPressOut={() => setTimeout(() => setRowHint((h) => (h === t.hint ? null : h)), 3000)}
+                    onHoverIn={() => setRowHint(t.hint)}
+                    onHoverOut={() => setRowHint(null)}
+                    style={[
+                      styles.iconToggle,
+                      { backgroundColor: colors.surface, borderColor: colors.border },
+                      t.on && { backgroundColor: colors.chipBackground, borderColor: colors.primary },
+                    ]}
+                  >
+                    <Text style={[styles.iconToggleText, { opacity: t.on ? 1 : 0.45 }]}>{t.icon}</Text>
+                    {t.on ? <Text style={[styles.iconToggleSlash, { color: colors.primary }]}>⃠</Text> : null}
+                  </Pressable>
+                ))}
               </View>
             ) : null}
           </View>
+          {rowHint ? (
+            <Pressable onPress={() => setRowHint(null)} style={[styles.rowHint, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
+              <Text style={{ color: colors.text, fontSize: 13 }}>{rowHint}</Text>
+            </Pressable>
+          ) : null}
 
           {expanded && (
             <TouchableOpacity
@@ -1355,6 +1353,49 @@ const styles = StyleSheet.create({
   },
   // Hide blanks + Deleted, kept together; on narrow screens the pair
   // moves to its own line below List/Tiles/Compare.
+  segment: {
+    flexDirection: 'row',
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 3,
+    gap: 3,
+  },
+  segmentPart: {
+    width: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  segmentIcon: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  iconToggle: {
+    width: 44,
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconToggleText: {
+    fontSize: 18,
+  },
+  iconToggleSlash: {
+    position: 'absolute',
+    fontSize: 30,
+    fontWeight: '700',
+  },
+  rowHint: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
   switchGroup: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -48,9 +48,10 @@ window) as a brand-new visitor:
 - **My wallets:** the set marked "My wallets" also lists the NFTs on the
   Withdrawals list (fetched by number), their details say where they
   are, and switching it off takes them out again.
-- **Hide blanks:** NFTs whose picture is missing, plain white or only the
-  background disappear when the switch is on (and come back when it's
-  off); the setting is remembered; Compare hides the switches.
+- **Hide blanks:** NFTs whose picture is missing, broken, plain white or
+  only the background disappear when the 🖼️ button is on (and come back
+  when it's off); the count says "· blanks hidden"; the setting is
+  remembered; Compare hides the buttons.
 - **Withdrawals:** on a pretend blockchain, the tracker shows where each
   listed NFT is (arrived, in-game wallet, game's main wallet, another
   wallet, not found), turns a requested NFT "Overdue" after 30 minutes,
@@ -156,10 +157,11 @@ it - your data is safe thanks to the backup:
 - [x] **Q2.** ☰ menu: the four categories open and close; Devikins /
       Weapons / Equipment each show their list.
 - [x] **Q3.** Search narrows the list; ✕ clears it.
-- [x] **Q4.** List ↔ Tiles; open an NFT, go back.
+- [x] **Q4.** ▤ | ▦ (List / Tiles); open an NFT, go back.
 - [x] **Q5.** Filters: pick one - the list narrows at once; Filters ✕
       removes it.
-- [x] **Q6.** Hide blanks and Deleted switches change the list.
+- [ ] **Q6.** The 🖼️ (Hide blanks) and 🗑️ (Hide deleted) buttons change
+      the list, and the count says "· blanks hidden" / "· deleted hidden".
 - [x] **Q7.** Fetch/Update runs and finishes (progress bar, then gone).
 - [x] **Q8.** Withdrawals: Check finishes; statuses look right.
 - [x] **Q9.** ☀️ | 🌙 switch; everything readable in both.
@@ -274,6 +276,8 @@ it - your data is safe thanks to the backup:
       and traits match the NFT.
 - [x] List ↔ Tiles is one choice for all three, and stays after
       reopening the Hub.
+- [ ] The row above the list (▤ | ▦, ⇄ Compare, 🖼️, 🗑️) fits on one
+      line, also on the phone.
 - [x] The count at the top ("1,231 Devikins", dashed outline, grey)
       makes sense and doesn't look like a button.
 - [x] Tiles: a short last row sits on the left, under the tiles above.
@@ -306,14 +310,16 @@ it - your data is safe thanks to the backup:
       rating and the search stay).
 
 **B6. Hide blanks**
-- [x] On: NFTs without details, without a picture ("Unavailable"), or
-      with a plain white / background-only picture disappear.
+- [x] On (🖼️ highlighted): NFTs without details, without a picture
+      ("Unavailable"), or with a plain white / background-only picture
+      disappear; the count says "· blanks hidden".
+- [ ] 🌐 Hover / 📱 hold on 🖼️ or 🗑️ shows what it does.
 - [x] Off: they're back. The setting stays after reopening the Hub.
 - [x] Faceless Devikins (e.g. #1117747) stay visible (they're complete).
 
 **B7. Deleted and comment**
 - [x] In an NFT's details: Mark as Deleted + a comment → greyed out in
-      the list; with the **Deleted** switch on, hidden.
+      the list; with **Hide deleted** (🗑️) on, hidden.
 - [x] A later Fetch/Update of an NFT you still hold un-deletes it and
       clears the comment (on purpose).
 
@@ -342,8 +348,8 @@ it - your data is safe thanks to the backup:
 **B10. Compare**
 - [x] Compare → "Tap one to compare" → pick two → side-by-side view;
       back returns to the list.
-- [x] While choosing, the Hide blanks / Deleted switches step aside and
-      come back afterwards.
+- [x] While choosing, the 🖼️ / 🗑️ buttons step aside and come back
+      afterwards.
 
 **B11. Look and feel**
 - [x] ☀️ | 🌙 switch (the current mode highlighted); both readable (also
@@ -469,8 +475,8 @@ wallet - see the Signer's TESTING.md)
       Light/Dark) and don't stop a running fetch.
 - [x] **W3.** Pictures still show when Moonlabs' picture server is down
       (stored copies); a picture never stored says "Unavailable".
-- [ ] **W4.** On a phone browser (e.g. Safari): the layout fits; the two
-      switches move to their own line under List / Tiles / Compare.
+- [ ] **W4.** On a phone browser (e.g. Safari): the layout fits; the row
+      above the list stays on one line.
 
 ---
 

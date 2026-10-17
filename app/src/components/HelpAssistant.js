@@ -190,7 +190,7 @@ const ALL_FAQ_ENTRIES = [
     question: "What does marking something 'Deleted' do?",
     keywords: ['delete', 'deleted', 'hide', 'sold', 'restore', 'remove', 'traded'],
     answer:
-      "It's a personal organizing flag only - nothing is removed from the blockchain, or even from this app's own database. It greys the item out (or hides it entirely if you switch on \"Hide deleted\" above the list) so your list stays tidy, and you can tap Restore on it any time. One thing to know: if you still hold the NFT, the next Fetch/Update will automatically un-delete it, since successfully re-fetching it is proof you still own it.",
+      "It's a personal organizing flag only - nothing is removed from the blockchain, or even from this app's own database. It greys the item out (or hides it entirely with \"Hide deleted\" - the 🗑️ button above the list; the count at the top then says \"· deleted hidden\") so your list stays tidy, and you can tap Restore on it any time. One thing to know: if you still hold the NFT, the next Fetch/Update will automatically un-delete it, since successfully re-fetching it is proof you still own it.",
   },
   {
     id: 'list-tiles',
@@ -198,7 +198,7 @@ const ALL_FAQ_ENTRIES = [
     question: "What's the difference between List and Tiles view?",
     keywords: ['list', 'tiles', 'grid', 'view', 'layout'],
     answer:
-      "List shows a picture plus a few key stats for each item; Tiles shows a compact grid of just the pictures, so you can scan a big collection faster. Each of Devikins/Weapons/Equipment remembers its own choice.",
+      "The ▤ | ▦ switch above the list picks the view: List (▤) shows a picture plus a few key stats for each item; Tiles (▦) shows a compact grid of just the pictures, so you can scan a big collection faster. Each of Devikins/Weapons/Equipment remembers its own choice.",
   },
   {
     id: 'search-star-filter',
@@ -281,7 +281,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'How does Compare mode work?',
     keywords: ['compare', 'compare mode', 'side by side', 'compare two'],
     answer:
-      "Tap the ⇄ Compare button next to List/Tiles on any collection tab. While it's on, tapping an item selects it (up to two, highlighted with a colored border) instead of opening its detail view - pick a second item of the same kind and it opens straight into a full side-by-side listing of every one of its stats. \"Show differences only\" hides anything the two agree on, handy when you're just deciding which one to keep. It compares whatever you've already got filtered/sorted/searched in that list - tap ‹ to go back and pick two different items.",
+      "Tap the ⇄ Compare button next to the ▤ | ▦ (List / Tiles) switch on any collection tab. While it's on, tapping an item selects it (up to two, highlighted with a colored border) instead of opening its detail view - pick a second item of the same kind and it opens straight into a full side-by-side listing of every one of its stats. \"Show differences only\" hides anything the two agree on, handy when you're just deciding which one to keep. It compares whatever you've already got filtered/sorted/searched in that list - tap ‹ to go back and pick two different items.",
   },
   {
     id: 'feedback',
@@ -388,7 +388,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'What does "Hide blanks" do?',
     keywords: ['blank', 'blanks', 'hide blanks', 'empty', 'white', 'missing picture', 'no picture', 'background', 'unavailable', 'incomplete'],
     answer:
-      "Some NFTs come back from Moonlabs' servers incomplete: no details, no picture, or a picture that's plain white or only shows the coloured background without the item. With \"Hide blanks\" switched on (next to Deleted, above the list), those are left out so you only see complete NFTs. Nothing is deleted - the Hub keeps retrying them quietly, and they appear by themselves once Moonlabs delivers them properly. Pictures you already have are checked once in the background. The switch remembers its setting. Devikins whose picture shows a body without a face still count as complete.",
+      "Some NFTs come back from Moonlabs' servers incomplete: no details, no picture, or a picture that's plain white or only shows the coloured background without the item. With \"Hide blanks\" on (the 🖼️ button above the list, next to 🗑️ for deleted ones), those are left out and the count at the top says \"· blanks hidden\" so you only see complete NFTs. Nothing is deleted - the Hub keeps retrying them quietly, and they appear by themselves once Moonlabs delivers them properly. Pictures you already have are checked once in the background. The button remembers its setting (hover over it, or hold it on the phone, to see what it does). Devikins whose picture shows a body without a face still count as complete.",
   },
   {
     id: 'donate',

@@ -567,8 +567,10 @@ test('the count says "1 of 2" when some are left out, and follows Mark as Delete
   await expect(page.getByText('1 of 1 Devikins', { exact: true })).toHaveCount(0);
   await expect(page.getByText('1 Devikins', { exact: true })).toBeVisible();
 
-  // The switch is called "Hide deleted".
-  await expect(page.getByText('Hide deleted', { exact: true })).toBeVisible();
+  // The 🗑️ button hides deleted ones; it says so on hover.
+  await page.getByTestId('hide-deleted').hover();
+  await expect(page.getByText(/^Hide deleted - hides NFTs you marked as Deleted/)).toBeVisible();
+  await page.mouse.move(5, 5);
 
   // Restore: back to 2 without reloading the page.
   await page.getByText('#101', { exact: true }).click();
@@ -811,7 +813,7 @@ test('small fixes: export says "Backup saved"; a short last row of tiles sits on
   await openHub(page);
   await addWalletAndFetch(page, fake);
   // Tiles: 2 Devikins sit next to each other, not at opposite edges.
-  await page.getByText('Tiles', { exact: true }).click();
+  await page.getByTestId('view-tiles').click();
   const first = await page.getByText('#101', { exact: true }).boundingBox();
   const second = await page.getByText('#102', { exact: true }).boundingBox();
   expect(second.x - first.x).toBeLessThan(400);

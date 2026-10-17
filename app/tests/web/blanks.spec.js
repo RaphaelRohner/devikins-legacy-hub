@@ -15,7 +15,7 @@ test.afterEach(async () => {
 });
 
 function blanksSwitch(page) {
-  return page.getByText('Hide blanks', { exact: true }).locator('..').locator('input');
+  return page.getByTestId('hide-blanks');
 }
 
 test('Hide blanks hides NFTs with missing or empty pictures, and steps aside for Compare', async ({ page }) => {
@@ -49,12 +49,18 @@ test('Hide blanks hides NFTs with missing or empty pictures, and steps aside for
   await expect(page.getByText('#301', { exact: true })).toBeVisible();
   await expect(page.getByText('#302', { exact: true })).toHaveCount(0);
 
-  // Compare: both switches step aside, and come back afterwards.
+  // The count says so, so the setting is never forgotten.
+  await expect(page.getByText(/· blanks hidden$/)).toBeVisible();
+
+  // Compare: both buttons step aside, and come back afterwards.
   await page.getByText('Compare', { exact: true }).click();
-  await expect(page.getByText('Hide blanks', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Hide deleted', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('hide-blanks')).toHaveCount(0);
+  await expect(page.getByTestId('hide-deleted')).toHaveCount(0);
   await page.getByText('Tap one to compare', { exact: true }).click();
-  await expect(page.getByText('Hide blanks', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('hide-blanks')).toBeVisible();
+  // Hovering explains it.
+  await page.getByTestId('hide-blanks').hover();
+  await expect(page.getByText(/^Blanks hidden - NFTs without details/)).toBeVisible();
 
   // Off again: the blank one is back.
   await blanksSwitch(page).click();
