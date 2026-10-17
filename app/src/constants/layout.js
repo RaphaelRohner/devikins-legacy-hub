@@ -35,6 +35,17 @@ export function getTileFlexBasisPercent(columns) {
   return `${100 / columns - 2.33}%`;
 }
 
+// Tiles view: fixed gap between tiles and the side padding of each row
+// (CollectionView.js's tilesRow), and the exact pixel width of one tile
+// for a given list width - pixels rather than percentages so a phone
+// rotated to landscape and back always gets freshly computed sizes.
+export const TILE_GAP = 12;
+export const TILE_SIDE_PADDING = 12;
+export function getTileWidth(listWidth, columns) {
+  const inner = listWidth - TILE_SIDE_PADDING * 2 - TILE_GAP * (columns - 1);
+  return Math.max(60, Math.floor(inner / columns));
+}
+
 // A single-column list row or the full NFT detail view reads fine at
 // phone width, but stretched edge-to-edge across a tablet's full width
 // it would leave labels/values spread unnaturally far apart instead of

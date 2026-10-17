@@ -68,7 +68,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Switch, BackHandler, PanResponder, useWindowDimensions, Pressable } from 'react-native';
 import FilterPanel, { NO_FILTER, humanizeColumnName } from './FilterPanel';
-import { getTileColumns, getCenteredContentPadding, getTileFlexBasisPercent } from '../constants/layout';
+import { getTileColumns, getCenteredContentPadding, getTileWidth, TILE_GAP } from '../constants/layout';
 import NftCard from './NftCard';
 import NftTile from './NftTile';
 import DevikinSummaryRow from './DevikinSummaryRow';
@@ -129,7 +129,15 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
   // is also used now, to keep the draggable "Filters ✕" button
   // (further down) from being dragged off the bottom of the screen.
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const tileColumns = getTileColumns(windowWidth);
+  // Tiles are sized in exact pixels from the list's own measured width
+  // (onLayout below), not percentages: after turning an Android phone to
+  // landscape and back, percentage tiles kept stale sizes and left big
+  // gaps between the pictures (phone test, 18 Oct 2026). Falls back to
+  // the window width until the first measurement arrives.
+  const [measuredListWidth, setMeasuredListWidth] = useState(null);
+  const layoutWidth = measuredListWidth || windowWidth;
+  const tileColumns = getTileColumns(layoutWidth);
+  const tileWidth = getTileWidth(layoutWidth, tileColumns);
   const centeredContentPadding = getCenteredContentPadding(windowWidth);
   const [filters, setFilters] = useState({});
   const [rows, setRows] = useState([]);
@@ -1161,13 +1169,17 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
         // tileColumns itself changes (e.g. rotating a tablet) - either
         // one sidesteps that restriction the same way.
         key={`${viewMode}-${tileColumns}`}
+        onLayout={(e) => {
+          const w = Math.round(e.nativeEvent.layout.width);
+          if (w > 0 && w !== measuredListWidth) setMeasuredListWidth(w);
+        }}
         data={tileRows}
         keyExtractor={(item) => String(item.nonce)}
         numColumns={viewMode === 'tiles' ? tileColumns : 1}
         columnWrapperStyle={viewMode === 'tiles' ? styles.tilesRow : undefined}
         renderItem={({ item }) => {
           if (item.__filler) {
-            return <View style={{ flexBasis: getTileFlexBasisPercent(tileColumns) }} />;
+            return <View style={{ width: tileWidth }} />;
           }
           // Sorted by something other than the ID: each row/tile also shows
           // that value, so the order makes sense (fresh-eyes review, 15 Oct 2026).
@@ -1195,7 +1207,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
             : () => setSelectedNonce(item.nonce);
           const placeTag = item.owner_address === ID_LIST_OWNER ? placeTags[item.nonce] || { text: 'On your Withdrawals list', tone: 'muted' } : null;
           if (viewMode === 'tiles') {
-            return <NftTile nft={item} onPress={handleRowPress} columns={tileColumns} selected={isCompareSelected} sortedBy={sortedBy} placeTag={placeTag} />;
+            return <NftTile nft={item} onPress={handleRowPress} columns={tileColumns} width={tileWidth} selected={isCompareSelected} sortedBy={sortedBy} placeTag={placeTag} />;
           }
           const SummaryRow = SUMMARY_ROW_COMPONENTS[kind];
           return SummaryRow ? (
@@ -1318,7 +1330,8 @@ const styles = StyleSheet.create({
   // flexBasis: '31%' plus this space-between is what leaves an even gap
   // between all three tiles without needing to hardcode exact margins.
   tilesRow: {
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
+    gap: TILE_GAP,
     paddingHorizontal: 12,
   },
   tilesListContent: {

@@ -30,7 +30,7 @@ import useNftImage from '../hooks/useNftImage';
 import { getTileFlexBasisPercent } from '../constants/layout';
 import { gameNameOf } from '../constants/schema'; // the name given in the game (15 Oct 2026)
 
-export default function NftTile({ nft, onPress, columns = 3, selected = false, sortedBy = null, placeTag = null }) {
+export default function NftTile({ nft, onPress, columns = 3, width = null, selected = false, sortedBy = null, placeTag = null }) {
   const { colors } = useTheme();
 
   // Same "prefer the locally-saved copy" logic as the summary rows and
@@ -44,15 +44,19 @@ export default function NftTile({ nft, onPress, columns = 3, selected = false, s
   // comments for the full reasoning (an old cached URL whose host has
   // since gone offline shouldn't just render a blank box).
 
+  // With a pixel width (CollectionView.js), the picture gets an exact
+  // square size too instead of width 100% + aspectRatio.
+  const thumbSize = width ? { width: width - 16, height: width - 16 } : null;
+
   const image = imageSource && !imageLoadFailed ? (
     <Image
       source={{ uri: imageSource }}
-      style={styles.thumbnail}
+      style={[styles.thumbnail, thumbSize]}
       resizeMode="contain"
       onError={onImageError}
     />
   ) : (
-    <View style={[styles.thumbnail, styles.thumbnailPlaceholder, { backgroundColor: colors.placeholderBackground }]}>
+    <View style={[styles.thumbnail, thumbSize, styles.thumbnailPlaceholder, { backgroundColor: colors.placeholderBackground }]}>
       <Text style={[styles.thumbnailPlaceholderText, { color: colors.placeholderText }]}>Unavailable</Text>
     </View>
   );
@@ -66,7 +70,8 @@ export default function NftTile({ nft, onPress, columns = 3, selected = false, s
     <TouchableOpacity
       style={[
         styles.tile,
-        { flexBasis: getTileFlexBasisPercent(columns), backgroundColor: colors.surface, shadowColor: colors.cardShadow },
+        width ? { width, flexBasis: 'auto', flexGrow: 0, flexShrink: 0 } : { flexBasis: getTileFlexBasisPercent(columns) },
+        { backgroundColor: colors.surface, shadowColor: colors.cardShadow },
         isDeleted && styles.deletedTile,
         selected && { borderWidth: 3, borderColor: colors.primary },
       ]}
