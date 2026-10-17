@@ -1377,7 +1377,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   segmentIcon: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '700',
   },
   iconToggle: {
