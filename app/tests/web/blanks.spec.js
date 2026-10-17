@@ -75,3 +75,14 @@ test('a picture first stored as blank is checked again and shows once Moonlabs f
   await page.clock.fastForward(65_000);
   await expect(page.getByText('#102', { exact: true })).toBeVisible({ timeout: 30_000 });
 });
+
+test('Hide blanks also hides an NFT whose picture arrived broken (shows "Unavailable")', async ({ page }) => {
+  fake.blankPictures.set(IMAGE_URL.devikin(102), 'broken');
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  await expect(page.getByText('#102', { exact: true })).toBeVisible();
+  await expect(page.getByText('Unavailable').first()).toBeVisible();
+  await blanksSwitch(page).click();
+  await expect(page.getByText('#102', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('#101', { exact: true })).toBeVisible();
+});

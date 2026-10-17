@@ -82,12 +82,12 @@ export function decodePng(bytes) {
   try {
     raw = unzlibSync(compressed);
   } catch (e) {
-    return null;
+    return { corrupt: true }; // the picture data itself is damaged
   }
 
   // Undo the per-row filters.
   const stride = width * bpp;
-  if (raw.length < height * (stride + 1)) return null;
+  if (raw.length < height * (stride + 1)) return { corrupt: true }; // cut off
   const out = new Uint8Array(height * stride);
   for (let y = 0; y < height; y += 1) {
     const filter = raw[y * (stride + 1)];
@@ -134,9 +134,26 @@ export function decodePng(bytes) {
 }
 
 /** 'ok' or 'blank' for a picture's bytes (anything unreadable is 'ok'). */
+// The first bytes every picture file of these kinds starts with.
+function isPictureFile(bytes) {
+  if (!bytes || bytes.length < 12) return false;
+  const png = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+  const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const gif = bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46;
+  const webp = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45;
+  return png || jpeg || gif || webp;
+}
+
 export function judgeImageBytes(bytes) {
+  // Moonlabs sometimes answers with something that isn't a picture at
+  // all, or with a damaged one: the Hub then shows "Unavailable". Count
+  // those as blank, so "Hide blanks" hides them too (Raphael, 17 Oct
+  // 2026 - on the phone they stayed visible). Blank-marked pictures are
+  // downloaded again later, so a fixed one comes back by itself.
+  if (!isPictureFile(bytes)) return 'blank';
   const image = decodePng(bytes);
-  if (!image) return 'ok';
+  if (image && image.corrupt) return 'blank';
+  if (!image) return 'ok'; // a kind of picture this check can't read - leave it be
   const { width, height, channels, pixels } = image;
 
   let allWhite = true;

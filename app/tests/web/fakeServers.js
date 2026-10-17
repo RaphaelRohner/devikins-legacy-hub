@@ -113,7 +113,7 @@ async function installFakeServers(context) {
   const fake = {
     picturesDown: false, // true = picture servers answer "403 access denied"
     offline: false, // true = every outside server is unreachable (no internet)
-    blankPictures: new Map(), // picture URL -> 'white' | 'background' | 'missing'
+    blankPictures: new Map(), // picture URL -> 'white' | 'background' | 'missing' | 'broken'
     metadataDelayMs: 0, // slow down the pretend NFT-details server
     pictureDelayMs: 0, // slow down the pretend picture servers
     requests: [], // every outside URL the Hub asked for, for checks
@@ -194,6 +194,11 @@ async function installFakeServers(context) {
       const special = fake.blankPictures.get(url.href);
       if (fake.pictureDelayMs) await new Promise((r) => setTimeout(r, fake.pictureDelayMs));
       if (fake.picturesDown || special === 'missing') return route.fulfill({ status: 403, contentType: 'text/plain', body: 'Access Denied' });
+      // 'broken': an answer that claims to be a picture but can't be shown
+      // (Moonlabs sends some of those - see picture-check.md).
+      if (special === 'broken') {
+        return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: Buffer.alloc(4000, 7) });
+      }
       const nonce = Number(url.pathname.match(/(\d+)\.png$/)?.[1] || 1);
       return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: makePng(nonce, special || 'item') });
     }

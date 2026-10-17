@@ -319,6 +319,18 @@ async function createSchemaOnDatabase(db) {
   // phones, so it goes through the same safe/no-op-if-already-there
   // ensureColumn helper as the NFT tables' own added-later columns do.
   await ensureColumn(db, 'wallets', 'alias', 'TEXT');
+
+  // 17 Oct 2026: the picture check now also counts damaged pictures (the
+  // ones shown as "Unavailable") as blank. Pictures checked before that
+  // are checked once more - from the stored copy, no download - so
+  // "Hide blanks" catches the damaged ones already on the phone too.
+  const pictureRecheck = await db.getFirstAsync(`SELECT value FROM settings WHERE key = 'picture_check_v2'`);
+  if (!pictureRecheck) {
+    for (const kind of Object.keys(TRAIT_COLUMNS)) {
+      await db.execAsync(`UPDATE ${kind} SET image_quality = NULL WHERE image_quality = 'ok'`);
+    }
+    await db.runAsync(`INSERT OR REPLACE INTO settings (key, value) VALUES ('picture_check_v2', '1')`);
+  }
 }
 
 export async function initDatabase() {
