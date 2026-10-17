@@ -55,6 +55,7 @@ import {
   ToastAndroid,
   AppState,
   Alert,
+  Modal,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -94,6 +95,7 @@ import Feedback from './src/components/Feedback';
 import HelpAssistant from './src/components/HelpAssistant';
 import BreedingHelper from './src/components/BreedingHelper';
 import KleverscanView from './src/components/KleverscanView';
+import { setKleverscanOpener } from './src/api/openKleverscan';
 import SignerTestView from './src/components/SignerTestView';
 import DonateView from './src/components/DonateView';
 import AboutView from './src/components/AboutView';
@@ -120,11 +122,35 @@ const APP_VERSION = appConfig.expo.version;
 // AppContent below, so that AppContent can call useTheme() (a component
 // can't use its own provider's context, hence the split into two
 // components).
+// Phone app: Kleverscan links (an NFT, a transaction, ...) open as a
+// full-screen layer over whatever screen you're on, and "‹" or Android's
+// Back brings you back exactly there (Raphael, 17 Oct 2026). On the website
+// openKleverscan opens a new tab instead and this stays empty.
+function KleverscanLayer() {
+  const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    setKleverscanOpener(setUrl);
+    return () => setKleverscanOpener(null);
+  }, []);
+  if (Platform.OS === 'web') return null;
+  return (
+    <Modal visible={!!url} animationType="slide" onRequestClose={() => setUrl(null)}>
+      <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: colors.background }}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        {url ? <KleverscanView url={url} onClose={() => setUrl(null)} /> : null}
+      </View>
+    </Modal>
+  );
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
         <AppContent />
+        <KleverscanLayer />
       </ThemeProvider>
     </SafeAreaProvider>
   );

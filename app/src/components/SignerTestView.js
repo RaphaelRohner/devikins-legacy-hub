@@ -44,6 +44,7 @@ import { getSignerAddress, signWithSigner } from '../api/klvSigner';
 import {
   broadcastSigned, buildTransfer, explorerUrl, getKlvBalance, klvToUnits, unitsToKlv,
 } from '../api/kleverTx';
+import { openKleverscan } from '../api/openKleverscan';
 
 const SETTING_KEY = 'klvSignerAddress';
 
@@ -239,7 +240,7 @@ export default function SignerTestView({ onClose }) {
           <View style={[styles.card, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
             <Text style={[styles.value, { color: colors.text }]}>✔ Sent to the testnet</Text>
             <Text selectable style={[styles.mono, { color: colors.secondaryText }]}>{sentHash}</Text>
-            <SmallButton title="View on Kleverscan" onPress={() => Linking.openURL(explorerUrl(sentHash))} colors={colors} />
+            <SmallButton title="View on Kleverscan" onPress={() => openKleverscan(explorerUrl(sentHash))} colors={colors} />
           </View>
         ) : null}
       </ScrollView>

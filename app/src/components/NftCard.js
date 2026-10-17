@@ -87,6 +87,7 @@ import useNftImage from '../hooks/useNftImage';
 import StarRating from './StarRating';
 import { gameNameOf } from '../constants/schema';
 import { GLOSSARY } from '../constants/glossary';
+import { openKleverscan } from '../api/openKleverscan';
 
 // Turns a database column name like "critical_chance" into a readable
 // label like "Critical Chance". This is ONLY for display - the actual
@@ -369,7 +370,7 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
   const nameAndRatingSection = (
     <View style={styles.nameAndRatingSection}>
       <TouchableOpacity
-        onPress={() => Linking.openURL(kleverscanNftUrl(kind, nft.nonce))}
+        onPress={() => openKleverscan(kleverscanNftUrl(kind, nft.nonce))}
         accessibilityRole="link"
         style={{ alignSelf: 'flex-start', marginBottom: 12 }}
       >

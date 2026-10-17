@@ -39,14 +39,17 @@
  */
 
 import { useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useTheme } from '../context/ThemeContext';
 import { COLLECTIONS } from '../constants/schema';
 
 export const KLEVERSCAN_URL = `https://kleverscan.org/asset/${COLLECTIONS.devikin.assetId}?tab=Holders`;
 
-export default function KleverscanView({ onClose }) {
+// `url`: the page to open (an NFT, a transaction, ...) when a Kleverscan
+// link elsewhere in the app opens this as a layer (see
+// src/api/openKleverscan.js); the menu entry opens the Devikins holders.
+export default function KleverscanView({ onClose, url = KLEVERSCAN_URL }) {
   const { colors } = useTheme();
   const webViewRef = useRef(null);
   // Start both false (safe default before the first onNavigationStateChange
@@ -56,6 +59,7 @@ export default function KleverscanView({ onClose }) {
   // to yet.
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
+  const [currentUrl, setCurrentUrl] = useState(url);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -98,16 +102,25 @@ export default function KleverscanView({ onClose }) {
           >
             <Text style={[styles.navButtonText, { color: colors.text }]}>⟳</Text>
           </TouchableOpacity>
+          {/* The same page in the phone's browser - to bookmark or share it. */}
+          <TouchableOpacity
+            style={[styles.navButton, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+            onPress={() => Linking.openURL(currentUrl)}
+            accessibilityLabel="Open in browser"
+          >
+            <Text style={[styles.navButtonText, { color: colors.text }]}>↗</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
       <WebView
         ref={webViewRef}
-        source={{ uri: KLEVERSCAN_URL }}
+        source={{ uri: url }}
         style={styles.webview}
         onNavigationStateChange={(navState) => {
           setCanGoBack(navState.canGoBack);
           setCanGoForward(navState.canGoForward);
+          if (navState.url) setCurrentUrl(navState.url);
         }}
       />
     </View>

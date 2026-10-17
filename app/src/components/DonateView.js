@@ -19,6 +19,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Linking,
 import { useTheme } from '../context/ThemeContext';
 import { DONATION_ADDRESS } from '../constants/donation';
 import { sendKlvWithExtension } from '../api/kleverExtension';
+import { openKleverscan } from '../api/openKleverscan';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -86,7 +87,7 @@ export default function DonateView({ onClose }) {
           ) : null}
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }]}
-            onPress={() => Linking.openURL(`https://kleverscan.org/account/${DONATION_ADDRESS}`)}
+            onPress={() => openKleverscan(`https://kleverscan.org/account/${DONATION_ADDRESS}`)}
           >
             <Text style={[styles.buttonText, { color: colors.primaryText }]}>View on Kleverscan</Text>
           </TouchableOpacity>
@@ -131,7 +132,7 @@ export default function DonateView({ onClose }) {
             {sentHash ? (
               <Text style={[styles.note, { color: colors.text }]}>
                 Thank you! Sent.{' '}
-                <Text style={{ textDecorationLine: 'underline' }} onPress={() => Linking.openURL(`https://kleverscan.org/transaction/${sentHash}`)}>
+                <Text style={{ textDecorationLine: 'underline' }} onPress={() => openKleverscan(`https://kleverscan.org/transaction/${sentHash}`)}>
                   View the transaction
                 </Text>
               </Text>

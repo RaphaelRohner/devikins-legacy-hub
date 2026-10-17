@@ -65,6 +65,7 @@ import {
   overdueListText,
 } from '../api/withdrawalTracker';
 import { kleverscanNftUrl } from '../constants/schema';
+import { openKleverscan } from '../api/openKleverscan';
 
 // Where withdrawal problems are reported (Klever's help centre).
 const SUPPORT_URL = 'https://support.klever.org/';
@@ -1044,7 +1045,7 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
                     {describe(item) ? <Text style={[styles.note, { color: colors.secondaryText }]}>{describe(item)}</Text> : null}
                   </View>
                   <TouchableOpacity
-                    onPress={() => Linking.openURL(kleverscanNftUrl(item.kind, item.nonce))}
+                    onPress={() => openKleverscan(kleverscanNftUrl(item.kind, item.nonce))}
                     accessibilityRole="link"
                     accessibilityLabel={`${KIND_LABEL[item.kind]} #${item.nonce} on Kleverscan`}
                     style={{ paddingHorizontal: 6, paddingVertical: 2 }}
@@ -1070,7 +1071,7 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
             <Text style={[styles.note, { color: colors.secondaryText }]}>Nothing yet - each check adds new arrivals here.</Text>
           ) : (
             arrivals.slice(0, 50).map((a) => (
-              <TouchableOpacity key={`${a.tx_hash}:${a.kind}:${a.nonce}`} onPress={() => Linking.openURL(`https://kleverscan.org/transaction/${a.tx_hash}`)}>
+              <TouchableOpacity key={`${a.tx_hash}:${a.kind}:${a.nonce}`} onPress={() => openKleverscan(`https://kleverscan.org/transaction/${a.tx_hash}`)}>
                 <Text style={[styles.note, { color: colors.text }]}>
                   {formatTime(a.timestamp)} · {KIND_LABEL[a.kind]} #{a.nonce} · from {walletName(a.from_address)}
                 </Text>
