@@ -77,7 +77,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { View, Text, Image, TextInput, StyleSheet, Modal, TouchableOpacity, Linking, Pressable } from 'react-native';
+import { View, Text, Image, TextInput, StyleSheet, Modal, TouchableOpacity, Linking, Pressable, useWindowDimensions } from 'react-native';
 import { TRAIT_COLUMNS, kleverscanNftUrl } from '../constants/schema';
 import { setNftDeletedState, setNftCustomName, setNftStarRating, getWithdrawalItem, getGlobalSetting, WITHDRAW_SETTING_KEYS } from '../db/database';
 import { ID_LIST_OWNER } from '../constants/idList';
@@ -108,6 +108,11 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
   // Devi (Raphael's explanations, 16 Oct 2026). A tap pins the box; tapping
   // the box or the ⓘ again closes it.
   const [info, setInfo] = useState(null); // { key, hover }
+  // The Devikin picture takes at most ~45% of a narrow phone screen, so the
+  // ID, names and stats beside it have room for one line each (17 Oct 2026).
+  const { width: windowWidth } = useWindowDimensions();
+  const largeImageSize = Math.max(120, Math.min(224, Math.round((windowWidth - 70) * 0.45)));
+  const largeImageSizeStyle = { width: largeImageSize, height: largeImageSize };
   function infoIcon(key) {
     const term = GLOSSARY[key];
     if (!term) return null;
@@ -254,13 +259,13 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
     <TouchableOpacity onPress={() => setIsFullscreenVisible(true)} activeOpacity={0.85}>
       <Image
         source={{ uri: imageSource }}
-        style={styles.thumbnailLarge}
+        style={[styles.thumbnailLarge, largeImageSizeStyle]}
         resizeMode="contain"
         onError={onImageError}
       />
     </TouchableOpacity>
   ) : (
-    <View style={[styles.thumbnailLarge, styles.thumbnailPlaceholder, { backgroundColor: colors.placeholderBackground }]}>
+    <View style={[styles.thumbnailLarge, largeImageSizeStyle, styles.thumbnailPlaceholder, { backgroundColor: colors.placeholderBackground }]}>
       <Text style={[styles.thumbnailPlaceholderTextLarge, { color: colors.placeholderText }]}>Unavailable</Text>
     </View>
   );
@@ -530,17 +535,34 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
         <View style={styles.devikinTopRow}>
           {largeImage}
           <View style={styles.devikinTopRight}>
-            <Text style={[styles.devikinId, { color: colors.text }]}>#{nft.nonce}</Text>
-            {/* The name it has in the game (if any), and the Hub nickname if set. */}
+            {/* One line, shrinking a long ID to fit instead of breaking it
+                (Raphael, 17 Oct 2026: "#1020243" broke after "#102024"). */}
+            <Text style={[styles.devikinId, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+              #{nft.nonce}
+            </Text>
+            {/* The Hub nickname (or the name from the game), and - when both
+                exist and differ - the game's name on its own smaller line,
+                so both stay readable on a phone. */}
             {gameNameOf(nft) || nft.custom_name ? (
               <Text style={[styles.devikinSubLine, { color: colors.primary, fontWeight: '700' }]} numberOfLines={1}>
                 {nft.custom_name || gameNameOf(nft)}
-                {nft.custom_name && gameNameOf(nft) && nft.custom_name !== gameNameOf(nft) ? ` (in the game: ${gameNameOf(nft)})` : ''}
               </Text>
             ) : null}
+            {nft.custom_name && gameNameOf(nft) && nft.custom_name !== gameNameOf(nft) ? (
+              <Text style={[styles.devikinGameName, { color: colors.secondaryText }]} numberOfLines={1}>
+                in the game: {gameNameOf(nft)}
+              </Text>
+            ) : null}
+            {/* Each stat stays on one line next to its ⓘ, shrinking a little
+                if the phone's column is narrow. */}
             {hasTopStats && topStatKeys.map((key) => chipByKey[key] && (
               <View key={key} style={styles.labelRow}>
-                <Text style={[styles.devikinSubLine, { color: colors.secondaryText }]}>
+                <Text
+                  style={[styles.devikinSubLine, styles.devikinStatText, { color: colors.secondaryText }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
                   {chipByKey[key].label}: {chipByKey[key].value}
                 </Text>
                 {infoIcon(key)}
@@ -1108,6 +1130,13 @@ const styles = StyleSheet.create({
   devikinSubLine: {
     fontSize: 14,
     marginTop: 4,
+  },
+  devikinGameName: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+  devikinStatText: {
+    flexShrink: 1,
   },
   // The horizontal rule between sections.
   separator: {

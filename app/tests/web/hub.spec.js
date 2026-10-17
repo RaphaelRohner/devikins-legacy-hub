@@ -767,7 +767,9 @@ test('a Devikin named in the game shows that name; unnamed ones show none; a Hub
   await expect(page.getByText('Testy the Brave', { exact: true })).toBeVisible(); // detail
   await page.getByPlaceholder('Give this NFT a name (optional)').fill('Sir Testalot');
   await page.getByText('Save Name', { exact: false }).first().click();
-  await expect(page.getByText('Sir Testalot (in the game: Testy the Brave)')).toBeVisible();
+  // Both names, each on its own line.
+  await expect(page.getByText('Sir Testalot', { exact: true })).toBeVisible();
+  await expect(page.getByText('in the game: Testy the Brave', { exact: true })).toBeVisible();
   await page.goBack();
   await expect(page.getByText('Sir Testalot', { exact: true })).toBeVisible();
   await expect(page.getByText('Testy the Brave', { exact: true })).toHaveCount(0);
