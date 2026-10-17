@@ -1118,7 +1118,13 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
                     ]}
                   >
                     <Text style={[styles.iconToggleText, { opacity: t.on ? 1 : 0.45 }]}>{t.icon}</Text>
-                    {t.on ? <Text style={[styles.iconToggleSlash, { color: colors.primary }]}>⃠</Text> : null}
+                    {/* A drawn red "no" sign (a font's ⃠ sat off-centre on the
+                        phone - Raphael, 17 Oct 2026). */}
+                    {t.on ? (
+                      <View pointerEvents="none" style={[styles.noSign, { borderColor: colors.cancelText }]}>
+                        <View style={[styles.noSignBar, { backgroundColor: colors.cancelText }]} />
+                      </View>
+                    ) : null}
                   </Pressable>
                 ))}
               </View>
@@ -1384,10 +1390,19 @@ const styles = StyleSheet.create({
   iconToggleText: {
     fontSize: 18,
   },
-  iconToggleSlash: {
+  noSign: {
     position: 'absolute',
-    fontSize: 30,
-    fontWeight: '700',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 2.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noSignBar: {
+    width: 2.5,
+    height: 28,
+    transform: [{ rotate: '-45deg' }],
   },
   rowHint: {
     borderWidth: 1,
