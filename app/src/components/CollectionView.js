@@ -117,6 +117,36 @@ const FLOATING_BUTTON_EDGE_MARGIN = 8;
 // than a tap - see the PanResponder below.
 const FLOATING_BUTTON_DRAG_THRESHOLD = 4;
 
+// The List / Tiles icons, drawn from small boxes instead of the ▤ / ▦
+// font symbols: each device draws those symbols with its own font, and
+// on a Mac both looked like a grid (phone test, 18 Oct 2026). Drawn
+// shapes look the same everywhere - stripes for List, squares for Tiles.
+function ViewModeIcon({ mode, color }) {
+  if (mode === 'list') {
+    return (
+      <View style={iconStyles.box}>
+        {[0, 1, 2, 3].map((i) => (
+          <View key={i} style={[iconStyles.listLine, { backgroundColor: color }]} />
+        ))}
+      </View>
+    );
+  }
+  return (
+    <View style={[iconStyles.box, iconStyles.grid]}>
+      {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+        <View key={i} style={[iconStyles.gridCell, { backgroundColor: color }]} />
+      ))}
+    </View>
+  );
+}
+
+const iconStyles = StyleSheet.create({
+  box: { width: 22, height: 20, justifyContent: 'space-between' },
+  listLine: { height: 3, borderRadius: 1.5 },
+  grid: { width: 22, height: 22, flexDirection: 'row', flexWrap: 'wrap', alignContent: 'space-between' },
+  gridCell: { width: 6, height: 6, borderRadius: 1.5 },
+});
+
 export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onSetViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded, onAppliedFiltersChange = () => {}, onStatusTextChange = () => {}, listTopContent = null, onFindBreedingPartners = null }) {
   const { colors } = useTheme();
 
@@ -1061,7 +1091,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
                       onHoverOut={() => setRowHint(null)}
                       style={[styles.segmentPart, on && { backgroundColor: colors.chipBackground, borderColor: colors.primary }]}
                     >
-                      <Text style={[styles.segmentIcon, { color: on ? colors.primary : colors.secondaryText }]}>{o.icon}</Text>
+                      <ViewModeIcon mode={o.mode} color={on ? colors.primary : colors.secondaryText} />
                     </Pressable>
                   );
                 })}
