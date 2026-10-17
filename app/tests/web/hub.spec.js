@@ -717,6 +717,8 @@ test('Ask Devi answers beginner questions and no longer matches little words lik
   await ask('what is moon labs', /company that makes and runs Devikins/);
   // Other questions still find their own answers.
   await ask('why are some pictures blank?', /plain white/);
+  await ask('why does it say unavailable?', /only the picture is missing/);
+  await ask('what is ancestry', /Glysian, Khoroth, Lunarian, Maarish or Ochran/);
 });
 
 test('on a phone, the Getting started checklist scrolls away with the list', async ({ page }) => {

@@ -140,7 +140,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'What do Rarity, Ancestry and the other traits mean?',
     keywords: ['rarity', 'rare', 'rarest', 'common', 'uncommon', 'mythic', 'eldritch', 'best', 'valuable', 'ancestry', 'trait', 'traits'],
     answer:
-      "Every NFT has traits set by the game. Rarity, from lowest to highest: Common, Uncommon, Rare, Mythic, Eldritch. Ancestry is a Devikin's family (for example Faery or Demon). Life Stage is how far it has grown, and Procreations Left is how many more times it can breed. Weapons and Equipment also have a Quality. To find the rarest ones, tap the sort button (left of the search box, it shows \"↑ ID\" at first), pick Rarity and tap ↓ for highest first - or use Filters to show only one rarity. A \"—\" means the game hasn't given that NFT a value for that trait.",
+      "Every NFT has traits set by the game. Rarity, from lowest to highest: Common, Uncommon, Rare, Mythic, Eldritch. Ancestry is a Devikin's family: Glysian, Khoroth, Lunarian, Maarish or Ochran. Life Stage is how far it has grown, and Procreations Left is how many more times it can breed. Weapons and Equipment also have a Quality. To find the rarest ones, tap the sort button (left of the search box, it shows \"↑ ID\" at first), pick Rarity and tap ↓ for highest first - or use Filters to show only one rarity. A \"—\" means the game hasn't given that NFT a value for that trait.",
   },
   {
     id: 'add-wallet',
@@ -295,9 +295,9 @@ const ALL_FAQ_ENTRIES = [
     id: 'unavailable-failed',
     topic: 'troubleshooting',
     question: "Why does an item say 'Unavailable' or 'Fetch failed'?",
-    keywords: ['unavailable', 'missing', 'failed', 'no image', 'no data'],
+    keywords: ['unavailable', 'missing', 'failed', 'no image', 'no data', 'no picture', 'picture missing'],
     answer:
-      "The game's own metadata service occasionally times out or has no data for an item yet. 'Fetch failed' items get retried automatically while the Hub is open (about once a minute at first, then less often), and again whenever you tap Fetch/Update; 'Unavailable' means the service gave a clear 'this doesn't exist' answer, so it's treated as final and isn't retried even then.",
+      "'Unavailable' in the picture spot means only the picture is missing: Moonlabs' picture server doesn't have it, or sent a broken one. The NFT itself exists and its details are there. The Hub tries the picture again by itself later, and \"Hide blanks\" (the 🖼️ button above the list) can hide these meanwhile. 'Fetch failed' means the details didn't come through this time, usually because Moonlabs' server timed out - those are retried automatically while the Hub is open (about once a minute at first, then less often) and whenever you tap Fetch/Update. Rarely an NFT shows 'Details unavailable': Moonlabs' server said it has no details for it at all, which is treated as final.",
   },
   {
     id: 'reset-data',
