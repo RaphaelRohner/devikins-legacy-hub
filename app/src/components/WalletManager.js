@@ -154,6 +154,8 @@ export default function WalletManager({
   onFetchNow,
   startExportAll = false,
   onStartExportHandled,
+  isFetchRunning = false,
+  onStopFetch = () => {},
 }) {
   const { colors } = useTheme();
 
@@ -644,11 +646,30 @@ export default function WalletManager({
     setIsCreatingSet(false);
   }
 
+  // Switching, deleting or resetting sets while a fetch is still running
+  // let the fetch carry on in the background, and the screens kept the
+  // old count (Raphael saw "1333 Devikins" after a reset, 18 Oct 2026).
+  // These actions now ask to stop the fetch first. Returns true when the
+  // action has to wait.
+  function stopFetchFirst(what) {
+    if (!isFetchRunning) return false;
+    Alert.alert(
+      'A fetch is still running',
+      `Please stop it before you ${what}. What it found so far is kept. Once it has stopped, tap again.`,
+      [
+        { text: 'Keep fetching', style: 'cancel' },
+        { text: 'Stop fetch', style: 'destructive', onPress: () => onStopFetch() },
+      ]
+    );
+    return true;
+  }
+
   // Switching to the set you're already on would just be a no-op
   // database round-trip for nothing, so this skips it entirely rather
   // than calling switchToWalletSet unnecessarily.
   async function handleSwitchSet(id) {
     if (id === activeWalletSetId) return;
+    if (stopFetchFirst('switch sets')) return;
     try {
       await switchToWalletSet(id);
       onWalletSetsChanged();
@@ -688,6 +709,7 @@ export default function WalletManager({
   // without first switching into it. Gets the same style of destructive
   // confirmation as Reset All Data below, just scoped to one set.
   function handleDeleteSet(set) {
+    if (stopFetchFirst('delete a set')) return;
     Alert.alert(
       `Delete "${set.name}"?`,
       'This permanently deletes every wallet, NFT, and downloaded image saved under this set. This cannot be undone - your actual NFTs are safe on the blockchain either way.',
@@ -973,6 +995,7 @@ export default function WalletManager({
   // destructive an action it really is - the one button on this whole
   // screen bigger than a single set's own Delete above.
   function handleResetAllData() {
+    if (stopFetchFirst('reset all data')) return;
     Alert.alert(
       'Reset all data?',
       'This deletes every wallet set, every saved wallet, every Devikin, Weapon, and Equipment NFT stored here (with their downloaded images), and your Withdrawals list with its IDs. Export a backup first if you want to keep anything. This cannot be undone - your actual NFTs are safe on the blockchain either way, but you will need to re-add your wallet(s) and fetch again from scratch.',

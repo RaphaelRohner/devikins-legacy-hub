@@ -577,6 +577,8 @@ function AppContent() {
       setActiveWalletSetId(null);
       setWallets([]);
     }
+    // A switched, deleted or reset set: the lists reload their counts too.
+    setRefreshKey((key) => key + 1);
   }, [loadWallets]);
 
   useEffect(() => {
@@ -1270,6 +1272,8 @@ Continue anyway?`
           onFetchNow={handleFetchNowFromWallets}
           startExportAll={exportOnWallets}
           onStartExportHandled={() => setExportOnWallets(false)}
+          isFetchRunning={isFetching || isRetrying}
+          onStopFetch={handleCancelPress}
         />
       </SafeAreaView>
     );
@@ -1442,7 +1446,9 @@ Continue anyway?`
               onCancel={handleCancelPress}
               isCancelling={isCancelling}
             />
-          ) : collectionStatusText ? (
+          ) : collectionStatusText && ownerAddresses.length > 0 ? (
+            // (no wallets, e.g. right after Reset All Data: no list, so no
+            // count either - it used to keep the old number, 18 Oct 2026)
             <View
               style={[
                 styles.menuRowStatusChip,
