@@ -29,11 +29,18 @@
  */
 
 import { ID_LIST_OWNER } from '../constants/idList';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, Pressable } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
 export default function ProgressBar({ progress, onCancel, isCancelling }) {
   const { colors } = useTheme();
+  // The "Fetch status" box opened by tapping the bar. It used to be a
+  // plain Alert, which froze its text at the moment it opened (Raphael,
+  // 19 Oct 2026); this box re-draws with every progress update, so the
+  // numbers keep counting while it's open. It closes by itself when the
+  // fetch ends (this whole component disappears then).
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   if (!progress || progress.phase === 'done') {
     return null;
@@ -101,9 +108,7 @@ export default function ProgressBar({ progress, onCancel, isCancelling }) {
   }
 
   function showDetail() {
-    if (message) {
-      Alert.alert('Fetch status', message);
-    }
+    if (message) setIsDetailOpen(true);
   }
 
   return (
@@ -152,6 +157,38 @@ export default function ProgressBar({ progress, onCancel, isCancelling }) {
           <ActivityIndicator size="small" color={colors.primary} />
         )}
       </TouchableOpacity>
+
+      <Modal visible={isDetailOpen} transparent animationType="fade" onRequestClose={() => setIsDetailOpen(false)}>
+        <Pressable style={styles.detailBackdrop} onPress={() => setIsDetailOpen(false)}>
+          <Pressable
+            testID="fetch-status"
+            style={[styles.detailCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => {}}
+          >
+            <Text style={[styles.detailTitle, { color: colors.text }]}>Fetch status</Text>
+            <Text testID="fetch-status-text" style={[styles.detailText, { color: colors.text }]}>
+              {message}
+            </Text>
+            {fractionComplete !== null ? (
+              <View style={[styles.detailTrack, { backgroundColor: colors.progressTrack }]}>
+                <View
+                  style={[
+                    styles.fill,
+                    { width: `${Math.round(fractionComplete * 100)}%`, backgroundColor: colors.primary },
+                  ]}
+                />
+              </View>
+            ) : null}
+            <TouchableOpacity
+              testID="fetch-status-close"
+              style={[styles.detailButton, { borderColor: colors.primary }]}
+              onPress={() => setIsDetailOpen(false)}
+            >
+              <Text style={[styles.detailButtonText, { color: colors.primary }]}>OK</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <TouchableOpacity
         onPress={onCancel}
@@ -236,5 +273,44 @@ const styles = StyleSheet.create({
   },
   cancelTextDisabled: {
     opacity: 0.5,
+  },
+  detailBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  detailCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 18,
+    gap: 12,
+  },
+  detailTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  detailText: {
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  detailTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  detailButton: {
+    alignSelf: 'flex-end',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+  },
+  detailButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
