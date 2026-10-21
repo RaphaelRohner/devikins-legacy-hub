@@ -6,7 +6,9 @@
  * nobody changed it) and then encrypted ONCE with the group key (NIP-44,
  * the same audited encryption as 1:1 messages). The postman stores that
  * single envelope in the group's mailbox – once per group, never once per
- * member – and can't tell who wrote it.
+ * member. It can't read the post. (It does see which chat key handed the
+ * envelope in, because only signed-in players may post – it keeps nothing
+ * about that except the time, for its one-post-per-minute flood limit.)
  *
  * The key is renewed ("new epoch") whenever someone joins or is removed:
  *   - a new member only gets keys from the moment they join, so they can't

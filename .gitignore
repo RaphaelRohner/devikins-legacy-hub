@@ -55,3 +55,6 @@ V2-IDEAS.md
 # automatic website tests: results and report (made fresh on every run)
 /app/test-results/
 /app/test-report/
+
+# Cloudflare wrangler's local working folder (chat postman)
+.wrangler/

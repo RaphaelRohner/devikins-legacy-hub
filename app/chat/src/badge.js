@@ -10,7 +10,10 @@
  * Format: a signed Nostr event (standard signature, checkable by anyone
  * with the postman's public key), never published anywhere:
  *   kind BADGE_KIND, content "", tags:
- *     ["p", <holder's chat public key>], ["nfts", "<N>"], ["expiration", "<unix seconds>"]
+ *     ["p", <holder's chat public key>], ["nfts", "<N>"], ["expiration", "<unix seconds>"],
+ *     and (from the real postman) ["account", <random account number>]: the
+ *     same for all devices of one player, so limits count once per player.
+ *     It is a random number made by the postman, not the wallet.
  */
 
 import { finalizeEvent, verifyEvent } from 'nostr-tools/pure';
@@ -21,18 +24,23 @@ export const BADGE_DAYS = 7;
 
 const tag = (event, name) => (event.tags || []).find((t) => Array.isArray(t) && t[0] === name)?.[1];
 
+const ACCOUNT = /^[0-9a-f]{32}$/;
+
 /** Postman side: a badge for `holder` (chat public key) holding `nfts`, valid `days` days. */
-export function issueBadge(postmanIdentity, { holder, nfts, now, days = BADGE_DAYS }) {
+export function issueBadge(postmanIdentity, { holder, nfts, now, days = BADGE_DAYS, account }) {
   if (!isPublicKey(holder)) throw new Error('Not a chat key.');
   const n = Math.floor(Number(nfts));
   if (!Number.isFinite(n) || n < 1) throw new Error('Only holders get a badge.');
+  if (account !== undefined && !ACCOUNT.test(account)) throw new Error('Not an account number.');
   const issued = Math.floor(now / 1000);
+  const tags = [['p', holder], ['nfts', String(n)], ['expiration', String(issued + days * 86400)]];
+  if (account) tags.push(['account', account]);
   return finalizeEvent(
     {
       kind: BADGE_KIND,
       created_at: issued,
       content: '',
-      tags: [['p', holder], ['nfts', String(n)], ['expiration', String(issued + days * 86400)]],
+      tags,
     },
     secretBytes(postmanIdentity),
   );
@@ -40,7 +48,8 @@ export function issueBadge(postmanIdentity, { holder, nfts, now, days = BADGE_DA
 
 /**
  * checkBadge — is this a genuine, current badge of the postman for this
- * chat key? → { ok: true, nfts, until } or { ok: false, problem }.
+ * chat key? → { ok: true, nfts, until, account } or { ok: false, problem }
+ * (`account` is null for badges without one).
  * `at` = the moment that matters (e.g. when the postman received a post).
  */
 export function checkBadge(input, { postmanPublicKey, holder, at }) {
@@ -58,7 +67,9 @@ export function checkBadge(input, { postmanPublicKey, holder, at }) {
     if (!Number.isInteger(nfts) || nfts < 1 || !Number.isFinite(until)) return { ok: false, problem: 'damaged' };
     if (at > until) return { ok: false, problem: 'expired' };
     if (at < badge.created_at * 1000 - 5 * 60 * 1000) return { ok: false, problem: 'not valid yet' };
-    return { ok: true, nfts, until };
+    const account = tag(badge, 'account') ?? null;
+    if (account !== null && !ACCOUNT.test(account)) return { ok: false, problem: 'damaged' };
+    return { ok: true, nfts, until, account };
   } catch {
     return { ok: false, problem: 'damaged' };
   }

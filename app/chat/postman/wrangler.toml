@@ -1,0 +1,23 @@
+# The blind postman's settings for Cloudflare (see README.md in this folder).
+# "devi-postman-test" is the TEST postman; the real one gets its own name later.
+name = "devi-postman-test"
+main = "src/worker.js"
+compatibility_date = "2026-08-01"
+
+# Logs switched off: Cloudflare keeps no record of the requests.
+[observability]
+enabled = false
+
+# The one post office, with its own small SQLite database (free plan).
+[[durable_objects.bindings]]
+name = "POSTOFFICE"
+class_name = "PostOffice"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PostOffice"]
+
+# Klever's crypto library has a file-reading helper the postman never uses;
+# point it to a stand-in that only says "no files here".
+[alias]
+"fs/promises" = "./src/noFiles.js"

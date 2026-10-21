@@ -678,3 +678,24 @@ contact requests, the voting threshold, how a removal vote is decided) are
 plain calculations in `chat/src/rules.js`. Details: `chat/README.md`; tests:
 `npm run test:chat`.
 
+### `chat/postman/` — the blind postman (stage 1, 21 Oct 2026)
+
+A Cloudflare Worker (`devi-postman-test` while testing) with ONE Durable
+Object that has its own small SQLite database; `src/postOffice.js` holds all
+its rules and runs unchanged in the tests with Node's built-in SQLite.
+Sign-in: the device asks for a sign-in text (one-time code, 5 minutes), the
+Klever extension signs it (not a transaction), the postman checks the
+signature with Klever's own `verifyWalletSignedMessage` and asks Klever's
+API (`/address/{klv1…}`, the `DVKNFT-1SW5` balance) how many Devikins the
+wallet holds, then issues a 7-day badge. One wallet = one account (found by
+a keyed fingerprint of the wallet; the address itself is never stored), up
+to 5 devices. Every device request is signed with its chat key (NIP-98).
+Players are found by nickname in a directory only signed-in players see; a
+contact request (sealed, with a growing pause) carries a **drop code**; 1:1
+envelopes are dropped with that code and no signature, so the postman
+doesn't learn who writes to whom; removing the code blocks the contact.
+1:1 envelopes are deleted when picked up (or after 30 days); group posts
+are stored once per group for 30 days (1 post per minute per player at the
+postman; the holdings-based limit is applied by members' Hubs). A daily
+alarm cleans up; accounts not signed in for 180 days are forgotten.
+

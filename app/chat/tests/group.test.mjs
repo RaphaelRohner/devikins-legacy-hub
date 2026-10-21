@@ -17,7 +17,7 @@ const T0 = 1_800_000_000_000;
 test('a badge proves "verified holder of N NFTs" for one chat key, without a wallet', () => {
   const badge = issueBadge(postman, { holder: alice.publicKey, nfts: 3, now: T0 });
   assert.ok(!JSON.stringify(badge).includes('klv1'), 'wallet in badge');
-  assert.deepEqual(checkBadge(badge, { postmanPublicKey: postman.publicKey, holder: alice.publicKey, at: T0 + HOUR }), { ok: true, nfts: 3, until: T0 + 7 * DAY - (T0 % 1000) });
+  assert.deepEqual(checkBadge(badge, { postmanPublicKey: postman.publicKey, holder: alice.publicKey, at: T0 + HOUR }), { ok: true, nfts: 3, until: T0 + 7 * DAY - (T0 % 1000), account: null });
   assert.equal(checkBadge(badge, { postmanPublicKey: postman.publicKey, holder: bob.publicKey, at: T0 }).problem, 'badge of someone else');
   assert.equal(checkBadge(badge, { postmanPublicKey: postman.publicKey, holder: alice.publicKey, at: T0 + 8 * DAY }).problem, 'expired');
   assert.equal(checkBadge(badge, { postmanPublicKey: eve.publicKey, holder: alice.publicKey, at: T0 }).problem, 'not from the postman');

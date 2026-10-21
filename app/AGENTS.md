@@ -10,7 +10,7 @@ rules in the KLV Signer project's `SIGNER-PROTOCOL.md`). Don't add key
 import/storage to the Hub. Transactions are testnet-only for now
 (`src/api/kleverTx.js`).
 
-## Chat (stage 0 since 21 Oct 2026)
+## Chat (stage 0 and 1 since 21 Oct 2026)
 
 The chat core lives in `chat/` (plain JavaScript, no screens, so it can move
 to another app; see `chat/README.md` and the design in the KLV Signer
@@ -20,4 +20,12 @@ coins, so the rule above still holds: no wallet keys in the Hub. Never use
 a wallet key as a chat key. No home-made encryption: sealing and signatures
 come from `nostr-tools` (Nostr's published NIP-44 / NIP-59 formats).
 Tests: `npm run test:chat`.
+
+The "blind postman" (stage 1, 21 Oct 2026) is in `chat/postman/`: a
+Cloudflare Worker with one Durable Object (SQLite). Its rules are in
+`chat/postman/src/postOffice.js`, tested on a computer by
+`chat/tests/postman.test.mjs`. Keep it blind: never store a wallet address
+or NFT count, never log (Cloudflare logs are off in `wrangler.toml`), and
+add to the "what it keeps" list in `chat/postman/README.md` before storing
+anything new. Raphael deploys it himself (README there).
 
