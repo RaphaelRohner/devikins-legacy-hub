@@ -32,7 +32,9 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Fixed to Ubuntu 24.04: GitHub moves "ubuntu-latest" to Ubuntu 26 from
+    # October 2026, and Playwright cannot install its browser helpers there yet.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: app
@@ -70,7 +72,9 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    # Fixed to Ubuntu 24.04: GitHub moves "ubuntu-latest" to Ubuntu 26 from
+    # October 2026, and Playwright cannot install its browser helpers there yet.
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
