@@ -662,3 +662,19 @@ ranges for numbers and all the possible values for categories, is saved
 as a doc in the claude.ai project for this app (`devikins-trait-survey.md`),
 not duplicated here — `schema.js` is the code's reflection of that
 research, so if you want the full original findings, that's where to look.
+
+## `chat/` — the chat core (stage 0, 21 Oct 2026)
+
+The logic of the coming chat, kept apart from the Hub's screens so it can be
+moved into another app as it is. Nothing in the Hub uses it yet. In short:
+each device gets a **chat key** (not a wallet key); 1:1 messages are sealed
+with Nostr's published formats (NIP-44 inside a NIP-59 "gift wrap"), so the
+"blind postman" (a Cloudflare Worker, coming in stage 1) only sees sealed
+envelopes; group posts are sealed once per group with a group key that is
+renewed whenever someone joins or is removed; the postman's signed **badge**
+("verified holder of N NFTs", no wallet in it) lets every member's Hub apply
+the posting limits. The agreed rules (posting limits, the pause between
+contact requests, the voting threshold, how a removal vote is decided) are
+plain calculations in `chat/src/rules.js`. Details: `chat/README.md`; tests:
+`npm run test:chat`.
+

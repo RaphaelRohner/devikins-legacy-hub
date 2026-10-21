@@ -44,6 +44,8 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
+      # The chat core's own tests (plain JavaScript, no browser needed).
+      - run: npm run test:chat
       - run: npx expo export -p web
       # The automatic website tests, on the build just made. They use
       # pretend servers only, so they never contact Klever or Moonlabs.

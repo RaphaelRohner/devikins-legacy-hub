@@ -17,6 +17,7 @@
     "expo-sqlite": "~57.0.3",
     "expo-status-bar": "~57.0.1",
     "fflate": "^0.8.3",
+    "nostr-tools": "2.25.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
@@ -33,7 +34,8 @@
     "test": "expo export -p web && playwright test",
     "test:quick": "playwright test",
     "test:report": "playwright show-report test-report",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "test:chat": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test chat/tests/*.test.mjs"
   },
   "private": true,
   "devDependencies": {
