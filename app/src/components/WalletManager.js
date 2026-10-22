@@ -912,44 +912,42 @@ export default function WalletManager({
   // comes back as null, not an error, so that's treated as a quiet
   // no-op rather than an "Import failed" alert over Raphael simply
   // backing out of the picker.
+  // The chat part of a website backup: asked for right after the file is
+  // read (before the long part of the import). → a note for the summary.
+  async function restoreChatFromBackup(chatFile) {
+    if (!chatFile.ok) return "Chat: the chat part of this backup didn't match its checksum (the file may be damaged), so it was skipped.";
+    let error = '';
+    for (;;) {
+      const password = await askChatPassword('import', error);
+      if (!password) return 'Chat: skipped (the backup still has it, for later).';
+      try {
+        setImportProgressLabel('Opening the chat...');
+        const { nickname } = await restoreChatBackupText(chatFile.text, password);
+        return `Chat: back${nickname ? ` as ${nickname}` : ''} - open it under Features > Chat.`;
+      } catch (e) {
+        if (e.wrongPassword) {
+          error = e.message;
+          continue;
+        }
+        return `Chat: ${e.message}`;
+      } finally {
+        setImportProgressLabel('Importing...');
+      }
+    }
+  }
+
   async function handleImport() {
     setIsImporting(true);
     setImportProgressLabel('Preparing import...');
     try {
       const result = await pickAndImportWalletSetsZip({
         onProgress: (progress) => setImportProgressLabel(describeTransferProgress(progress)),
+        onChatBackup: restoreChatFromBackup,
       });
       if (result === null) {
         return;
       }
-      const { importedNames, importedIds = [], loadedAtExportId = null, warnings, withdrawalsAdded, chatBackup = null } = result;
-      // The chat part (website backups): ask for its password and bring it back.
-      let chatNote = '';
-      if (chatBackup && !chatBackup.ok) {
-        chatNote = "Chat: the chat part of this backup didn't match its checksum (the file may be damaged), so it was skipped.";
-      } else if (chatBackup) {
-        let error = '';
-        for (;;) {
-          const password = await askChatPassword('import', error);
-          if (!password) {
-            chatNote = 'Chat: skipped (the backup still has it, for later).';
-            break;
-          }
-          try {
-            setImportProgressLabel('Opening the chat...');
-            const { nickname } = await restoreChatBackupText(chatBackup.text, password);
-            chatNote = `Chat: back${nickname ? ` as ${nickname}` : ''} - open it under Features > Chat.`;
-            break;
-          } catch (e) {
-            if (e.wrongPassword) {
-              error = e.message;
-              continue;
-            }
-            chatNote = `Chat: ${e.message}`;
-            break;
-          }
-        }
-      }
+      const { importedNames, importedIds = [], loadedAtExportId = null, warnings, withdrawalsAdded, chatNote = '' } = result;
       // Nothing in the set that's loaded now (a fresh visit, or right after
       // Reset All Data): load an imported set straight away - the one that
       // was loaded when the backup was made, else "My wallets", else the

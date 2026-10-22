@@ -258,7 +258,13 @@ function readZipEntries(bytes) {
   return entries;
 }
 
-export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
+/**
+ * `onChatBackup(chatFile)`: called right after the file is read, BEFORE the
+ * (possibly long) restoring of sets and pictures, when the backup holds a
+ * chat - so the password is asked straight away. Its answer (a short
+ * note) comes back as `chatNote`.
+ */
+export async function pickAndImportWalletSetsZip({ onProgress, onChatBackup } = {}) {
   const file = await pickZipFile();
   if (!file) return null;
   onProgress?.({ phase: 'unzipping', current: 0, total: 1 });
@@ -296,6 +302,9 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
     }
     groups.set(folder, group);
   }
+
+  let chatNote = '';
+  if (chatFile && onChatBackup) chatNote = await onChatBackup(chatFile);
 
   const importedNames = [];
   const importedIds = [];
@@ -382,7 +391,5 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
     }
   }
 
-  // The chat part (locked with a password) is handed back as it is: the
-  // screen asks for the password and restores it (chatBackup.web.js).
-  return { importedNames, importedIds, loadedAtExportId, warnings, withdrawalsAdded, chatBackup: chatFile };
+  return { importedNames, importedIds, loadedAtExportId, warnings, withdrawalsAdded, chatNote };
 }
