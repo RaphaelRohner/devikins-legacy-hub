@@ -89,6 +89,13 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
   const first = async (sql, params = []) => (await all(sql, params))[0] ?? null;
   const run = (sql, params = []) => db.runAsync(sql, params);
 
+  // Chats started with an earlier version: add the columns added since
+  // (CREATE TABLE IF NOT EXISTS leaves an existing table as it was).
+  const columns = new Set((await all('PRAGMA table_info(chat_contacts)')).map((c) => c.name));
+  for (const [name, type] of [['ended', 'INTEGER NOT NULL DEFAULT 0'], ['before_block', 'TEXT']]) {
+    if (!columns.has(name)) await db.execAsync(`ALTER TABLE chat_contacts ADD COLUMN ${name} ${type}`);
+  }
+
   async function getMe(k) {
     const r = await first('SELECT v FROM chat_me WHERE k = ?', [k]);
     return r ? JSON.parse(r.v) : null;
@@ -526,8 +533,25 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     } catch {
       throw new Error("The chat in this backup can't be read.");
     }
-    for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me']) await run(`DELETE FROM ${table}`);
-    for (const [k, v] of Object.entries(data.me)) await setMe(k, v);
+    const wipe = async () => {
+      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me']) await run(`DELETE FROM ${table}`);
+    };
+    await wipe();
+    try {
+      await restoreRows(data);
+      // The chat key and sign-in last: only a complete restore counts.
+      for (const [k, v] of Object.entries(data.me)) await setMe(k, v);
+    } catch (e) {
+      await wipe().catch(() => {});
+      await setMe('identity', identity).catch(() => {});
+      throw new Error(`The chat couldn't be brought back (${e?.message || e}). Nothing was changed.`);
+    }
+    identity = restored;
+    postman = createPostmanClient({ baseUrl: postmanUrl, identity, fetchFn, now });
+    return status();
+  }
+
+  async function restoreRows(data) {
     const idMap = new Map();
     for (const c of data.contacts) {
       if (typeof c.nickname !== 'string' || !Object.values(STATUS).includes(c.status)) continue;
@@ -545,12 +569,29 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       await run('INSERT INTO chat_messages (contact, mine, text, sent_at, received_at) VALUES (?, ?, ?, ?, ?)',
         [contact, m.mine ? 1 : 0, m.text, Number(m.sent_at) || 0, Number(m.received_at) || 0]);
     }
-    identity = restored;
-    postman = createPostmanClient({ baseUrl: postmanUrl, identity, fetchFn, now });
-    return status();
+  }
+
+  /**
+   * Removes the chat from THIS browser only: the postman isn't told, so the
+   * same chat key keeps working where else it is (e.g. after bringing the
+   * chat into another browser with a backup). A new, unused chat key is
+   * made here.
+   */
+  async function forgetHere() {
+    leaving = true;
+    try {
+      if (mailRun) await mailRun.catch(() => {});
+      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me']) await run(`DELETE FROM ${table}`);
+      identity = createIdentity();
+      await setMe('identity', identity);
+      postman = createPostmanClient({ baseUrl: postmanUrl, identity, fetchFn, now });
+    } finally {
+      leaving = false;
+    }
   }
 
   return {
+    forgetHere,
     hasChat,
     backupData,
     restoreBackupData,

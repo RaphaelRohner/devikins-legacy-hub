@@ -450,9 +450,18 @@ export default function ChatView({ onClose }) {
             kept only in this browser.
           </Text>
           <TouchableOpacity
-            onPress={() => confirm('Leave the chat in this browser?', 'Your contacts and messages here are deleted, and the postman forgets this browser. You can sign in again later (your nickname is freed if this was your only browser).', 'Leave', () => act(async () => {
-              await messenger.leave();
-            }))}
+            onPress={() => Alert.alert(
+              'Leave the chat in this browser?',
+              'Your contacts and messages here are deleted.\n\n'
+                + '"Only this browser": the chat keeps working in the other browser where you brought it with a backup.\n\n'
+                + '"Leave the chat": the postman forgets this chat key everywhere, and your nickname is freed if this was its only browser. You can sign in again later.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Leave the chat', style: 'destructive', onPress: () => act(() => messenger.leave()) },
+                { text: 'Only this browser', onPress: () => act(() => messenger.forgetHere()) },
+              ],
+            )}
+            testID="chat-leave"
           >
             <Text style={[styles.note, { color: colors.cancelText, textDecorationLine: 'underline', marginTop: 8 }]}>Leave the chat in this browser</Text>
           </TouchableOpacity>

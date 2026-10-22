@@ -359,3 +359,61 @@ test('the chat backup: locked with a password, brought back in another browser, 
   await bob.sendMessage(aliceOnBob.id, 'got it');
   assert.equal((await moved.checkMail()).messages, 1);
 });
+
+test('a chat started with an earlier version (no before_block column) still works and backs up fine', async () => {
+  const { player, clock } = world();
+  const alice = await player('Alice');
+  const bob = await player('Bob');
+  await connect(alice, bob, clock);
+  // Make Bob's database look like one made by the earlier version, then start his messenger again
+  const rows = await bob.db.getAllAsync('SELECT * FROM chat_contacts');
+  await bob.db.execAsync('DROP TABLE chat_contacts; CREATE TABLE chat_contacts (id INTEGER PRIMARY KEY AUTOINCREMENT, nickname TEXT NOT NULL, devices TEXT NOT NULL, their_code TEXT, my_code TEXT, status TEXT NOT NULL, created INTEGER NOT NULL, last_at INTEGER NOT NULL, unread INTEGER NOT NULL DEFAULT 0, ended INTEGER NOT NULL DEFAULT 0);');
+  for (const r of rows) {
+    await bob.db.runAsync('INSERT INTO chat_contacts (id, nickname, devices, their_code, my_code, status, created, last_at, unread, ended) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [r.id, r.nickname, r.devices, r.their_code, r.my_code, r.status, r.created, r.last_at, r.unread, r.ended]);
+  }
+  const { createMessenger: make } = await import('../src/messenger.js');
+  const again = await make({ db: bob.db, postmanUrl: 'https://postman.test', fetchFn: undefined });
+  const [c] = await again.listContacts();
+  assert.equal(c.nickname, 'Alice');
+  const data = await again.backupData();
+  assert.equal(data.contacts.length, 1);
+  assert.ok('before_block' in data.contacts[0]);
+});
+
+test('a restore that fails half-way leaves no half chat behind', async () => {
+  const { blank } = world();
+  const target = await blank();
+  const before = target.identity.publicKey;
+  const { createIdentity } = await import('../src/identity.js');
+  const bad = { kind: 'chat', version: 1, me: { identity: createIdentity(), nickname: 'X', account: 'ab'.repeat(16) }, contacts: [{ id: 1, nickname: 'Y', devices: '[]', status: 'accepted', created: 1, last_at: 1 }], messages: [{ contact: 1, text: { not: 'text' } }] };
+  // a message that can't be stored: make the database refuse it
+  const realRun = target.db.runAsync.bind(target.db);
+  target.db.runAsync = async (sql, params) => {
+    if (sql.startsWith('INSERT INTO chat_contacts')) throw new Error('disk full');
+    return realRun(sql, params);
+  };
+  await assert.rejects(target.restoreBackupData(bad), /couldn't be brought back/);
+  target.db.runAsync = realRun;
+  assert.equal(await target.hasChat(), false);
+  assert.equal(target.identity.publicKey, before);
+  assert.equal((await target.status()).state, 'signed-out');
+});
+
+test('"only this browser" removes the chat here and leaves it working in the other browser', async () => {
+  const { lockBackup, unlockBackup } = await import('../src/backup.js');
+  const { player, blank, clock } = world();
+  const alice = await player('Alice');
+  const bob = await player('Bob');
+  await connect(alice, bob, clock);
+  const moved = await blank();
+  await moved.restoreBackupData(await unlockBackup(await lockBackup(await alice.backupData(), 'password1', { rounds: 100000 }), 'password1'));
+  await alice.forgetHere();
+  assert.equal(await alice.hasChat(), false);
+  assert.notEqual(alice.identity.publicKey, moved.identity.publicKey);
+  const c = (await moved.listContacts())[0];
+  await moved.sendMessage(c.id, 'still here');
+  assert.equal((await bob.checkMail()).messages, 1);
+  await bob.sendMessage((await bob.listContacts())[0].id, 'hi');
+  assert.equal((await moved.checkMail()).messages, 1);
+});
