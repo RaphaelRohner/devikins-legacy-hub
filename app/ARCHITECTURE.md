@@ -711,3 +711,12 @@ and keeps contacts and history in its own SQLite file `chat.db`
 is open it collects mail every 10 seconds. Signing a text with the
 extension: `signTextWithExtension` in `src/api/kleverExtension.web.js`.
 
+Chat in the backup (stage 2b): "Export all sets" on the website asks
+whether to include the chat (ChatBackupPasswordBox.js). If yes, the chat
+key, contacts and messages (`messenger.backupData()`) are locked with the
+chosen password (`chat/src/backup.js`: PBKDF2-SHA-256, 600,000 rounds →
+AES-256-GCM, Web Crypto) and stored as `chat-backup.json` at the top of
+the zip. Importing hands that file back (`exportImport.web.js`), asks for
+the password and restores it with `messenger.restoreBackupData()` - only
+into a browser without a chat of its own. The phone app ignores the file.
+

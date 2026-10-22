@@ -68,7 +68,10 @@ window) as a brand-new visitor:
   block and unblock; the history is still there after reloading. Without
   the extension, or with a wallet holding no Devikins, the chat says
   what's needed. The postman in these tests is the real postman code
-  (`tests/web/chatPostman.mjs` runs it locally).
+  (`tests/web/chatPostman.mjs` runs it locally). "Export all sets" offers
+  to include the chat with a password (typed twice); importing the backup
+  in a new browser asks for it (a wrong one is refused) and the
+  conversation goes on there.
 
 They never contact Klever, Moonlabs or the relay: every outside request
 is answered by pretend servers with six made-up NFTs
@@ -490,6 +493,11 @@ wallet - see the Signer's TESTING.md)
       transaction), choose a nickname, find another player, send a contact
       request; once they accept, write both ways. Block, then unblock. Reload
       the page: contacts and messages are still there.
+- [ ] **W6. Chat in the backup:** Wallets > Export all sets offers to
+      include the chat with a password. In another browser (without a
+      chat), Import Set(s) with that file asks for the password and brings
+      the chat back (Features > Chat shows your nickname, contacts and
+      messages). A wrong password is refused; Skip leaves the chat out.
 
 ---
 

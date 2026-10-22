@@ -66,7 +66,14 @@ function world() {
     assert.equal((await m.setNickname(nickname)).state, 'ready');
     return m;
   }
-  return { clock, network, player };
+  /** A browser without a chat yet (not signed in). */
+  async function blank() {
+    const db = localDb();
+    const m = await createMessenger({ db, postmanUrl: BASE, fetchFn, now: () => clock.t });
+    m.db = db;
+    return m;
+  }
+  return { clock, network, player, blank };
 }
 
 test('request → accept → messages both ways; history stays on each device', async () => {
@@ -314,4 +321,41 @@ test('look-alike spellings find the player, and checks overlap safely', async ()
   const [a, b] = await Promise.all([devi.checkMail(), devi.checkMail()]);
   assert.equal(a.requests + b.requests, 2); // the same run, counted once each caller
   assert.equal((await devi.listContacts()).length, 1);
+});
+
+test('the chat backup: locked with a password, brought back in another browser, chatting goes on', async () => {
+  const { lockBackup, unlockBackup } = await import('../src/backup.js');
+  const { player, blank, clock } = world();
+  const alice = await player('Alice');
+  const bob = await player('Bob');
+  await connect(alice, bob, clock);
+  await alice.sendMessage((await alice.listContacts())[0].id, 'before the move');
+
+  const locked = JSON.stringify(await lockBackup(await alice.backupData(), 'correct horse', { rounds: 100000 }));
+  assert.ok(!locked.includes('before the move'));
+  assert.ok(!locked.includes((await identityOf(alice)).secretKey));
+  await assert.rejects(unlockBackup(JSON.parse(locked), 'wrong horse'), (e) => e.wrongPassword === true);
+  const tampered = JSON.parse(locked);
+  tampered.data = tampered.data.slice(0, -8) + 'AAAAAAA=';
+  await assert.rejects(unlockBackup(tampered, 'correct horse'), (e) => e.wrongPassword === true);
+  await assert.rejects(lockBackup({}, 'short'), /at least 8/);
+
+  // Not into a browser that has its own chat
+  await assert.rejects(bob.restoreBackupData(await unlockBackup(JSON.parse(locked), 'correct horse')), /already has a chat/);
+
+  // A new browser: everything comes back, and the conversation goes on
+  const moved = await blank();
+  assert.equal(await moved.hasChat(), false);
+  const s = await moved.restoreBackupData(await unlockBackup(JSON.parse(locked), 'correct horse'));
+  assert.deepEqual([s.state, s.nickname], ['ready', 'Alice']);
+  assert.equal(moved.identity.publicKey, alice.identity.publicKey);
+  const bobThere = (await moved.listContacts())[0];
+  assert.equal(bobThere.nickname, 'Bob');
+  assert.deepEqual((await moved.messages(bobThere.id)).map((m) => m.text), ['before the move']);
+  await moved.sendMessage(bobThere.id, 'hello from my new browser');
+  await bob.checkMail();
+  const aliceOnBob = (await bob.listContacts())[0];
+  assert.deepEqual((await bob.messages(aliceOnBob.id)).map((m) => m.text), ['before the move', 'hello from my new browser']);
+  await bob.sendMessage(aliceOnBob.id, 'got it');
+  assert.equal((await moved.checkMail()).messages, 1);
 });

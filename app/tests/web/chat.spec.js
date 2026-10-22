@@ -9,6 +9,7 @@
  * Klever's own library, so the sign-in check is the real one too.
  */
 const { test, expect } = require('@playwright/test');
+const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { installFakeServers } = require('./fakeServers');
@@ -39,7 +40,7 @@ async function startPostman() {
 }
 
 /** One player: a browser context with the fake servers, the postman and a pretend Klever extension. */
-async function openPlayer(browser, postman, wallet, { extension = true } = {}) {
+async function openPlayer(browser, postman, wallet, { extension = true, openChat = true } = {}) {
   const context = await browser.newContext();
   await installFakeServers(context);
   const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'Content-Type, Authorization', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
@@ -65,9 +66,9 @@ async function openPlayer(browser, postman, wallet, { extension = true } = {}) {
       window.kleverHub = { initialize: async () => {} };
     }, wallet.address);
   }
-  await openHub(page);
-  await openMenuEntry(page, 'Chat');
-  return { context, page };
+  const dialogs = await openHub(page);
+  if (openChat) await openMenuEntry(page, 'Chat');
+  return { context, page, dialogs };
 }
 
 async function signInAs(page, nickname) {
@@ -155,5 +156,71 @@ test('without the Klever extension, or without Devikins, the chat explains what 
   await empty.page.getByTestId('chat-sign-in').click();
   await expect(empty.page.getByTestId('chat-error')).toContainText('holds no Devikins');
   await empty.context.close();
+  postman.stop();
+});
+
+test('the chat goes into "Export all sets" with a password and comes back in a new browser', async ({ browser }, testInfo) => {
+  test.setTimeout(180_000);
+  const postman = await startPostman();
+  const alice = await openPlayer(browser, postman, await postman.newWallet(3));
+  const bob = await openPlayer(browser, postman, await postman.newWallet(5));
+  await signInAs(alice.page, 'Alice');
+  await signInAs(bob.page, 'Bob');
+  await alice.page.getByTestId('chat-search').fill('Bob');
+  await alice.page.getByTestId('chat-search-button').click();
+  await alice.page.getByTestId('chat-ask').click();
+  await bob.page.getByTestId('chat-accept').click();
+  await expect(alice.page.getByText('waiting for answer')).toHaveCount(0);
+  await alice.page.getByTestId('chat-contact').click();
+  await alice.page.getByTestId('chat-draft').fill('Before the backup');
+  await alice.page.getByTestId('chat-send').click();
+  await expect(alice.page.getByText('Before the backup')).toBeVisible();
+
+  // Export all sets: the chat is offered, with a password (typed twice)
+  await alice.page.getByText('‹').first().click();
+  await alice.page.getByText('‹').first().click();
+  await openMenuEntry(alice.page, 'Wallets');
+  await alice.page.getByText('Export all sets').click();
+  const box = alice.page.getByTestId('chat-backup-box');
+  await expect(box).toContainText('Include your chat?');
+  await alice.page.getByTestId('chat-backup-password').fill('my chat secret');
+  await alice.page.getByTestId('chat-backup-repeat').fill('my chat secrex');
+  await alice.page.getByTestId('chat-backup-ok').click();
+  await expect(alice.page.getByTestId('chat-backup-problem')).toContainText("aren't the same");
+  await alice.page.getByTestId('chat-backup-repeat').fill('my chat secret');
+  const [download] = await Promise.all([alice.page.waitForEvent('download'), alice.page.getByTestId('chat-backup-ok').click()]);
+  const zipPath = testInfo.outputPath('backup-with-chat.zip');
+  await download.saveAs(zipPath);
+  const zipText = fs.readFileSync(zipPath).toString('latin1');
+  expect(zipText).toContain('chat-backup.json');
+  expect(zipText).not.toContain('Before the backup'); // locked, not readable
+
+  // A new browser: import asks for the chat's password (a wrong one first)
+  const moved = await openPlayer(browser, postman, null, { extension: false, openChat: false });
+  await openMenuEntry(moved.page, 'Wallets');
+  const [chooser] = await Promise.all([moved.page.waitForEvent('filechooser'), moved.page.getByText('Import Set(s)').click()]);
+  await chooser.setFiles(zipPath);
+  await expect(moved.page.getByTestId('chat-backup-box')).toContainText('Bring your chat back?');
+  await moved.page.getByTestId('chat-backup-password').fill('not my password');
+  await moved.page.getByTestId('chat-backup-ok').click();
+  await expect(moved.page.getByTestId('chat-backup-problem')).toContainText('Wrong password');
+  await moved.page.getByTestId('chat-backup-password').fill('my chat secret');
+  await moved.page.getByTestId('chat-backup-ok').click();
+  await expect.poll(() => moved.dialogs.join('\n')).toMatch(/Chat: back as Alice/);
+
+  // The chat is there, and the conversation goes on
+  await moved.page.getByText('‹').first().click();
+  await openMenuEntry(moved.page, 'Chat');
+  await expect(moved.page.getByText('Chat · Alice')).toBeVisible();
+  await moved.page.getByTestId('chat-contact').click();
+  await expect(moved.page.getByText('Before the backup')).toBeVisible();
+  await bob.page.getByTestId('chat-contact').click();
+  await bob.page.getByTestId('chat-draft').fill('Welcome to your new browser');
+  await bob.page.getByTestId('chat-send').click();
+  await expect(moved.page.getByText('Welcome to your new browser')).toBeVisible();
+
+  await alice.context.close();
+  await bob.context.close();
+  await moved.context.close();
   postman.stop();
 });

@@ -109,6 +109,8 @@ import { IN_GAME_WALLET_NAME, MY_WALLET_NAME, JUST_LOOKING_NAME } from '../const
 import { GUIDE_KEYS } from './GettingStartedCard';
 import { useTheme } from '../context/ThemeContext';
 import QrScannerModal from './QrScannerModal';
+import ChatBackupPasswordBox from './ChatBackupPasswordBox';
+import { hasChatToBackUp, makeChatBackupText, restoreChatBackupText } from '../api/chatBackup';
 // Website only: "Connect Klever Extension" reads the address of the
 // wallet open in the Klever browser extension and adds it here, so nobody
 // has to copy and paste it. Only the public address is read.
@@ -856,11 +858,33 @@ export default function WalletManager({
     }
   }
 
+  // The chat's password box (website; see ChatBackupPasswordBox.js).
+  // askChatPassword shows it and waits: → the password, or null.
+  const [chatPasswordAsk, setChatPasswordAsk] = useState(null);
+  function askChatPassword(mode, error = '') {
+    return new Promise((resolve) => setChatPasswordAsk({ mode, error, resolve }));
+  }
+  function answerChatPassword(value) {
+    const ask = chatPasswordAsk;
+    setChatPasswordAsk(null);
+    ask?.resolve(value);
+  }
+
   async function handleExportAllSets() {
     setIsExportingId('all');
     setExportProgressLabel('Preparing export...');
     try {
+      // The chat (website) goes in too, locked with a password - if wanted.
+      let chatBackupText = null;
+      if (await hasChatToBackUp()) {
+        const password = await askChatPassword('export');
+        if (password) {
+          setExportProgressLabel('Locking the chat...');
+          chatBackupText = await makeChatBackupText(password);
+        }
+      }
       const { fileUri, fileName } = await exportAllWalletSets(walletSets, {
+        chatBackupText,
         onProgress: (progress) => setExportProgressLabel(describeTransferProgress(progress)),
       });
       await presentSaveOrShareChoice(fileUri, fileName);
@@ -898,7 +922,34 @@ export default function WalletManager({
       if (result === null) {
         return;
       }
-      const { importedNames, importedIds = [], loadedAtExportId = null, warnings, withdrawalsAdded } = result;
+      const { importedNames, importedIds = [], loadedAtExportId = null, warnings, withdrawalsAdded, chatBackup = null } = result;
+      // The chat part (website backups): ask for its password and bring it back.
+      let chatNote = '';
+      if (chatBackup && !chatBackup.ok) {
+        chatNote = "Chat: the chat part of this backup didn't match its checksum (the file may be damaged), so it was skipped.";
+      } else if (chatBackup) {
+        let error = '';
+        for (;;) {
+          const password = await askChatPassword('import', error);
+          if (!password) {
+            chatNote = 'Chat: skipped (the backup still has it, for later).';
+            break;
+          }
+          try {
+            setImportProgressLabel('Opening the chat...');
+            const { nickname } = await restoreChatBackupText(chatBackup.text, password);
+            chatNote = `Chat: back${nickname ? ` as ${nickname}` : ''} - open it under Features > Chat.`;
+            break;
+          } catch (e) {
+            if (e.wrongPassword) {
+              error = e.message;
+              continue;
+            }
+            chatNote = `Chat: ${e.message}`;
+            break;
+          }
+        }
+      }
       // Nothing in the set that's loaded now (a fresh visit, or right after
       // Reset All Data): load an imported set straight away - the one that
       // was loaded when the backup was made, else "My wallets", else the
@@ -975,7 +1026,8 @@ export default function WalletManager({
       if (hasTracker) {
         message += `${message ? '\n\n' : ''}Withdrawals tracker: ${withdrawalsAdded} NFT(s) added to the list.`;
       }
-      Alert.alert(importedNames.length > 0 || hasTracker ? 'Import complete' : 'Nothing imported', message);
+      if (chatNote) message += `${message ? '\n\n' : ''}${chatNote}`;
+      Alert.alert(importedNames.length > 0 || hasTracker || chatNote.startsWith('Chat: back') ? 'Import complete' : 'Nothing imported', message);
     } catch (err) {
       reportSetActionError(err, 'Importing that file');
     } finally {
@@ -1532,6 +1584,8 @@ export default function WalletManager({
           ) : null}
         </View>
       </ScrollView>
+
+      <ChatBackupPasswordBox ask={chatPasswordAsk} onAnswer={answerChatPassword} />
 
       {/* "What's this wallet?" - asked right after adding one (14 Oct 2026). */}
       <Modal visible={!!namingWallet} transparent animationType="fade" onRequestClose={() => finishNaming(null)}>

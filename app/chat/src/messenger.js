@@ -25,7 +25,7 @@
  */
 
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
-import { createIdentity, isPublicKey } from './identity.js';
+import { createIdentity, isPublicKey, secretBytes } from './identity.js';
 import { sealDirect, openDirect } from './direct.js';
 import { cleanText, nicknameKey } from './rules.js';
 import { createPostmanClient } from './client.js';
@@ -491,7 +491,69 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     leaving = false;
   }
 
+  // --- backup (locked with a password by backup.js) ------------------------
+
+  /** True if there's a chat here worth backing up (signed in once, or contacts). */
+  async function hasChat() {
+    return !!(await getMe('account')) || (await all('SELECT id FROM chat_contacts LIMIT 1')).length > 0;
+  }
+
+  /** Everything needed to bring this chat back in another browser. */
+  async function backupData() {
+    const me = {};
+    for (const r of await all('SELECT k, v FROM chat_me')) me[r.k] = JSON.parse(r.v);
+    return {
+      kind: 'chat',
+      version: 1,
+      me,
+      contacts: await all('SELECT * FROM chat_contacts ORDER BY id'),
+      messages: await all('SELECT * FROM chat_messages ORDER BY id'),
+    };
+  }
+
+  /**
+   * Brings a chat back from backupData(). Only into a browser without a
+   * chat of its own (one browser, one chat key). → status()
+   */
+  async function restoreBackupData(data) {
+    if (await hasChat()) throw new Error('This browser already has a chat. Leave it first (Chat > Leave the chat in this browser) to bring back the one from the backup.');
+    if (!data || data.kind !== 'chat' || data.version !== 1 || !data.me?.identity || !Array.isArray(data.contacts) || !Array.isArray(data.messages)) {
+      throw new Error("The chat in this backup can't be read.");
+    }
+    const restored = data.me.identity;
+    try {
+      secretBytes(restored); // a damaged chat key is refused
+    } catch {
+      throw new Error("The chat in this backup can't be read.");
+    }
+    for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me']) await run(`DELETE FROM ${table}`);
+    for (const [k, v] of Object.entries(data.me)) await setMe(k, v);
+    const idMap = new Map();
+    for (const c of data.contacts) {
+      if (typeof c.nickname !== 'string' || !Object.values(STATUS).includes(c.status)) continue;
+      const r = await run(
+        `INSERT INTO chat_contacts (nickname, devices, their_code, my_code, status, created, last_at, unread, ended, before_block)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [c.nickname, typeof c.devices === 'string' ? c.devices : '[]', c.their_code ?? null, c.my_code ?? null, c.status,
+          Number(c.created) || 0, Number(c.last_at) || 0, Number(c.unread) || 0, c.ended ? 1 : 0, c.before_block ?? null],
+      );
+      idMap.set(c.id, r.lastInsertRowId);
+    }
+    for (const m of data.messages) {
+      const contact = idMap.get(m.contact);
+      if (!contact || typeof m.text !== 'string') continue;
+      await run('INSERT INTO chat_messages (contact, mine, text, sent_at, received_at) VALUES (?, ?, ?, ?, ?)',
+        [contact, m.mine ? 1 : 0, m.text, Number(m.sent_at) || 0, Number(m.received_at) || 0]);
+    }
+    identity = restored;
+    postman = createPostmanClient({ baseUrl: postmanUrl, identity, fetchFn, now });
+    return status();
+  }
+
   return {
+    hasChat,
+    backupData,
+    restoreBackupData,
     get identity() { return { publicKey: identity.publicKey }; },
     status,
     startSignIn,

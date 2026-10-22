@@ -42,6 +42,7 @@ import {
 } from '../db/database';
 import { MY_WALLETS_SET_KEY } from '../constants/idList';
 import { ensureCachedImage, putCachedImageBytes, extensionFromUrl } from './webImageCache';
+import { CHAT_BACKUP_FILE_NAME } from './chatBackup';
 
 const NFT_KINDS = ['devikin', 'weapon', 'equipment'];
 const PARALLEL_DOWNLOADS = 6;
@@ -162,7 +163,11 @@ export async function exportWalletSet(walletSet, { onProgress } = {}) {
   return { fileUri, fileName: `devikins-${sanitizeForFileName(walletSet.name)}-${timestampForFileName()}.zip` };
 }
 
-export async function exportAllWalletSets(walletSets, { onProgress } = {}) {
+/**
+ * The full backup. `chatBackupText`: the chat, already locked with its
+ * password (chatBackup.web.js), or nothing to leave the chat out.
+ */
+export async function exportAllWalletSets(walletSets, { onProgress, chatBackupText } = {}) {
   const files = {};
   const setSummaries = [];
   for (const walletSet of walletSets) {
@@ -173,6 +178,7 @@ export async function exportAllWalletSets(walletSets, { onProgress } = {}) {
   // backup only - see database.js dumpWithdrawalTracker.
   const tracker = await dumpWithdrawalTracker();
   if (tracker) files['withdrawals.json'] = strToU8(JSON.stringify(tracker));
+  if (chatBackupText) files[CHAT_BACKUP_FILE_NAME] = strToU8(chatBackupText);
   onProgress?.({ phase: 'writing' });
   const fileUri = buildZip(files, setSummaries);
   return { fileUri, fileName: `devikins-all-sets-${timestampForFileName()}.zip` };
@@ -261,7 +267,13 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
 
   const groups = new Map();
   let trackerFile = null;
+  let chatFile = null;
   for (const entry of readZipEntries(bytes)) {
+    if (entry.name === CHAT_BACKUP_FILE_NAME && entry.method === 0) {
+      const data = bytes.subarray(entry.dataOffset, entry.dataOffset + entry.size);
+      chatFile = { text: strFromU8(data), ok: crc32Bytes(data) === entry.crc32 };
+      continue;
+    }
     const slash = entry.name.indexOf('/');
     if (entry.name === 'withdrawals.json' && entry.method === 0) {
       const data = bytes.subarray(entry.dataOffset, entry.dataOffset + entry.size);
@@ -370,5 +382,7 @@ export async function pickAndImportWalletSetsZip({ onProgress } = {}) {
     }
   }
 
-  return { importedNames, importedIds, loadedAtExportId, warnings, withdrawalsAdded };
+  // The chat part (locked with a password) is handed back as it is: the
+  // screen asks for the password and restores it (chatBackup.web.js).
+  return { importedNames, importedIds, loadedAtExportId, warnings, withdrawalsAdded, chatBackup: chatFile };
 }

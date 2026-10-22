@@ -11,3 +11,4 @@ export * from './rules.js';
 export { createFakePostman } from './fakePostman.js';
 export { createPostmanClient } from './client.js';
 export { createMessenger, STATUS as CONTACT_STATUS } from './messenger.js';
+export { lockBackup, unlockBackup, MIN_PASSWORD_LENGTH } from './backup.js';

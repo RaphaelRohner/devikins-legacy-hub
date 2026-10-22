@@ -111,6 +111,15 @@ export default function ChatView({ onClose }) {
     return () => sub.remove();
   }, [openId]);
 
+  // Once a contact can be reached again (e.g. they unblocked you), the
+  // old "isn't receiving your messages" error line goes away too.
+  const openEnded = openId ? contacts.find((c) => c.id === openId)?.ended : undefined;
+  const wasEnded = useRef(false);
+  useEffect(() => {
+    if (wasEnded.current && openEnded === false) setError('');
+    wasEnded.current = !!openEnded;
+  }, [openEnded]);
+
   async function act(fn) {
     setError('');
     setBusy(true);
