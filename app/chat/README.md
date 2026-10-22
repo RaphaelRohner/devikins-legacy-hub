@@ -13,6 +13,9 @@ What's in here, in plain words:
 | `src/group.js` | **Group messages**: one sealed envelope per message for the whole group (stored once per group, not once per member), with a group key that is renewed whenever someone joins or is removed (new members only read from the moment they join). |
 | `src/badge.js` | The postman's **signed badge** ("this chat key belongs to a verified holder of N NFTs, valid until …") – no wallet inside. |
 | `src/rules.js` | The agreed **rules** as plain calculations: posting limits by holdings, the pause between contact requests, the automatic voting threshold, and how a removal vote is decided. |
+| `src/httpAuth.js` | Signs each request to the postman with the device's chat key (Nostr's published "HTTP Auth", NIP-98); the postman checks it with the same file. |
+| `src/client.js` | One small function per postman request. |
+| `src/messenger.js` | One device's chat, ready for screens: sign-in, nickname, finding players, contact requests with **drop codes**, accept / decline / block / unblock, sending and collecting 1:1 messages, history in a local database (passed in, expo-sqlite style). |
 | `src/fakePostman.js` | A pretend postman for the automatic tests of the core. |
 | `postman/` | The **real postman**, a Cloudflare Worker (stage 1) – see `postman/README.md`: what it keeps, its requests, and how to put it on Cloudflare. |
 

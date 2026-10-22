@@ -97,6 +97,7 @@ import BreedingHelper from './src/components/BreedingHelper';
 import KleverscanView from './src/components/KleverscanView';
 import { setKleverscanOpener } from './src/api/openKleverscan';
 import SignerTestView from './src/components/SignerTestView';
+import ChatView from './src/components/ChatView';
 import DonateView from './src/components/DonateView';
 import AboutView from './src/components/AboutView';
 import WithdrawalTrackerView from './src/components/WithdrawalTrackerView';
@@ -673,7 +674,7 @@ function AppContent() {
         setIsMenuOpen(false);
         return true; // handled - don't also exit the app
       }
-      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help' || currentScreen === 'breeding' || currentScreen === 'kleverscan' || currentScreen === 'signer' || currentScreen === 'withdrawals' || currentScreen === 'about' || currentScreen === 'donate') {
+      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help' || currentScreen === 'breeding' || currentScreen === 'kleverscan' || currentScreen === 'signer' || currentScreen === 'withdrawals' || currentScreen === 'about' || currentScreen === 'donate' || currentScreen === 'chat') {
         goToScreen(lastCollectionScreen);
         return true; // handled - don't also exit the app
       }
@@ -1374,6 +1375,16 @@ Continue anyway?`
             handleFetchNowFromWallets();
           }}
         />
+      </SafeAreaView>
+    );
+  }
+
+  // Chat (website only for now; see ChatView.web.js and app/chat).
+  if (currentScreen === 'chat') {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <ChatView onClose={() => goToScreen(lastCollectionScreen)} />
       </SafeAreaView>
     );
   }

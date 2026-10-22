@@ -699,3 +699,15 @@ are stored once per group for 30 days (1 post per minute per player at the
 postman; the holdings-based limit is applied by members' Hubs). A daily
 alarm cleans up; accounts not signed in for 180 days are forgotten.
 
+### The Chat screen (stage 2a, 22 Oct 2026)
+
+Website only for now: Features > Chat (`src/components/ChatView.web.js`;
+the phone gets `ChatView.js`, a placeholder, and no menu entry). The screen
+holds no chat logic: `chat/src/messenger.js` does everything (sign-in with
+the Klever extension's "sign a text", nickname, directory, contact requests
+with drop codes, accept / decline / block / unblock / remove, 1:1 messages)
+and keeps contacts and history in its own SQLite file `chat.db`
+(`src/api/chatStore.js`), separate from the wallet sets. While the screen
+is open it collects mail every 10 seconds. Signing a text with the
+extension: `signTextWithExtension` in `src/api/kleverExtension.web.js`.
+

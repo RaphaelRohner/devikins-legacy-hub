@@ -9,3 +9,5 @@ export {
 export { issueBadge, checkBadge, BADGE_DAYS } from './badge.js';
 export * from './rules.js';
 export { createFakePostman } from './fakePostman.js';
+export { createPostmanClient } from './client.js';
+export { createMessenger, STATUS as CONTACT_STATUS } from './messenger.js';

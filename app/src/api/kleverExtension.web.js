@@ -105,3 +105,28 @@ export async function sendKlvWithExtension(receiver, klvAmount) {
     throw new Error(`The extension could not send it: ${msg}`);
   }
 }
+
+/**
+ * Asks the extension to SIGN A TEXT with the selected wallet (used by the
+ * chat sign-in: it proves the wallet holds Devikins). This is not a
+ * transaction: it costs nothing and moves nothing; the extension shows the
+ * text and the person approves or rejects it there.
+ * → { address, signature } (the signature as the extension gives it).
+ */
+export async function signTextWithExtension(text) {
+  const { address } = await connectExtension();
+  if (typeof window.kleverWeb.signMessage !== 'function') {
+    throw new Error('This version of the Klever extension can\'t sign texts. Please update it and try again.');
+  }
+  let signature;
+  try {
+    signature = await window.kleverWeb.signMessage(text);
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (/reject|denied|cancel/i.test(msg)) throw new Error('Signing was cancelled in the extension.');
+    throw new Error(`The extension could not sign: ${msg}`);
+  }
+  if (signature && typeof signature === 'object') signature = signature.signature ?? signature.hex ?? '';
+  if (typeof signature !== 'string' || !signature) throw new Error('The extension gave no signature. Please try again.');
+  return { address, signature };
+}

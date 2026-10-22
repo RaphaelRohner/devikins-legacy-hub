@@ -62,6 +62,13 @@ window) as a brand-new visitor:
   "3. Check" are checked too.
 - **Damaged backups:** a backup with one changed byte in a picture is
   noticed and reported, not silently imported.
+- **Chat (22 Oct 2026):** two players in two browsers sign in with a
+  pretend Klever extension (real wallet signatures), choose nicknames,
+  find each other, send and accept a contact request, write both ways,
+  block and unblock; the history is still there after reloading. Without
+  the extension, or with a wallet holding no Devikins, the chat says
+  what's needed. The postman in these tests is the real postman code
+  (`tests/web/chatPostman.mjs` runs it locally).
 
 They never contact Klever, Moonlabs or the relay: every outside request
 is answered by pretend servers with six made-up NFTs
@@ -478,6 +485,11 @@ wallet - see the Signer's TESTING.md)
       (stored copies); a picture never stored says "Unavailable".
 - [ ] **W4.** On a phone browser (e.g. Safari): the layout fits; the row
       above the list stays on one line.
+- [ ] **W5. Chat** (Features > Chat; needs the Klever extension and a
+      wallet holding Devikins): sign in (the extension shows a text, not a
+      transaction), choose a nickname, find another player, send a contact
+      request; once they accept, write both ways. Block, then unblock. Reload
+      the page: contacts and messages are still there.
 
 ---
 

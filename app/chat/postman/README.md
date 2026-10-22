@@ -8,7 +8,7 @@ envelopes** between players' devices and can't open any of them.
 |---|---|
 | `src/postOffice.js` | All the postman's rules, in one place (sign-in, badges, nicknames, contact requests, drop codes, mailboxes, group mailboxes, clean-up). |
 | `src/kleverProof.js` | Checks the wallet's signature of the sign-in text (with Klever's own code) and asks Klever's public API how many Devikins the wallet holds. |
-| `src/auth.js` | Every request from a device is signed with its chat key (Nostr's published "HTTP Auth" format, NIP-98). |
+| `../src/httpAuth.js` | (in the chat core) Every request from a device is signed with its chat key (Nostr's published "HTTP Auth" format, NIP-98). |
 | `src/worker.js` | The Cloudflare part: which websites may call it, size limits, the one post office (a Durable Object with its own small SQLite database), the daily clean-up alarm. |
 | `wrangler.toml` | Cloudflare settings: the name, **logs switched off**, the database. |
 

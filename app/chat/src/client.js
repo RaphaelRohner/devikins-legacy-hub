@@ -1,0 +1,55 @@
+/**
+ * client.js — talking to the blind postman (chat/postman)
+ *
+ * One small function per postman request. Every request except the
+ * code-only drops is signed with this device's chat key (NIP-98, see
+ * chat/src/httpAuth.js). Answers come back as plain objects; when the
+ * postman refuses, this throws an Error with the postman's own plain
+ * message (e.g. "Next contact request possible in 4 min.") and `.status`.
+ */
+
+import { makeAuthHeader } from './httpAuth.js';
+
+export function createPostmanClient({ baseUrl, identity, fetchFn = (...a) => fetch(...a), now = () => Date.now() }) {
+  const base = baseUrl.replace(/\/+$/, '');
+
+  async function call(method, path, body, { signed = true } = {}) {
+    const url = base + path;
+    const bodyText = method === 'POST' ? JSON.stringify(body ?? {}) : '';
+    const headers = {};
+    if (method === 'POST') headers['Content-Type'] = 'application/json';
+    if (signed) headers.Authorization = makeAuthHeader(identity, { url, method, bodyText, now: now() });
+    let response;
+    try {
+      response = await fetchFn(url, { method, headers, body: method === 'POST' ? bodyText : undefined });
+    } catch {
+      const e = new Error("Can't reach the chat postman. Check the internet connection and try again.");
+      e.status = 0;
+      throw e;
+    }
+    let answer = null;
+    try { answer = await response.json(); } catch { answer = null; }
+    if (!response.ok) {
+      const e = new Error(answer?.error || `The chat postman answered ${response.status}.`);
+      e.status = response.status;
+      throw e;
+    }
+    return answer;
+  }
+
+  return {
+    hello: () => call('GET', '/hello', null, { signed: false }),
+    startSignIn: () => call('POST', '/signin/start'),
+    finishSignIn: ({ code, wallet, signature }) => call('POST', '/signin/finish', { code, wallet, signature }),
+    me: () => call('GET', '/me'),
+    setNickname: (nickname) => call('POST', '/nickname', { nickname }),
+    directory: (q = '') => call('GET', `/directory?q=${encodeURIComponent(q)}`),
+    request: (nickname, items) => call('POST', '/request', { nickname, items }),
+    codes: ({ add = [], remove = [] }) => call('POST', '/codes', { add, remove }),
+    drop: (code, items) => call('POST', '/drop', { code, items }, { signed: false }),
+    devicesFor: (code) => call('POST', '/drop/devices', { code }, { signed: false }),
+    mail: () => call('GET', '/mail'),
+    mailDone: (ids) => call('POST', '/mail/done', { ids }),
+    leave: () => call('POST', '/leave', {}),
+  };
+}

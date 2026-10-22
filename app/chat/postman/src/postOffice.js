@@ -38,8 +38,8 @@ import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { issueBadge, BADGE_DAYS } from '../../src/badge.js';
 import { isPublicKey } from '../../src/identity.js';
-import { contactRequestWait, DAY, MINUTE, MIN_POST_INTERVAL } from '../../src/rules.js';
-import { checkAuthHeader } from './auth.js';
+import { contactRequestWait, DAY, MINUTE, MIN_POST_INTERVAL, nicknameKey } from '../../src/rules.js';
+import { checkAuthHeader } from '../../src/httpAuth.js';
 import { signInText, isWalletSignature, devikinsHeld, walletPublicKey } from './kleverProof.js';
 
 export const VERSION = '1';
@@ -113,14 +113,9 @@ async function hmacHex(keyHex, text) {
   return bytesToHex(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(text))));
 }
 
-/**
- * Folds look-alike nicknames together, so nobody can pose as someone else:
- * "Devi_Fan" = "devi fan" = "DEVIFAN" = "Dev1Fan"; 0 and O count the same,
- * as do 1, l and I.
- */
-export function nicknameKey(nickname) {
-  return nickname.toLowerCase().replace(/[ _.-]+/g, '').replace(/0/g, 'o').replace(/[1l]/g, 'i');
-}
+// nicknameKey (look-alike nicknames count as the same) is in the chat
+// core's rules.js, so the Hubs compare nicknames exactly like the postman.
+export { nicknameKey };
 
 /**
  * createPostOffice

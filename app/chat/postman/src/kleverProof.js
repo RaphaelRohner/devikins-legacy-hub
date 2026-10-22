@@ -14,7 +14,7 @@
  *    now. Only NFTs in the wallet count – listed or rented ones don't.
  */
 
-import { verifyWalletSignedMessage } from '@klever/connect-crypto';
+import { verifyWalletSignedMessage, verifySignature } from '@klever/connect-crypto';
 import { bech32Decode } from '@klever/connect-encoding';
 
 export const COLLECTION = 'DVKNFT-1SW5';
@@ -36,7 +36,7 @@ export function signInText({ site, deviceKey, code, expiresAt }) {
     deviceKey,
     '',
     `One-time code: ${code}`,
-    `Valid until: ${new Date(expiresAt).toISOString().replace('.000Z', 'Z')}`,
+    `Valid until: ${new Date(expiresAt).toISOString().replace(/\.\d{3}Z$/, 'Z')}`,
   ].join('\n');
 }
 
@@ -61,10 +61,19 @@ export function signatureBytes(signature) {
   throw new Error('The signature has an unknown format.');
 }
 
-/** True if `signature` is the wallet's signature of exactly `text`. */
+/**
+ * True if `signature` is the wallet's signature of exactly `text`.
+ * Klever's documented way is the prefixed form (verifyWalletSignedMessage);
+ * the plain form (the text's bytes signed directly, as Klever's
+ * connect-wallet library does when it holds the key itself) is accepted
+ * too. Both prove the same thing: this wallet's key signed this text.
+ */
 export async function isWalletSignature(text, wallet, signature) {
   try {
-    return await verifyWalletSignedMessage(text, signatureBytes(signature), walletPublicKey(wallet));
+    const sig = signatureBytes(signature);
+    const key = walletPublicKey(wallet);
+    if (await verifyWalletSignedMessage(text, sig, key)) return true;
+    return await verifySignature(new TextEncoder().encode(text), sig, key);
   } catch {
     return false;
   }

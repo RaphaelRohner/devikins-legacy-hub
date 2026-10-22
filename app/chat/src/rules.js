@@ -161,3 +161,15 @@ export function isPostingPaused({ openedAt, opener, supporters, decided }, now) 
   if (decided || !Number.isFinite(openedAt) || now - openedAt >= VOTE_DURATION) return false;
   return (supporters || []).some((s) => s && s !== opener);
 }
+
+// --- Nicknames ----------------------------------------------------------------
+
+/**
+ * nicknameKey — folds look-alike nicknames together, so nobody can pose as
+ * someone else: "Devi_Fan" = "devi fan" = "DEVIFAN" = "Dev1Fan"; 0 and O
+ * count the same, as do 1, l and I. The postman and every Hub compare
+ * nicknames with this.
+ */
+export function nicknameKey(nickname) {
+  return String(nickname).toLowerCase().replace(/[ _.-]+/g, '').replace(/0/g, 'o').replace(/[1l]/g, 'i');
+}

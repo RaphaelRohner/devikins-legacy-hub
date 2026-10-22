@@ -18,7 +18,7 @@ import {
   createPostOffice, KEEP_FOR, MAX_ENVELOPE_CHARS, MAX_GROUP_ENVELOPE_CHARS as POSTMAN_GROUP_MAX, MAX_DEVICES, MAX_WAITING_PER_DEVICE,
   DAILY_DROPS_PER_CODE, DAILY_ACTIONS_PER_PLAYER, MAX_BODY_CHARS, nicknameKey,
 } from '../postman/src/postOffice.js';
-import { makeAuthHeader } from '../postman/src/auth.js';
+import { makeAuthHeader } from '../src/httpAuth.js';
 import { devikinsHeld, signatureBytes, walletPublicKey } from '../postman/src/kleverProof.js';
 
 const BASE = 'https://devi-postman-test.example.workers.dev';

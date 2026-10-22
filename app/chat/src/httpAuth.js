@@ -1,5 +1,5 @@
 /**
- * auth.js — "this request really comes from chat key X"
+ * httpAuth.js — "this request really comes from chat key X"
  *
  * Each request a device makes carries a small signed note in its
  * Authorization header, in Nostr's published format for this (NIP-98,
@@ -15,7 +15,7 @@
 import { finalizeEvent, verifyEvent } from 'nostr-tools/pure';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { isPublicKey, secretBytes } from '../../src/identity.js';
+import { isPublicKey, secretBytes } from './identity.js';
 
 export const HTTP_AUTH_KIND = 27235;
 export const AUTH_WINDOW_SECONDS = 60;

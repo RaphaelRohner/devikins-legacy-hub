@@ -14,14 +14,15 @@
  *   Set Up       Getting started (the start checklist), Wallets (x),
  *                Fetch/Update, Kleverscan (find a wallet to try the Hub)
  *   Browse NFTs  Devikins, Weapons, Equipment
- *   Features     Withdrawals, Breeding Helper, KLV Signer (test - Android
+ *   Features     Chat (website only for now, since 22 Oct 2026),
+ *                Withdrawals, Breeding Helper, KLV Signer (test - Android
  *                app only; signs with the separate KLV Signer app)
  *   Help         Ask Devi, Feedback, About
  * A closed category shows a grey line listing what's inside (16 Oct 2026).
  *   Donate       on its own at the bottom (only once a donation address
  *                is set in src/constants/donation.js)
  *
- * Planned entries (Marketplace, Chat, Collectors Album) are added to
+ * Planned entries (Marketplace, Collectors Album) are added to
  * their category once they exist - not shown before.
  *
  * On the website, Kleverscan opens in a new browser tab and the KLV Signer
@@ -112,6 +113,13 @@ export default function HamburgerMenu({
       onPress: () => onSelectScreen('breeding'),
     },
     {
+      key: 'chat',
+      label: 'Chat',
+      hint: 'Talk to other players (new)',
+      screen: 'chat',
+      onPress: () => onSelectScreen('chat'),
+    },
+    {
       key: 'withdrawals',
       label: 'Withdrawals',
       screen: 'withdrawals',
@@ -172,6 +180,8 @@ export default function HamburgerMenu({
     },
   ].filter((entry) => {
     if (entry.key === 'signer') return !IS_WEB;
+    // The chat starts on the website; the phone app gets it later.
+    if (entry.key === 'chat') return IS_WEB;
     if (entry.key === 'donate') return DONATION_ADDRESS !== '';
     return true;
   });
@@ -186,7 +196,7 @@ export default function HamburgerMenu({
     // "never have looked under Tools" for the Breeding Helper).
     { key: 'setup', title: 'Set Up', entries: ['guide', 'wallets', 'fetch', 'kleverscan'] },
     { key: 'browse', title: 'Browse NFTs', entries: ['devikin', 'weapon', 'equipment'] },
-    { key: 'features', title: 'Features', entries: ['withdrawals', 'breeding', 'signer'] },
+    { key: 'features', title: 'Features', entries: ['chat', 'withdrawals', 'breeding', 'signer'] },
     { key: 'help', title: 'Help', entries: ['help', 'feedback', 'about'] },
   ];
   const entryByKey = Object.fromEntries(entries.map((e) => [e.key, e]));
