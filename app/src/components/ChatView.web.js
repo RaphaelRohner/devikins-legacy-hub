@@ -333,7 +333,7 @@ export default function ChatView({ onClose }) {
         error={error}
         onBack={() => setOpenGroupId(null)}
         onPost={(text) => act(() => messenger.postToGroup(openGroup.id, text))}
-        onPin={(text) => act(() => messenger.setPinned(openGroup.id, text))}
+        onPins={(pins) => act(() => messenger.setPins(openGroup.id, pins))}
         onLeave={() => act(async () => {
           await messenger.leaveGroup(openGroup.id);
           setOpenGroupId(null);

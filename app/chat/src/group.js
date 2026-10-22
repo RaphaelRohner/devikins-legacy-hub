@@ -28,7 +28,7 @@ import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { secretBytes } from './identity.js';
 import { checkBadge } from './badge.js';
-import { cleanText, nextPostAllowedAt } from './rules.js';
+import { cleanText, nextPostAllowedAt, MIN_POST_INTERVAL } from './rules.js';
 
 export const GROUP_POST_KIND = 9; // Nostr's kind for a chat message in a group
 export const MAX_GROUP_ENVELOPE_CHARS = 64 * 1024;
@@ -129,9 +129,12 @@ export function openGroupPost(envelope, { groupId, keys }) {
  * is dropped, and so is one whose own time is far from when the postman
  * got it (an old post copied and sent again to use up its author's limit).
  * The limit counts per PLAYER (the badge's account number), not per device.
+ * `owners` = account numbers of the group's owner: they may post as often as
+ * the postman allows (once a minute), whatever they hold – so the person who
+ * runs a group can always answer (Raphael, 22 Oct 2026).
  * → { shown: [...], dropped: [{ item, reason }] }
  */
-export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocked = [], paused = [], seen = new Set() }) {
+export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocked = [], paused = [], seen = new Set(), owners = [] }) {
   const shown = [];
   const dropped = [];
   const sorted = [...(items || [])].filter((i) => i && i.post).sort((a, b) => a.receivedAt - b.receivedAt);
@@ -143,7 +146,9 @@ export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocke
     if (!badge.ok) { dropped.push({ item, reason: `badge ${badge.problem}` }); continue; }
     if (paused.includes(post.from)) { dropped.push({ item, reason: 'posting paused by a vote' }); continue; }
     const player = badge.account ?? post.from;
-    const allowedAt = nextPostAllowedAt(lastAccepted[player] ?? null, badge.nfts);
+    const allowedAt = owners.includes(badge.account)
+      ? (lastAccepted[player] ?? -Infinity) + MIN_POST_INTERVAL
+      : nextPostAllowedAt(lastAccepted[player] ?? null, badge.nfts);
     if (receivedAt < allowedAt) { dropped.push({ item, reason: 'too early' }); continue; }
     lastAccepted[player] = receivedAt;
     if (post.id) seen.add(post.id);
@@ -158,15 +163,22 @@ export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocke
 /** Our own kind number for a pinned message, so it can never pass as a post (or the other way round). */
 export const PINNED_KIND = 39777;
 
-/** The owner's pinned text, signed and sealed with the group key (one per group at the postman). */
-export function sealPinned({ group, from, text, now = Date.now() }) {
-  const content = cleanText(text);
-  if (!content) throw new Error('Nothing to pin.');
+/** At most this many pinned messages per group. */
+export const MAX_PINS = 5;
+
+/**
+ * The owner's pinned messages (a list, up to MAX_PINS), signed and sealed
+ * with the group key as ONE envelope (one per group at the postman).
+ */
+export function sealPinned({ group, from, pins, now = Date.now() }) {
+  const list = (pins || []).map((p) => cleanText(p)).filter(Boolean);
+  if (list.length === 0) throw new Error('Nothing to pin.');
+  if (list.length > MAX_PINS) throw new Error(`At most ${MAX_PINS} pinned messages.`);
   const pinned = finalizeEvent(
     {
       kind: PINNED_KIND,
       created_at: Math.floor(now / 1000),
-      content,
+      content: JSON.stringify({ pins: list }),
       tags: [['h', group.id], ['epoch', String(group.epoch)]],
     },
     secretBytes(from),
@@ -174,7 +186,7 @@ export function sealPinned({ group, from, text, now = Date.now() }) {
   return { v: 1, group: group.id, epoch: group.epoch, payload: nip44.encrypt(JSON.stringify(pinned), hexToBytes(group.key)) };
 }
 
-/** Opens a pinned message → { from, text, writtenAt } or null (no key); throws if it isn't genuine. */
+/** Opens the pinned messages → { from, pins: [text …], writtenAt } or null (no key); throws if it isn't genuine. */
 export function openPinned(envelope, { groupId, keys }) {
   if (!envelope || envelope.v !== 1 || envelope.group !== groupId || typeof envelope.payload !== 'string'
       || envelope.payload.length > MAX_GROUP_ENVELOPE_CHARS) {
@@ -185,5 +197,13 @@ export function openPinned(envelope, { groupId, keys }) {
   const pinned = JSON.parse(nip44.decrypt(envelope.payload, hexToBytes(key)));
   if (pinned.kind !== PINNED_KIND || !verifyEvent(JSON.parse(JSON.stringify(pinned)))) throw new Error('The pinned message was changed.');
   if (tag(pinned, 'h') !== groupId || Number(tag(pinned, 'epoch')) !== envelope.epoch) throw new Error('The pinned message was moved from elsewhere.');
-  return { from: pinned.pubkey, text: cleanText(pinned.content), writtenAt: pinned.created_at * 1000 };
+  let pins;
+  try {
+    const parsed = JSON.parse(pinned.content);
+    pins = Array.isArray(parsed?.pins) ? parsed.pins : [String(pinned.content)];
+  } catch {
+    pins = [pinned.content]; // (a single pinned text, as written before 22 Oct 2026)
+  }
+  pins = pins.map((p) => cleanText(String(p))).filter(Boolean).slice(0, MAX_PINS);
+  return { from: pinned.pubkey, pins, writtenAt: pinned.created_at * 1000 };
 }

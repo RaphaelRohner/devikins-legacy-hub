@@ -27,7 +27,7 @@
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { createIdentity, isPublicKey, secretBytes } from './identity.js';
 import { sealDirect, openDirect } from './direct.js';
-import { cleanText, nicknameKey, nextPostAllowedAt } from './rules.js';
+import { cleanText, nicknameKey, nextPostAllowedAt, MIN_POST_INTERVAL } from './rules.js';
 import { sealGroupPost, openGroupPost, acceptPosts, readGroupKeyMessage, sealPinned, openPinned, groupKeyCheck } from './group.js';
 import { checkBadge } from './badge.js';
 import { createPostmanClient } from './client.js';
@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS chat_groups (
   unread INTEGER NOT NULL DEFAULT 0,
   pinned_text TEXT,
   pinned_at INTEGER,
+  owner_account TEXT,
   joined_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS chat_group_posts (
@@ -132,9 +133,15 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
 
   // Chats started with an earlier version: add the columns added since
   // (CREATE TABLE IF NOT EXISTS leaves an existing table as it was).
-  const columns = new Set((await all('PRAGMA table_info(chat_contacts)')).map((c) => c.name));
-  for (const [name, type] of [['ended', 'INTEGER NOT NULL DEFAULT 0'], ['before_block', 'TEXT']]) {
-    if (!columns.has(name)) await db.execAsync(`ALTER TABLE chat_contacts ADD COLUMN ${name} ${type}`);
+  const added = {
+    chat_contacts: [['ended', 'INTEGER NOT NULL DEFAULT 0'], ['before_block', 'TEXT']],
+    chat_groups: [['owner_account', 'TEXT']],
+  };
+  for (const [table, cols] of Object.entries(added)) {
+    const columns = new Set((await all(`PRAGMA table_info(${table})`)).map((c) => c.name));
+    for (const [name, type] of cols) {
+      if (!columns.has(name)) await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+    }
   }
 
   async function getMe(k) {
@@ -569,6 +576,18 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     return key;
   }
 
+  // Pinned messages are kept locally as a JSON list (older: one plain text).
+  function readPins(stored) {
+    if (!stored) return null;
+    try {
+      const list = JSON.parse(stored);
+      if (Array.isArray(list)) return list.length ? { pins: list } : null;
+    } catch {
+      // plain text
+    }
+    return { pins: [stored] };
+  }
+
   const groupRow = (r) => r && ({
     id: r.id,
     name: r.name,
@@ -577,7 +596,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     isOwner: !!r.is_owner,
     status: r.status,
     unread: r.unread,
-    pinned: r.pinned_text ? { text: r.pinned_text, at: r.pinned_at } : null,
+    pinned: readPins(r.pinned_text),
     hasKey: !!r.key,
   });
 
@@ -717,7 +736,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       }
       const lastAccepted = {};
       for (const r of await all('SELECT author, at FROM chat_group_last WHERE grp = ?', [g.id])) lastAccepted[r.author] = r.at;
-      const { shown } = acceptPosts(items, { postmanPublicKey: pk, lastAccepted, blocked: blockedDevices, seen });
+      const { shown } = acceptPosts(items, { postmanPublicKey: pk, lastAccepted, blocked: blockedDevices, seen, owners: g.owner_account ? [g.owner_account] : [] });
       for (const [author, at] of Object.entries(lastAccepted)) {
         await run('INSERT OR REPLACE INTO chat_group_last (grp, author, at) VALUES (?, ?, ?)', [g.id, author, at]);
       }
@@ -749,7 +768,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
         // The owner isn't listed right now (e.g. their weekly check ran out):
         // keep what we have and look again next time.
         if (!ownerPlayer) return;
-        if (ownerPlayer.devices.includes(opened.from)) text = opened.text;
+        if (ownerPlayer.devices.includes(opened.from)) text = JSON.stringify(opened.pins);
       }
     }
     await run('UPDATE chat_groups SET pinned_text = ?, pinned_at = ? WHERE id = ?', [text, at, g.id]);
@@ -761,8 +780,9 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     for (const there of groups) {
       const g = await first('SELECT * FROM chat_groups WHERE id = ?', [there.id]);
       if (!g) continue;
-      if (there.owner !== g.owner || there.isOwner !== !!g.is_owner) {
-        await run('UPDATE chat_groups SET owner = ?, is_owner = ? WHERE id = ?', [there.owner, there.isOwner ? 1 : 0, g.id]);
+      if (there.owner !== g.owner || there.isOwner !== !!g.is_owner || there.ownerAccount !== g.owner_account) {
+        await run('UPDATE chat_groups SET owner = ?, is_owner = ?, owner_account = ? WHERE id = ?', [there.owner, there.isOwner ? 1 : 0, there.ownerAccount ?? null, g.id]);
+        g.owner_account = there.ownerAccount ?? null;
       }
       if (g.status !== GROUP_STATUS.MEMBER || !g.key) continue;
       if (there.lastSeq > g.last_seq) await collectGroup(g);
@@ -789,7 +809,12 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     const check = badge ? checkBadge(badge, { postmanPublicKey: pk, holder: identity.publicKey, at: now() }) : { ok: false };
     if (!check.ok) return { allowedAt: null, nfts: 0 };
     const last = await first('SELECT at FROM chat_group_last WHERE grp = ? AND author = ?', [id, check.account ?? identity.publicKey]);
-    return { allowedAt: nextPostAllowedAt(last?.at ?? null, check.nfts), nfts: check.nfts };
+    const g = await first('SELECT is_owner FROM chat_groups WHERE id = ?', [id]);
+    if (g?.is_owner) {
+      // The owner may always answer: once a minute (the postman's limit).
+      return { allowedAt: last ? last.at + MIN_POST_INTERVAL : 0, nfts: check.nfts, owner: true };
+    }
+    return { allowedAt: nextPostAllowedAt(last?.at ?? null, check.nfts), nfts: check.nfts, owner: false };
   }
 
   async function postToGroup(id, text) {
@@ -802,12 +827,16 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     await collectGroup(g);
   }
 
-  async function setPinned(id, text) {
+  /** The owner sets the whole list of pinned messages (empty list: nothing pinned). */
+  async function setPins(id, pins) {
     const g = await myGroup(id);
-    const envelope = text && text.trim() ? sealPinned({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, text, now: now() }) : null;
+    const list = (pins || []).map((p) => cleanText(p)).filter(Boolean);
+    const envelope = list.length ? sealPinned({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, pins: list, now: now() }) : null;
     await postman.setPinned(id, envelope);
-    await run('UPDATE chat_groups SET pinned_text = ?, pinned_at = ? WHERE id = ?', [envelope ? cleanText(text) : null, null, id]);
+    await run('UPDATE chat_groups SET pinned_text = ?, pinned_at = ? WHERE id = ?', [list.length ? JSON.stringify(list) : null, null, id]);
   }
+  /** (one pinned text – kept for simple use) */
+  const setPinned = (id, text) => setPins(id, text && text.trim() ? [text] : []);
 
   // --- backup (locked with a password by backup.js) ------------------------
 
@@ -869,10 +898,10 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     for (const g of Array.isArray(data.groups) ? data.groups : []) {
       if (typeof g.id !== 'string' || !Object.values(GROUP_STATUS).includes(g.status)) continue;
       await run(
-        `INSERT INTO chat_groups (id, name, description, owner, is_owner, status, key, epoch, code, last_seq, unread, pinned_text, pinned_at, joined_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO chat_groups (id, name, description, owner, is_owner, status, key, epoch, code, last_seq, unread, pinned_text, pinned_at, joined_at, owner_account)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [g.id, String(g.name ?? ''), String(g.description ?? ''), g.owner ?? null, g.is_owner ? 1 : 0, g.status, g.key ?? null,
-          Number(g.epoch) || 1, g.code ?? null, Number(g.last_seq) || 0, Number(g.unread) || 0, g.pinned_text ?? null, g.pinned_at ?? null, Number(g.joined_at) || 0],
+          Number(g.epoch) || 1, g.code ?? null, Number(g.last_seq) || 0, Number(g.unread) || 0, g.pinned_text ?? null, g.pinned_at ?? null, Number(g.joined_at) || 0, g.owner_account ?? null],
       );
     }
     for (const p of Array.isArray(data.groupPosts) ? data.groupPosts : []) {
@@ -931,6 +960,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     postToGroup,
     nextGroupPostAt,
     setPinned,
+    setPins,
     syncGroups,
     forgetHere,
     hasChat,

@@ -430,7 +430,8 @@ test('groups: create, ask to join, a member\'s Hub lets you in, posts from joini
   await assert.rejects(alice.postToGroup(gid, 'and again'), /Not yet/);
   const next = await alice.nextGroupPostAt(gid);
   assert.equal(next.nfts, 3);
-  assert.equal(next.allowedAt - clock.t, 8 * 60 * MINUTE);
+  // The owner may answer once a minute, whatever she holds
+  assert.deepEqual([next.owner, next.allowedAt - clock.t], [true, MINUTE]);
 
   let list = await bob.listGroups();
   assert.deepEqual(list.map((g) => [g.name, g.owner, g.members, g.member, g.asking]), [['Fire Breeders', 'Alice', 1, false, false]]);
@@ -453,7 +454,7 @@ test('groups: create, ask to join, a member\'s Hub lets you in, posts from joini
   await alice.setPinned(gid, 'Rules: be nice, no spam.');
   await assert.rejects(bob.setPinned(gid, 'I rule now'), /Only the group owner/);
   await bob.checkMail();
-  assert.equal((await bob.listGroups())[0].pinned.text, 'Rules: be nice, no spam.');
+  assert.deepEqual((await bob.listGroups())[0].pinned.pins, ['Rules: be nice, no spam.']);
 
   // A newcomer gets the pinned rules right away, but no older posts
   const carol = await player('Carol', 1);
@@ -463,7 +464,7 @@ test('groups: create, ask to join, a member\'s Hub lets you in, posts from joini
   await carol.checkMail();
   const cg = (await carol.listGroups())[0];
   assert.equal(cg.member, true);
-  assert.equal(cg.pinned?.text, 'Rules: be nice, no spam.');
+  assert.deepEqual(cg.pinned?.pins, ['Rules: be nice, no spam.']);
   assert.deepEqual(await carol.groupPosts(gid), []);
 
   // Unread counts, and leaving
@@ -481,10 +482,10 @@ test('groups: posts that come too early are hidden by every Hub; blocked players
   const { player, clock } = world();
   const alice = await player('Alice', 3);
   const bob = await player('Bob', 50);
-  const gid = await alice.createGroup('Open Talk');
-  await bob.joinGroup(gid);
-  await alice.checkMail();
+  const gid = await bob.createGroup('Open Talk'); // Bob runs it; Alice is a member (limit: 1 post / 8 h)
+  await alice.joinGroup(gid);
   await bob.checkMail();
+  await alice.checkMail();
   // A modified Hub posts twice within 8 h for Alice: the postman takes it (1/min), every reader drops the 2nd
   clock.t += MINUTE;
   await alice.postToGroup(gid, 'first');
@@ -553,8 +554,8 @@ test('groups (review fixes): a fake key is refused, an old post sent again is dr
   await mallory.postman.groupPost(copy.envelope);
   await bob.checkMail();
   assert.deepEqual((await bob.groupPosts(gid)).map((p) => p.text), ['real post']);
-  // ... and Alice's own next post isn't blocked by it
-  assert.equal((await alice.nextGroupPostAt(gid)).allowedAt, clock.t - 10 * MINUTE + 8 * 60 * MINUTE);
+  // ... and Alice's (the owner's) own next post isn't blocked by it
+  assert.equal((await alice.nextGroupPostAt(gid)).allowedAt, clock.t - 10 * MINUTE + MINUTE);
 
   // A second browser of Bob's (same wallet): in the group, but no key → "Get the key"
   const bob2 = await player('Bob', 50, bob);
@@ -577,4 +578,35 @@ test('groups (review fixes): a fake key is refused, an old post sent again is dr
   const g = (await mallory.listGroups()).find((x) => x.id === gid);
   assert.deepEqual([g.owner, g.isOwner], ['Mallory', true]);
   await mallory.setPinned(gid, 'New rules');
+});
+
+test('groups: the owner may always answer (once a minute); several pinned messages, changed any time', async () => {
+  const { player, clock } = world();
+  const owner = await player('Owner', 1); // 1 Devikin: a member would have to wait 24 h
+  const member = await player('Member', 1);
+  const gid = await owner.createGroup('Owner Rules');
+  await member.joinGroup(gid);
+  await owner.checkMail();
+  await member.checkMail();
+  for (let i = 1; i <= 3; i += 1) {
+    clock.t += MINUTE;
+    await owner.postToGroup(gid, `answer ${i}`);
+  }
+  clock.t += MINUTE;
+  await member.postToGroup(gid, 'question');
+  clock.t += MINUTE;
+  await assert.rejects(member.postToGroup(gid, 'another'), /Not yet/);
+  await member.checkMail();
+  assert.deepEqual((await member.groupPosts(gid)).map((p) => p.text), ['answer 1', 'answer 2', 'answer 3', 'question']);
+
+  await owner.setPins(gid, ['Rule 1: be nice', 'Rule 2: no spam', 'Trading day: Sundays']);
+  await member.checkMail();
+  assert.deepEqual((await member.listGroups())[0].pinned.pins, ['Rule 1: be nice', 'Rule 2: no spam', 'Trading day: Sundays']);
+  await owner.setPins(gid, ['Rule 1: be nice', 'Trading day: Saturdays']);
+  await member.checkMail();
+  assert.deepEqual((await member.listGroups())[0].pinned.pins, ['Rule 1: be nice', 'Trading day: Saturdays']);
+  await owner.setPins(gid, []);
+  await member.checkMail();
+  assert.equal((await member.listGroups())[0].pinned, null);
+  await assert.rejects(owner.setPins(gid, ['1', '2', '3', '4', '5', '6']), /At most 5/);
 });

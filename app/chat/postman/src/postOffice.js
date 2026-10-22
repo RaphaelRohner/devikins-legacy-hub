@@ -65,7 +65,7 @@ export const MAX_GROUPS_CREATED_PER_PLAYER = 5;
 export const MAX_GROUPS = 1000;
 export const GROUP_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9 _.,'&!?()-]{1,38}[A-Za-z0-9.!?)])$/;
 export const MAX_GROUP_DESCRIPTION = 200;
-export const MAX_PINNED_CHARS = 16 * 1024;
+export const MAX_PINNED_CHARS = 32 * 1024;
 export const JOIN_WAIT_DAYS = 14;
 export const MAX_BODY_CHARS = MAX_ENVELOPE_CHARS * (MAX_ITEMS_PER_SEND + 1);
 const HOUR_MS = 60 * MINUTE;
@@ -229,7 +229,8 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     }
     if (row('SELECT owner FROM groups WHERE id = ?', group).owner === account) {
       // The pinned message was the old owner's: the new owner pins anew.
-      run('UPDATE groups SET owner = ?, pinned = NULL, pinned_at = ? WHERE id = ?', next.account, now(), group);
+      const before = row('SELECT pinned_at FROM groups WHERE id = ?', group).pinned_at ?? 0;
+      run('UPDATE groups SET owner = ?, pinned = NULL, pinned_at = ? WHERE id = ?', next.account, Math.max(now(), before + 1), group);
     }
     return { deleted: false };
   }
@@ -458,6 +459,9 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
         ).map((g) => ({
           id: g.id,
           owner: g.owner_nickname ?? null,
+          // The owner's account number (as in their badge): every Hub lets the
+          // owner post as often as the postman allows.
+          ownerAccount: g.owner,
           isOwner: g.owner === account.id,
           lastSeq: g.last_seq ?? 0,
           pinnedAt: g.pinned_at ?? null,
@@ -562,7 +566,9 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
         if (text.length > MAX_PINNED_CHARS) refuse(413, 'The pinned text is too long.');
       }
       spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
-      run('UPDATE groups SET pinned = ?, pinned_at = ? WHERE id = ?', text, t, group);
+      // (always a new time, so every Hub notices the change)
+      const before = row('SELECT pinned_at FROM groups WHERE id = ?', group).pinned_at ?? 0;
+      run('UPDATE groups SET pinned = ?, pinned_at = ? WHERE id = ?', text, Math.max(t, before + 1), group);
       return { pinned: text !== null };
     },
 

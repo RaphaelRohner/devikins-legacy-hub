@@ -239,15 +239,22 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await alice.page.getByTestId('chat-group-description').fill('Trading Fire Devikins');
   await alice.page.getByTestId('chat-group-create').click();
   await expect(alice.page.getByText('you started it')).toBeVisible();
-  await alice.page.getByTestId('chat-group-pin-edit').click();
+  await alice.page.getByTestId('chat-group-pin-add').click();
   await alice.page.getByTestId('chat-group-pin-draft').fill('Rules: be nice, no spam.');
   await alice.page.getByTestId('chat-group-pin-save').click();
   await expect(alice.page.getByTestId('chat-group-pinned')).toContainText('Rules: be nice, no spam.');
+  // A second pinned message, then removed again; several can be pinned any time
+  await alice.page.getByTestId('chat-group-pin-add').click();
+  await alice.page.getByTestId('chat-group-pin-draft').fill('Trading day: Sundays');
+  await alice.page.getByTestId('chat-group-pin-save').click();
+  await expect(alice.page.getByTestId('chat-group-pin')).toHaveCount(2);
+  await alice.page.getByTestId('chat-group-pin-remove').nth(1).click();
+  await expect(alice.page.getByTestId('chat-group-pin')).toHaveCount(1);
   await alice.page.getByTestId('chat-group-draft').fill('Welcome, Fire fans!');
   await alice.page.getByTestId('chat-group-post').click();
   await expect(alice.page.getByText('Welcome, Fire fans!')).toBeVisible();
-  await expect(alice.page.getByTestId('chat-group-limit')).toContainText('Next post possible in 8 h');
-  await expect(alice.page.getByTestId('chat-group-limit')).toContainText('With 3 Devikins you can post once every 8 h');
+  // The owner may always answer (once a minute)
+  await expect(alice.page.getByTestId('chat-group-limit')).toContainText("As the group's owner you can always answer: once a minute.");
 
   // Bob finds it and asks to join; Alice's open Hub lets him in
   await expect(bob.page.getByTestId('chat-group-other')).toContainText('Fire Breeders');

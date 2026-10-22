@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { MAX_TEXT_LENGTH, postInterval } from '../../chat/src/rules.js';
+import { MAX_PINS } from '../../chat/src/group.js';
 
 function timeLabel(ms) {
   const d = new Date(ms);
@@ -157,10 +158,11 @@ export function GroupsCard({ groups, busy, onOpen, onJoin, onCreate }) {
   );
 }
 
-export default function ChatGroupView({ group, posts, next, busy, error, onBack, onPost, onPin, onLeave }) {
+export default function ChatGroupView({ group, posts, next, busy, error, onBack, onPost, onPins, onLeave }) {
   const { colors } = useTheme();
   const [draft, setDraft] = useState('');
-  const [editingPin, setEditingPin] = useState(false);
+  // Which pinned message the owner is editing: its number, 'new', or null.
+  const [editingPin, setEditingPin] = useState(null);
   const [pinDraft, setPinDraft] = useState('');
   const [, setTick] = useState(0);
   const scrollRef = useRef(null);
@@ -170,6 +172,40 @@ export default function ChatGroupView({ group, posts, next, busy, error, onBack,
     const timer = setInterval(() => setTick((n) => n + 1), 30000);
     return () => clearInterval(timer);
   }, []);
+
+  const pins = group.pinned?.pins || [];
+  const savePin = () => {
+    const text = pinDraft.trim();
+    const list = [...pins];
+    if (editingPin === 'new') {
+      if (text) list.push(text);
+    } else if (text) {
+      list[editingPin] = text;
+    } else {
+      list.splice(editingPin, 1);
+    }
+    onPins(list);
+    setEditingPin(null);
+  };
+  const pinEditor = (
+    <View key="editor" style={styles.form}>
+      <TextInput
+        testID="chat-group-pin-draft"
+        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background, minHeight: 70 }]}
+        value={pinDraft}
+        onChangeText={setPinDraft}
+        multiline
+        autoFocus
+        maxLength={MAX_TEXT_LENGTH}
+        placeholder="Rules or important info for everyone"
+        placeholderTextColor={colors.secondaryText}
+      />
+      <View style={styles.row}>
+        <Button label="Save" testID="chat-group-pin-save" disabled={busy} onPress={savePin} />
+        <Button label="Cancel" quiet onPress={() => setEditingPin(null)} />
+      </View>
+    </View>
+  );
 
   const waitMs = next?.allowedAt ? Math.max(0, next.allowedAt - Date.now()) : 0;
   const canPost = next?.allowedAt !== null && next?.allowedAt !== undefined && waitMs === 0;
@@ -183,7 +219,7 @@ export default function ChatGroupView({ group, posts, next, busy, error, onBack,
   const leave = () => Alert.alert(
     `Leave ${group.name}?`,
     group.isOwner
-      ? 'You started this group: if you leave, it goes to the member who joined first (your pinned message is removed). If you are the last one, the group is deleted.'
+      ? 'You started this group: if you leave, it goes to the member who joined first (your pinned messages are removed). If you are the last one, the group is deleted.'
       : 'Its posts are deleted from this browser. You can ask to join again later.',
     [
       { text: 'Cancel', style: 'cancel' },
@@ -208,36 +244,31 @@ export default function ChatGroupView({ group, posts, next, busy, error, onBack,
 
       {group.pinned || group.isOwner ? (
         <View style={[styles.pinned, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]} testID="chat-group-pinned">
-          {editingPin ? (
-            <>
-              <TextInput
-                testID="chat-group-pin-draft"
-                style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background, minHeight: 70 }]}
-                value={pinDraft}
-                onChangeText={setPinDraft}
-                multiline
-                maxLength={MAX_TEXT_LENGTH}
-                placeholder="Rules or important info for everyone (empty: no pinned message)"
-                placeholderTextColor={colors.secondaryText}
-              />
-              <View style={styles.row}>
-                <Button label="Save" testID="chat-group-pin-save" disabled={busy} onPress={() => { onPin(pinDraft); setEditingPin(false); }} />
-                <Button label="Cancel" quiet onPress={() => setEditingPin(false)} />
-              </View>
-            </>
-          ) : (
-            <>
-              <Text style={[styles.note, { color: colors.secondaryText, fontWeight: '700' }]}>📌 Pinned by the owner</Text>
-              <Text selectable style={[styles.text, { color: colors.text }]}>
-                {group.pinned?.text || (group.isOwner ? 'Nothing pinned yet. Pin rules or important info for everyone.' : '')}
-              </Text>
-              {group.isOwner ? (
-                <TouchableOpacity onPress={() => { setPinDraft(group.pinned?.text || ''); setEditingPin(true); }} testID="chat-group-pin-edit">
-                  <Text style={[styles.link, { color: colors.primary }]}>{group.pinned ? 'Edit' : 'Pin a message'}</Text>
-                </TouchableOpacity>
+          <Text style={[styles.note, { color: colors.secondaryText, fontWeight: '700' }]}>📌 Pinned by the owner</Text>
+          {pins.length === 0 && group.isOwner && editingPin === null ? (
+            <Text style={[styles.note, { color: colors.secondaryText }]}>Nothing pinned yet. Pin rules or important info for everyone.</Text>
+          ) : null}
+          {pins.map((text, i) => (editingPin === i ? pinEditor : (
+            <View key={i} style={[styles.pinItem, i > 0 && { borderTopWidth: 1, borderColor: colors.border }]} testID="chat-group-pin">
+              <Text selectable style={[styles.text, { color: colors.text }]}>{text}</Text>
+              {group.isOwner && editingPin === null ? (
+                <View style={styles.row}>
+                  <TouchableOpacity onPress={() => { setPinDraft(text); setEditingPin(i); }} testID="chat-group-pin-edit">
+                    <Text style={[styles.link, { color: colors.primary }]}>Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => onPins(pins.filter((_, k) => k !== i))} testID="chat-group-pin-remove">
+                    <Text style={[styles.link, { color: colors.cancelText }]}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
               ) : null}
-            </>
-          )}
+            </View>
+          )))}
+          {editingPin === 'new' ? pinEditor : null}
+          {group.isOwner && editingPin === null && pins.length < MAX_PINS ? (
+            <TouchableOpacity onPress={() => { setPinDraft(''); setEditingPin('new'); }} testID="chat-group-pin-add">
+              <Text style={[styles.link, { color: colors.primary }]}>+ Pin a message{pins.length ? ` (${pins.length} of ${MAX_PINS})` : ''}</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       ) : null}
 
@@ -272,9 +303,11 @@ export default function ChatGroupView({ group, posts, next, busy, error, onBack,
         <Text style={[styles.note, { color: colors.secondaryText }]} testID="chat-group-limit">
           {next?.allowedAt === null || next?.allowedAt === undefined
             ? 'Please sign in again to post (your weekly check has run out).'
-            : waitMs > 0
-              ? `Next post possible in ${waitLabel(waitMs)}. With ${next.nfts} Devikin${next.nfts === 1 ? '' : 's'} you can post once every ${intervalLabel(next.nfts)}.`
-              : `With ${next.nfts} Devikin${next.nfts === 1 ? '' : 's'} you can post once every ${intervalLabel(next.nfts)}.`}
+            : next.owner
+              ? `As the group's owner you can always answer: once a minute.${waitMs > 0 ? ` Next post possible in ${waitLabel(waitMs)}.` : ''}`
+              : waitMs > 0
+                ? `Next post possible in ${waitLabel(waitMs)}. With ${next.nfts} Devikin${next.nfts === 1 ? '' : 's'} you can post once every ${intervalLabel(next.nfts)}.`
+                : `With ${next.nfts} Devikin${next.nfts === 1 ? '' : 's'} you can post once every ${intervalLabel(next.nfts)}.`}
         </Text>
         <View style={styles.row}>
           <TextInput
@@ -317,6 +350,7 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15 },
   form: { gap: 10 },
   pinned: { marginHorizontal: 12, padding: 12, borderRadius: 10, borderWidth: 1, gap: 6, maxWidth: 720 },
+  pinItem: { gap: 4, paddingTop: 6 },
   thread: { padding: 12, gap: 8, maxWidth: 720, width: '100%' },
   bubble: { maxWidth: '80%', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, gap: 2 },
   author: { fontSize: 12, fontWeight: '700' },

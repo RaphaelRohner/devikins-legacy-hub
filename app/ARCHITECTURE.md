@@ -728,7 +728,10 @@ the postman a drop code of their own; the first member Hub that's open
 seals the key for them (control message `group-key`) and tells the postman
 to admit them; the postman then serves them only posts from after joining.
 Every Hub applies the posting limit (24 h ÷ Devikins, from the postman's
-badge) and hides posts of players it blocked. The owner's pinned message
-is sealed with the group key too and checked against the owner's devices.
+badge) and hides posts of players it blocked; the group's owner may post
+once a minute whatever they hold, so they can always answer (Raphael, 22
+Oct 2026). The owner's pinned messages (up to 5, changed any time) are
+sealed with the group key as one envelope and checked against the owner's
+devices.
 No key rotation yet (comes with removal votes, stage 4).
 
