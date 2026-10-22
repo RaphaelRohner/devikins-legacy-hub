@@ -31,6 +31,12 @@ Keeps:
   holds it;
 - sealed **1:1 envelopes** until the device confirms it has them (at most
   30 days), and sealed **group envelopes** once per group for 30 days;
+- **open groups** (stage 3): name, description, owner (account number),
+  members (account numbers and from which post on they may read), players
+  asking to join with the drop code they gave for that, and the owner's
+  sealed pinned message. The postman never has a group key – as long as
+  it runs this code: a postman changed to cheat could invent a member or a
+  join request and be handed a key. That's one reason the code is public;
 - the times of each player's contact requests (24 h), last group post,
   and a daily count of actions (2 days) – by wallet fingerprint, so leaving
   and signing in again doesn't reset the pauses and allowances.
@@ -80,8 +86,16 @@ someone who intercepted it (no request today is harmful to repeat).
 | `POST /drop/devices` | anyone with a drop code | that player's current devices |
 | `GET /mail` | device | the envelopes waiting for this device |
 | `POST /mail/done` | device | `{ids}` – delete them (picked up) |
-| `POST /group/post` | signed-in | one sealed group post (at most 1 per minute) |
-| `GET /group/posts?group=&after=` | signed-in | a group's posts after number N |
+| `GET /groups` | signed-in | all open groups (name, description, owner, members; for members also activity) |
+| `POST /groups/create` | signed-in | `{name, description}` – a new open group (at most 5 per player) |
+| `POST /groups/join` | signed-in | `{group, code}` – ask to join; `code` is a drop code of your own |
+| `GET /groups/joins?group=` | member | who is asking (nickname, devices, their code) |
+| `POST /groups/admit` | member | `{group, account}` – let them in (after sealing the group key for them) |
+| `GET /groups/members?group=` | member | members' nicknames and devices (to show who wrote) |
+| `POST /groups/leave` | member | leave (the owner only when alone; the last one out deletes the group) |
+| `POST /groups/pin`, `GET /groups/pin?group=` | owner / member | the sealed pinned message |
+| `POST /group/post` | member | one sealed group post (at most 1 per minute) |
+| `GET /group/posts?group=&after=` | member | a group's posts after number N – only those from after you joined |
 | `POST /leave` | device | forget this device (and the account with its last device) |
 
 ## Putting it on Cloudflare (Raphael)

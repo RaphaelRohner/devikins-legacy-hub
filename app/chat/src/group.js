@@ -10,11 +10,12 @@
  * envelope in, because only signed-in players may post – it keeps nothing
  * about that except the time, for its one-post-per-minute flood limit.)
  *
- * The key is renewed ("new epoch") whenever someone joins or is removed:
- *   - a new member only gets keys from the moment they join, so they can't
- *     read older posts even if those are still stored (decided 21 Oct 2026);
- *   - a removed member doesn't get the new key, so they can't read on.
- * New keys travel to each member as a control message over 1:1 (direct.js).
+ * How it's used since stage 3 (22 Oct 2026): a group keeps one key; a new
+ * member gets it from a member's Hub (sealed, control message 'group-key',
+ * checked against the group's key check at the postman), and the postman
+ * hands a new member only posts from after they joined. Renewing the key
+ * ("new epoch", nextEpoch below) when someone is removed comes with the
+ * removal votes (stage 4), so a removed member can't read on.
  *
  * Posting limits (rules.js) are checked by every member's Hub using the
  * time the POSTMAN received a post (the author can't fake that) and the
@@ -24,6 +25,7 @@
 import { finalizeEvent, verifyEvent } from 'nostr-tools/pure';
 import { v2 as nip44 } from 'nostr-tools/nip44';
 import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { secretBytes } from './identity.js';
 import { checkBadge } from './badge.js';
 import { cleanText, nextPostAllowedAt } from './rules.js';
@@ -39,6 +41,18 @@ const tag = (event, name) => (event.tags || []).find((t) => Array.isArray(t) && 
 export function createGroup() {
   return { id: bytesToHex(randomBytes(16)), epoch: 1, key: bytesToHex(randomBytes(32)) };
 }
+
+/**
+ * The group's "key check": a fingerprint of the key, stored openly at the
+ * postman when the group is created. A newcomer only accepts a key that
+ * matches it, so nobody can hand them a fake one.
+ */
+export function groupKeyCheck(groupId, keyHex) {
+  return bytesToHex(sha256(new TextEncoder().encode(`devi-group-key:${groupId}:${keyHex}`)));
+}
+
+/** A post's own time and the postman's receive time may differ by at most this (older posts sent again are dropped). */
+export const MAX_POST_DELAY = 5 * 60 * 1000;
 
 /** The next key for a group (someone joined or was removed). */
 export function nextEpoch(group) {
@@ -98,7 +112,7 @@ export function openGroupPost(envelope, { groupId, keys }) {
   if (tag(post, 'h') !== groupId || Number(tag(post, 'epoch')) !== envelope.epoch) throw new Error('The post was moved from elsewhere.');
   let badge = null;
   try { badge = JSON.parse(tag(post, 'badge')); } catch { badge = null; }
-  return { from: post.pubkey, text: cleanText(post.content), badge, writtenAt: post.created_at * 1000 };
+  return { id: post.id, from: post.pubkey, text: cleanText(post.content), badge, writtenAt: post.created_at * 1000 };
 }
 
 /**
@@ -111,22 +125,65 @@ export function openGroupPost(envelope, { groupId, keys }) {
  * earlier calls ({ [author]: time }, updated in place).
  * `blocked` = authors this member blocked (hidden for them only).
  * `paused` = authors whose posting is paused by a supported removal vote.
+ * `seen` = ids of posts already shown (a Set, updated): a post sent again
+ * is dropped, and so is one whose own time is far from when the postman
+ * got it (an old post copied and sent again to use up its author's limit).
+ * The limit counts per PLAYER (the badge's account number), not per device.
  * → { shown: [...], dropped: [{ item, reason }] }
  */
-export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocked = [], paused = [] }) {
+export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocked = [], paused = [], seen = new Set() }) {
   const shown = [];
   const dropped = [];
   const sorted = [...(items || [])].filter((i) => i && i.post).sort((a, b) => a.receivedAt - b.receivedAt);
   for (const item of sorted) {
     const { post, receivedAt } = item;
+    if (post.id && seen.has(post.id)) { dropped.push({ item, reason: 'sent again' }); continue; }
+    if (Math.abs(receivedAt - post.writtenAt) > MAX_POST_DELAY) { dropped.push({ item, reason: 'old post sent again' }); continue; }
     const badge = checkBadge(post.badge, { postmanPublicKey, holder: post.from, at: receivedAt });
     if (!badge.ok) { dropped.push({ item, reason: `badge ${badge.problem}` }); continue; }
     if (paused.includes(post.from)) { dropped.push({ item, reason: 'posting paused by a vote' }); continue; }
-    const allowedAt = nextPostAllowedAt(lastAccepted[post.from] ?? null, badge.nfts);
+    const player = badge.account ?? post.from;
+    const allowedAt = nextPostAllowedAt(lastAccepted[player] ?? null, badge.nfts);
     if (receivedAt < allowedAt) { dropped.push({ item, reason: 'too early' }); continue; }
-    lastAccepted[post.from] = receivedAt;
+    lastAccepted[player] = receivedAt;
+    if (post.id) seen.add(post.id);
     if (blocked.includes(post.from)) { dropped.push({ item, reason: 'blocked by you' }); continue; }
     shown.push(item);
   }
   return { shown, dropped };
+}
+
+// --- Pinned messages (the owner's rules / important info) ---------------------
+
+/** Our own kind number for a pinned message, so it can never pass as a post (or the other way round). */
+export const PINNED_KIND = 39777;
+
+/** The owner's pinned text, signed and sealed with the group key (one per group at the postman). */
+export function sealPinned({ group, from, text, now = Date.now() }) {
+  const content = cleanText(text);
+  if (!content) throw new Error('Nothing to pin.');
+  const pinned = finalizeEvent(
+    {
+      kind: PINNED_KIND,
+      created_at: Math.floor(now / 1000),
+      content,
+      tags: [['h', group.id], ['epoch', String(group.epoch)]],
+    },
+    secretBytes(from),
+  );
+  return { v: 1, group: group.id, epoch: group.epoch, payload: nip44.encrypt(JSON.stringify(pinned), hexToBytes(group.key)) };
+}
+
+/** Opens a pinned message → { from, text, writtenAt } or null (no key); throws if it isn't genuine. */
+export function openPinned(envelope, { groupId, keys }) {
+  if (!envelope || envelope.v !== 1 || envelope.group !== groupId || typeof envelope.payload !== 'string'
+      || envelope.payload.length > MAX_GROUP_ENVELOPE_CHARS) {
+    throw new Error('Not a pinned message of this group.');
+  }
+  const key = keys && keys[envelope.epoch];
+  if (!key) return null;
+  const pinned = JSON.parse(nip44.decrypt(envelope.payload, hexToBytes(key)));
+  if (pinned.kind !== PINNED_KIND || !verifyEvent(JSON.parse(JSON.stringify(pinned)))) throw new Error('The pinned message was changed.');
+  if (tag(pinned, 'h') !== groupId || Number(tag(pinned, 'epoch')) !== envelope.epoch) throw new Error('The pinned message was moved from elsewhere.');
+  return { from: pinned.pubkey, text: cleanText(pinned.content), writtenAt: pinned.created_at * 1000 };
 }

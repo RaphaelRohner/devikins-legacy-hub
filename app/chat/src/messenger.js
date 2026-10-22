@@ -27,7 +27,9 @@
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { createIdentity, isPublicKey, secretBytes } from './identity.js';
 import { sealDirect, openDirect } from './direct.js';
-import { cleanText, nicknameKey } from './rules.js';
+import { cleanText, nicknameKey, nextPostAllowedAt } from './rules.js';
+import { sealGroupPost, openGroupPost, acceptPosts, readGroupKeyMessage, sealPinned, openPinned, groupKeyCheck } from './group.js';
+import { checkBadge } from './badge.js';
 import { createPostmanClient } from './client.js';
 
 const SCHEMA = `
@@ -55,7 +57,46 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 CREATE INDEX IF NOT EXISTS chat_messages_by_contact ON chat_messages (contact, id);
 CREATE TABLE IF NOT EXISTS chat_seen (id TEXT PRIMARY KEY NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS chat_groups (
+  id TEXT PRIMARY KEY NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  owner TEXT,
+  is_owner INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL,
+  key TEXT,
+  epoch INTEGER NOT NULL DEFAULT 1,
+  code TEXT,
+  last_seq INTEGER NOT NULL DEFAULT 0,
+  unread INTEGER NOT NULL DEFAULT 0,
+  pinned_text TEXT,
+  pinned_at INTEGER,
+  joined_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_group_posts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  grp TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  pid TEXT,
+  author TEXT NOT NULL,
+  nickname TEXT,
+  text TEXT NOT NULL,
+  written_at INTEGER NOT NULL,
+  received_at INTEGER NOT NULL,
+  mine INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS chat_group_posts_by_group ON chat_group_posts (grp, seq);
+CREATE TABLE IF NOT EXISTS chat_group_last (grp TEXT NOT NULL, author TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (grp, author));
+CREATE TABLE IF NOT EXISTS chat_group_names (grp TEXT NOT NULL, device TEXT NOT NULL, nickname TEXT NOT NULL, PRIMARY KEY (grp, device));
 `;
+
+/** Group states on this device. */
+export const GROUP_STATUS = {
+  ASKING: 'asking', // asked to join; waiting for a member's Hub to hand over the key
+  MEMBER: 'member',
+};
+
+const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_names'];
 
 /** Contact states. */
 export const STATUS = {
@@ -405,6 +446,23 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       return 'request';
     }
 
+    if (type === 'group-key') {
+      // A member's Hub let us into a group we asked to join.
+      let g;
+      try { g = readGroupKeyMessage(opened.data); } catch { return 'damaged'; }
+      const mine = await first('SELECT * FROM chat_groups WHERE id = ?', [g.id]);
+      if (!mine || (mine.status !== GROUP_STATUS.ASKING && mine.key)) return 'ignored';
+      // Only the group's real key: it must match the fingerprint stored at
+      // the postman when the group was made (nobody can hand us a fake one).
+      const { groups } = await postman.groups();
+      const there = groups.find((x) => x.id === g.id);
+      if (!there || groupKeyCheck(g.id, g.key) !== there.keyCheck) return 'fake key';
+      await run('UPDATE chat_groups SET key = ?, epoch = ?, status = ?, code = NULL, joined_at = ? WHERE id = ?',
+        [g.key, g.epoch, GROUP_STATUS.MEMBER, t, g.id]);
+      // (The code we gave for this is single-use: the postman removes it when we're let in.)
+      return 'joined';
+    }
+
     if (!known) return 'unknown sender';
 
     if (type === 'contact-accept') {
@@ -473,10 +531,12 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       if (result === 'message') counts.messages += 1;
       if (result === 'request') counts.requests += 1;
       if (result === 'accepted') counts.accepted += 1;
+      if (result === 'joined') counts.joined = (counts.joined || 0) + 1;
     }
     if (done.length) await postman.mailDone(done);
     await run('DELETE FROM chat_seen WHERE at < ?', [now() - SEEN_KEEP]);
     if (failure) throw failure;
+    if (!leaving && (await first('SELECT id FROM chat_groups LIMIT 1'))) await syncGroups();
     return counts;
   }
 
@@ -490,12 +550,263 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       leaving = false;
       throw e;
     }
-    for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me']) await run(`DELETE FROM ${table}`);
+    for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES]) await run(`DELETE FROM ${table}`);
     // A new chat key for a fresh start (the old one is forgotten at the postman).
     identity = createIdentity();
     await setMe('identity', identity);
     postman = createPostmanClient({ baseUrl: postmanUrl, identity, fetchFn, now });
     leaving = false;
+  }
+
+  // --- groups ---------------------------------------------------------------
+
+  async function postmanKey() {
+    let key = await getMe('postmanKey');
+    if (!key) {
+      key = (await postman.hello()).postman;
+      await setMe('postmanKey', key);
+    }
+    return key;
+  }
+
+  const groupRow = (r) => r && ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    owner: r.owner,
+    isOwner: !!r.is_owner,
+    status: r.status,
+    unread: r.unread,
+    pinned: r.pinned_text ? { text: r.pinned_text, at: r.pinned_at } : null,
+    hasKey: !!r.key,
+  });
+
+  /**
+   * All open groups at the postman, with this device's own state merged in
+   * (member / asking, unread). → [{ id, name, description, owner, members,
+   * member, asking, isOwner, unread, pinned }]
+   */
+  let groupsCache = null;
+  async function listGroups({ maxAgeMs = 0 } = {}) {
+    if (!groupsCache || maxAgeMs <= 0 || now() - groupsCache.at > maxAgeMs) groupsCache = { at: now(), groups: (await postman.groups()).groups };
+    const { groups } = groupsCache;
+    const local = new Map((await all('SELECT * FROM chat_groups')).map((r) => [r.id, groupRow(r)]));
+    // Groups that are gone (or that we're no longer in) are forgotten here too.
+    for (const [id, g] of local) {
+      const there = groups.find((x) => x.id === id);
+      if (!there || (!there.member && !there.asking && g.status === GROUP_STATUS.MEMBER && maxAgeMs === 0)) await forgetGroup(id);
+    }
+    return groups.map((g) => {
+      const mine = local.get(g.id);
+      const hasKey = !!mine?.hasKey;
+      const asking = g.asking || mine?.status === GROUP_STATUS.ASKING;
+      return {
+        ...g,
+        unread: mine?.unread ?? 0,
+        pinned: mine?.pinned ?? null,
+        hasKey,
+        member: g.member && hasKey,
+        asking,
+        // In the group, but this browser has no key (e.g. a new browser): "Get the key" asks again.
+        needsKey: g.member && !hasKey && !asking,
+      };
+    });
+  }
+
+  async function forgetGroup(id) {
+    for (const table of ['chat_group_posts', 'chat_group_last', 'chat_group_names']) await run(`DELETE FROM ${table} WHERE grp = ?`, [id]);
+    await run('DELETE FROM chat_groups WHERE id = ?', [id]);
+  }
+
+  async function myGroup(id) {
+    const g = await first('SELECT * FROM chat_groups WHERE id = ?', [id]);
+    if (!g || g.status !== GROUP_STATUS.MEMBER || !g.key) throw new Error("You're not in this group (yet).");
+    return g;
+  }
+
+  /** Starts a new open group; this device holds its first key. */
+  async function createGroup(name, description = '') {
+    const id = randomCode().slice(0, 32);
+    const key = randomCode();
+    const { name: saved } = await postman.createGroup({ id, name, description, keyCheck: groupKeyCheck(id, key) });
+    groupsCache = null;
+    await run('INSERT INTO chat_groups (id, name, description, owner, is_owner, status, key, epoch, joined_at) VALUES (?, ?, ?, ?, 1, ?, ?, 1, ?)',
+      [id, saved, description, await getMe('nickname'), GROUP_STATUS.MEMBER, key, now()]);
+    return id;
+  }
+
+  /** Asks to join: the first member's Hub that's open lets us in (hands over the key). */
+  async function joinGroup(id) {
+    const existing = await first('SELECT * FROM chat_groups WHERE id = ?', [id]);
+    if (existing?.status === GROUP_STATUS.MEMBER && existing.key) return 'member';
+    const code = existing?.code ?? await newCode();
+    await postman.joinGroup(id, code);
+    groupsCache = null;
+    const { groups } = await postman.groups();
+    const g = groups.find((x) => x.id === id) || { name: 'Group', description: '' };
+    await run(
+      `INSERT INTO chat_groups (id, name, description, owner, status, code, joined_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET status = excluded.status, code = excluded.code`,
+      [id, g.name, g.description ?? '', g.owner ?? null, GROUP_STATUS.ASKING, code, now()],
+    );
+    return 'asking';
+  }
+
+  async function leaveGroup(id) {
+    await postman.leaveGroup(id);
+    groupsCache = null;
+    const g = await first('SELECT code FROM chat_groups WHERE id = ?', [id]);
+    if (g?.code) await postman.codes({ remove: [g.code] }).catch(() => {});
+    await forgetGroup(id);
+  }
+
+  /** Lets in whoever is waiting to join a group we're in: hands them the key, sealed. */
+  async function admitWaiting(g) {
+    const { joins } = await postman.groupJoins(g.id);
+    for (const j of joins) {
+      if (!j.devices.length) continue;
+      const items = sealDirect({
+        from: identity,
+        toDevices: j.devices,
+        type: 'group-key',
+        body: { group: g.id, epoch: g.epoch, key: g.key },
+      });
+      try {
+        await postman.drop(j.code, items);
+      } catch {
+        continue; // they took the request back, or their mailbox is full: try another time
+      }
+      await postman.admit(g.id, j.account);
+    }
+  }
+
+  /**
+   * Who wrote it: a nickname for an author's chat key in this group. The
+   * member list is asked for at most once per collection (`run` = { asked }).
+   */
+  async function authorName(grp, device, runState) {
+    const known = await first('SELECT nickname FROM chat_group_names WHERE grp = ? AND device = ?', [grp, device]);
+    if (known) return known.nickname;
+    if (runState.asked) return null;
+    runState.asked = true;
+    const { members } = await postman.groupMembers(grp);
+    for (const m of members) {
+      if (typeof m.nickname !== 'string' || !m.nickname) continue;
+      for (const d of m.devices) await run('INSERT OR REPLACE INTO chat_group_names (grp, device, nickname) VALUES (?, ?, ?)', [grp, d, m.nickname]);
+    }
+    return members.find((m) => m.devices.includes(device))?.nickname ?? null;
+  }
+
+  /** Collects a group's new posts, applies the posting limits, files them. → number of new posts from others */
+  async function collectGroup(g) {
+    const pk = await postmanKey();
+    const blockedDevices = [];
+    for (const c of await listContacts()) if (c.status === STATUS.BLOCKED) blockedDevices.push(...c.devices);
+    let total = 0;
+    const runState = { asked: false };
+    const seen = new Set((await all('SELECT pid FROM chat_group_posts WHERE grp = ? AND pid IS NOT NULL', [g.id])).map((r) => r.pid));
+    for (;;) {
+      let added = 0;
+      const { posts } = await postman.groupPosts(g.id, g.last_seq);
+      if (!posts.length) break;
+      const items = [];
+      for (const p of posts) {
+        let post = null;
+        try { post = openGroupPost(p.envelope, { groupId: g.id, keys: { [g.epoch]: g.key } }); } catch { post = null; }
+        if (post) items.push({ post, receivedAt: p.receivedAt, seq: p.seq });
+      }
+      const lastAccepted = {};
+      for (const r of await all('SELECT author, at FROM chat_group_last WHERE grp = ?', [g.id])) lastAccepted[r.author] = r.at;
+      const { shown } = acceptPosts(items, { postmanPublicKey: pk, lastAccepted, blocked: blockedDevices, seen });
+      for (const [author, at] of Object.entries(lastAccepted)) {
+        await run('INSERT OR REPLACE INTO chat_group_last (grp, author, at) VALUES (?, ?, ?)', [g.id, author, at]);
+      }
+      for (const item of shown) {
+        const mine = item.post.from === identity.publicKey;
+        await run(
+          'INSERT INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [g.id, item.seq, item.post.id ?? null, item.post.from, await authorName(g.id, item.post.from, runState), item.post.text, item.post.writtenAt, item.receivedAt, mine ? 1 : 0],
+        );
+        if (!mine) added += 1;
+      }
+      g.last_seq = posts[posts.length - 1].seq;
+      await run('UPDATE chat_groups SET last_seq = ?, unread = unread + ? WHERE id = ?', [g.last_seq, added, g.id]);
+      total += added;
+      if (posts.length < 200) break;
+    }
+    return total;
+  }
+
+  /** The owner's pinned message, checked: it must be signed by one of the owner's devices. */
+  async function collectPinned(g, owner) {
+    const { envelope, at } = await postman.pinned(g.id);
+    let text = null;
+    if (envelope) {
+      let opened = null;
+      try { opened = openPinned(envelope, { groupId: g.id, keys: { [g.epoch]: g.key } }); } catch { opened = null; }
+      if (opened) {
+        const ownerPlayer = owner ? await playerAt(owner) : null;
+        // The owner isn't listed right now (e.g. their weekly check ran out):
+        // keep what we have and look again next time.
+        if (!ownerPlayer) return;
+        if (ownerPlayer.devices.includes(opened.from)) text = opened.text;
+      }
+    }
+    await run('UPDATE chat_groups SET pinned_text = ?, pinned_at = ? WHERE id = ?', [text, at, g.id]);
+  }
+
+  /** Everything for the groups we're in: new posts, the pinned message, letting people in. */
+  async function syncGroups() {
+    const { groups } = await postman.myGroups();
+    for (const there of groups) {
+      const g = await first('SELECT * FROM chat_groups WHERE id = ?', [there.id]);
+      if (!g) continue;
+      if (there.owner !== g.owner || there.isOwner !== !!g.is_owner) {
+        await run('UPDATE chat_groups SET owner = ?, is_owner = ? WHERE id = ?', [there.owner, there.isOwner ? 1 : 0, g.id]);
+      }
+      if (g.status !== GROUP_STATUS.MEMBER || !g.key) continue;
+      if (there.lastSeq > g.last_seq) await collectGroup(g);
+      if ((there.pinnedAt ?? null) !== (g.pinned_at ?? null)) await collectPinned(g, there.owner);
+      if (there.waiting > 0) await admitWaiting(g);
+    }
+    // Groups we're no longer in (e.g. the group was deleted) are forgotten here.
+    for (const g of await all('SELECT id FROM chat_groups WHERE status = ?', [GROUP_STATUS.MEMBER])) {
+      if (!groups.some((x) => x.id === g.id)) await forgetGroup(g.id);
+    }
+  }
+
+  async function groupPosts(id) {
+    await run('UPDATE chat_groups SET unread = 0 WHERE id = ?', [id]);
+    return (await all('SELECT * FROM chat_group_posts WHERE grp = ? ORDER BY seq', [id])).map((p) => ({
+      id: p.id, mine: !!p.mine, author: p.author, nickname: p.nickname, text: p.text, writtenAt: p.written_at, receivedAt: p.received_at,
+    }));
+  }
+
+  /** When this device may post in the group again (by the holdings in its badge). */
+  async function nextGroupPostAt(id) {
+    const badge = await getMe('badge');
+    const pk = await postmanKey();
+    const check = badge ? checkBadge(badge, { postmanPublicKey: pk, holder: identity.publicKey, at: now() }) : { ok: false };
+    if (!check.ok) return { allowedAt: null, nfts: 0 };
+    const last = await first('SELECT at FROM chat_group_last WHERE grp = ? AND author = ?', [id, check.account ?? identity.publicKey]);
+    return { allowedAt: nextPostAllowedAt(last?.at ?? null, check.nfts), nfts: check.nfts };
+  }
+
+  async function postToGroup(id, text) {
+    const g = await myGroup(id);
+    const { allowedAt } = await nextGroupPostAt(id);
+    if (allowedAt === null) throw new Error('Please sign in again (your weekly check has run out).');
+    if (allowedAt > now()) throw new Error('Not yet: your next post in this group is possible later (see above).');
+    const envelope = sealGroupPost({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, text, badge: await getMe('badge'), now: now() });
+    await postman.groupPost(envelope);
+    await collectGroup(g);
+  }
+
+  async function setPinned(id, text) {
+    const g = await myGroup(id);
+    const envelope = text && text.trim() ? sealPinned({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, text, now: now() }) : null;
+    await postman.setPinned(id, envelope);
+    await run('UPDATE chat_groups SET pinned_text = ?, pinned_at = ? WHERE id = ?', [envelope ? cleanText(text) : null, null, id]);
   }
 
   // --- backup (locked with a password by backup.js) ------------------------
@@ -515,6 +826,9 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       me,
       contacts: await all('SELECT * FROM chat_contacts ORDER BY id'),
       messages: await all('SELECT * FROM chat_messages ORDER BY id'),
+      groups: await all('SELECT * FROM chat_groups'),
+      groupPosts: await all('SELECT * FROM chat_group_posts ORDER BY id'),
+      groupLast: await all('SELECT * FROM chat_group_last'),
     };
   }
 
@@ -534,7 +848,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       throw new Error("The chat in this backup can't be read.");
     }
     const wipe = async () => {
-      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me']) await run(`DELETE FROM ${table}`);
+      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES]) await run(`DELETE FROM ${table}`);
     };
     await wipe();
     try {
@@ -552,6 +866,24 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
   }
 
   async function restoreRows(data) {
+    for (const g of Array.isArray(data.groups) ? data.groups : []) {
+      if (typeof g.id !== 'string' || !Object.values(GROUP_STATUS).includes(g.status)) continue;
+      await run(
+        `INSERT INTO chat_groups (id, name, description, owner, is_owner, status, key, epoch, code, last_seq, unread, pinned_text, pinned_at, joined_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [g.id, String(g.name ?? ''), String(g.description ?? ''), g.owner ?? null, g.is_owner ? 1 : 0, g.status, g.key ?? null,
+          Number(g.epoch) || 1, g.code ?? null, Number(g.last_seq) || 0, Number(g.unread) || 0, g.pinned_text ?? null, g.pinned_at ?? null, Number(g.joined_at) || 0],
+      );
+    }
+    for (const p of Array.isArray(data.groupPosts) ? data.groupPosts : []) {
+      if (typeof p.grp !== 'string' || typeof p.text !== 'string') continue;
+      await run('INSERT INTO chat_group_posts (grp, seq, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [p.grp, Number(p.seq) || 0, String(p.author ?? ''), p.nickname ?? null, p.text, Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine ? 1 : 0]);
+    }
+    for (const l of Array.isArray(data.groupLast) ? data.groupLast : []) {
+      if (typeof l.grp !== 'string' || typeof l.author !== 'string') continue;
+      await run('INSERT OR REPLACE INTO chat_group_last (grp, author, at) VALUES (?, ?, ?)', [l.grp, l.author, Number(l.at) || 0]);
+    }
     const idMap = new Map();
     for (const c of data.contacts) {
       if (typeof c.nickname !== 'string' || !Object.values(STATUS).includes(c.status)) continue;
@@ -581,7 +913,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     leaving = true;
     try {
       if (mailRun) await mailRun.catch(() => {});
-      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me']) await run(`DELETE FROM ${table}`);
+      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES]) await run(`DELETE FROM ${table}`);
       identity = createIdentity();
       await setMe('identity', identity);
       postman = createPostmanClient({ baseUrl: postmanUrl, identity, fetchFn, now });
@@ -591,6 +923,15 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
   }
 
   return {
+    listGroups,
+    createGroup,
+    joinGroup,
+    leaveGroup,
+    groupPosts,
+    postToGroup,
+    nextGroupPostAt,
+    setPinned,
+    syncGroups,
     forgetHere,
     hasChat,
     backupData,

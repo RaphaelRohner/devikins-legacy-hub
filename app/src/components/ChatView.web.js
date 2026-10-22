@@ -24,6 +24,7 @@ import { getMessenger } from '../api/chatStore';
 import { isExtensionAvailable, signTextWithExtension } from '../api/kleverExtension';
 import { MAIL_CHECK_EVERY_MS } from '../constants/chat';
 import { CONTACT_STATUS } from '../../chat/src/index.js';
+import ChatGroupView, { GroupsCard } from './ChatGroupView.web';
 import { MAX_TEXT_LENGTH, nicknameKey } from '../../chat/src/rules.js';
 
 function timeLabel(ms) {
@@ -54,15 +55,34 @@ export default function ChatView({ onClose }) {
   const [search, setSearch] = useState('');
   const [results, setResults] = useState(null);
   const [draft, setDraft] = useState('');
+  const [groups, setGroups] = useState(null);
+  const [openGroupId, setOpenGroupId] = useState(null);
+  const [groupPosts, setGroupPosts] = useState([]);
+  const [groupNext, setGroupNext] = useState(null);
   const openIdRef = useRef(null);
   openIdRef.current = openId;
+  const openGroupRef = useRef(null);
+  openGroupRef.current = openGroupId;
   const scrollRef = useRef(null);
 
-  const refresh = useCallback(async (m) => {
+  const refresh = useCallback(async (m, { freshGroups = false } = {}) => {
     const s = await m.status();
     setStatus(s);
     if (s.state === 'ready' || s.state === 'signed-out') setContacts(await m.listContacts());
     if (openIdRef.current) setThread(await m.messages(openIdRef.current));
+    if (s.state === 'ready') {
+      try {
+        // The full group list is asked for at most every 6th mail check - once a
+        // minute - or right after an action (to keep the postman's requests low).
+        setGroups(await m.listGroups({ maxAgeMs: freshGroups ? 0 : 6 * MAIL_CHECK_EVERY_MS }));
+      } catch {
+        // (shown again with the next check)
+      }
+      if (openGroupRef.current) {
+        setGroupPosts(await m.groupPosts(openGroupRef.current));
+        setGroupNext(await m.nextGroupPostAt(openGroupRef.current));
+      }
+    }
     return s;
   }, []);
 
@@ -101,15 +121,16 @@ export default function ChatView({ onClose }) {
     return () => clearInterval(timer);
   }, [isReady, checkMail]);
 
-  // Back (browser or phone) closes an open conversation first.
+  // Back (browser or phone) closes an open conversation or group first.
   useEffect(() => {
-    if (!openId) return undefined;
+    if (!openId && !openGroupId) return undefined;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       setOpenId(null);
+      setOpenGroupId(null);
       return true;
     });
     return () => sub.remove();
-  }, [openId]);
+  }, [openId, openGroupId]);
 
   // Once a contact can be reached again (e.g. they unblocked you), the
   // old "isn't receiving your messages" error line goes away too.
@@ -125,11 +146,13 @@ export default function ChatView({ onClose }) {
     setBusy(true);
     try {
       await fn();
+      return true;
     } catch (e) {
       setError(e?.message || String(e));
+      return false;
     } finally {
       setBusy(false);
-      if (messenger) await refresh(messenger).catch(() => {});
+      if (messenger) await refresh(messenger, { freshGroups: true }).catch(() => {});
     }
   }
 
@@ -151,6 +174,13 @@ export default function ChatView({ onClose }) {
     await messenger.requestContact(name);
     setResults(null);
     setSearch('');
+  });
+
+  const openGroupThread = (id) => act(async () => {
+    setGroupPosts(await messenger.groupPosts(id));
+    setGroupNext(await messenger.nextGroupPostAt(id));
+    setError('');
+    setOpenGroupId(id);
   });
 
   const openThread = (id) => act(async () => {
@@ -291,6 +321,27 @@ export default function ChatView({ onClose }) {
     );
   }
 
+  // --- one group ---
+  const openGroup = openGroupId ? (groups || []).find((g) => g.id === openGroupId) : null;
+  if (openGroup) {
+    return (
+      <ChatGroupView
+        group={openGroup}
+        posts={groupPosts}
+        next={groupNext}
+        busy={busy}
+        error={error}
+        onBack={() => setOpenGroupId(null)}
+        onPost={(text) => act(() => messenger.postToGroup(openGroup.id, text))}
+        onPin={(text) => act(() => messenger.setPinned(openGroup.id, text))}
+        onLeave={() => act(async () => {
+          await messenger.leaveGroup(openGroup.id);
+          setOpenGroupId(null);
+        })}
+      />
+    );
+  }
+
   // --- one conversation ---
   const open = openId ? contacts.find((c) => c.id === openId) : null;
   if (open) {
@@ -407,6 +458,17 @@ export default function ChatView({ onClose }) {
             ))}
           </>,
         )}
+
+        <GroupsCard
+          groups={groups}
+          busy={busy}
+          onOpen={openGroupThread}
+          onJoin={(id) => act(() => messenger.joinGroup(id))}
+          onCreate={(name, description) => act(async () => {
+            const id = await messenger.createGroup(name, description);
+            await openGroupThread(id);
+          })}
+        />
 
         {card(
           <>

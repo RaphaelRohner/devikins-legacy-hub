@@ -224,3 +224,51 @@ test('the chat goes into "Export all sets" with a password and comes back in a n
   await moved.context.close();
   postman.stop();
 });
+
+test('groups: create with pinned rules, another player joins (let in by the owner\'s Hub), posts with the holding limit shown', async ({ browser }) => {
+  test.setTimeout(180_000);
+  const postman = await startPostman();
+  const alice = await openPlayer(browser, postman, await postman.newWallet(3));
+  const bob = await openPlayer(browser, postman, await postman.newWallet(24));
+  await signInAs(alice.page, 'Alice');
+  await signInAs(bob.page, 'Bob');
+
+  // Alice starts a group, pins rules and posts
+  await alice.page.getByTestId('chat-group-new').click();
+  await alice.page.getByTestId('chat-group-name').fill('Fire Breeders');
+  await alice.page.getByTestId('chat-group-description').fill('Trading Fire Devikins');
+  await alice.page.getByTestId('chat-group-create').click();
+  await expect(alice.page.getByText('you started it')).toBeVisible();
+  await alice.page.getByTestId('chat-group-pin-edit').click();
+  await alice.page.getByTestId('chat-group-pin-draft').fill('Rules: be nice, no spam.');
+  await alice.page.getByTestId('chat-group-pin-save').click();
+  await expect(alice.page.getByTestId('chat-group-pinned')).toContainText('Rules: be nice, no spam.');
+  await alice.page.getByTestId('chat-group-draft').fill('Welcome, Fire fans!');
+  await alice.page.getByTestId('chat-group-post').click();
+  await expect(alice.page.getByText('Welcome, Fire fans!')).toBeVisible();
+  await expect(alice.page.getByTestId('chat-group-limit')).toContainText('Next post possible in 8 h');
+  await expect(alice.page.getByTestId('chat-group-limit')).toContainText('With 3 Devikins you can post once every 8 h');
+
+  // Bob finds it and asks to join; Alice's open Hub lets him in
+  await expect(bob.page.getByTestId('chat-group-other')).toContainText('Fire Breeders');
+  await expect(bob.page.getByTestId('chat-group-other')).toContainText('Trading Fire Devikins');
+  await bob.page.getByTestId('chat-group-join').click();
+  await expect(bob.page.getByTestId('chat-group-waiting')).toBeVisible();
+  await expect(bob.page.getByTestId('chat-group')).toContainText('Fire Breeders');
+  await bob.page.getByTestId('chat-group').click();
+  await expect(bob.page.getByTestId('chat-group-pinned')).toContainText('Rules: be nice, no spam.');
+  await expect(bob.page.getByText('No posts yet since you joined.')).toBeVisible();
+  await expect(bob.page.getByText('Welcome, Fire fans!')).toHaveCount(0);
+  await expect(bob.page.getByTestId('chat-group-limit')).toContainText('With 24 Devikins you can post once every 1 h');
+  await bob.page.getByTestId('chat-group-draft').fill('Hi everyone');
+  await bob.page.getByTestId('chat-group-draft').press('Enter');
+  await expect(bob.page.getByText('Hi everyone')).toBeVisible();
+
+  // Alice sees Bob's post with his name
+  await expect(alice.page.getByText('Hi everyone')).toBeVisible();
+  await expect(alice.page.getByText('Bob', { exact: true })).toBeVisible();
+
+  await alice.context.close();
+  await bob.context.close();
+  postman.stop();
+});

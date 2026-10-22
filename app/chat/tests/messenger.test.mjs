@@ -50,10 +50,10 @@ function world() {
     const r = await office.handle({ method: init.method || 'GET', url, bodyText: init.body || '', authorization: init.headers?.Authorization ?? null });
     return Response.json(r.body, { status: r.status });
   };
-  async function player(nickname, nfts = 3) {
-    const { privateKey, publicKey } = generateKeyPairSync();
+  async function player(nickname, nfts = 3, sameWalletAs = null) {
+    const { privateKey, publicKey } = sameWalletAs ? sameWalletAs.walletKeys : generateKeyPairSync();
     const wallet = bech32Encode(publicKey.bytes, 'klv');
-    holdings.set(wallet, nfts);
+    if (!sameWalletAs) holdings.set(wallet, nfts);
     const db = localDb();
     const m = await createMessenger({ db, postmanUrl: BASE, fetchFn, now: () => clock.t });
     // (for tests that play a modified Hub: the device's raw key and postman)
@@ -62,7 +62,10 @@ function world() {
     m.postman = createPostmanClient({ baseUrl: BASE, identity: JSON.parse((await db.getAllAsync("SELECT v FROM chat_me WHERE k = 'identity'"))[0].v), fetchFn, now: () => clock.t });
     const { code, text } = await m.startSignIn();
     const signature = Buffer.from(signMessageSync(prepareKlvMessage(text), privateKey.bytes)).toString('hex');
-    assert.equal((await m.finishSignIn({ code, wallet, signature })).state, 'needs-nickname');
+    const signedIn = await m.finishSignIn({ code, wallet, signature });
+    m.walletKeys = { privateKey, publicKey };
+    if (sameWalletAs) return m; // a second browser of the same player
+    assert.equal(signedIn.state, 'needs-nickname');
     assert.equal((await m.setNickname(nickname)).state, 'ready');
     return m;
   }
@@ -416,4 +419,162 @@ test('"only this browser" removes the chat here and leaves it working in the oth
   assert.equal((await bob.checkMail()).messages, 1);
   await bob.sendMessage((await bob.listContacts())[0].id, 'hi');
   assert.equal((await moved.checkMail()).messages, 1);
+});
+
+test('groups: create, ask to join, a member\'s Hub lets you in, posts from joining on, limits by holdings, pinned rules', async () => {
+  const { player, clock } = world();
+  const alice = await player('Alice', 3); // 3 Devikins: one post per 8 h
+  const bob = await player('Bob', 50); // 50: one post per ~29 min
+  const gid = await alice.createGroup('Fire Breeders', 'Trading Fire Devikins');
+  await alice.postToGroup(gid, 'Welcome, Fire fans!');
+  await assert.rejects(alice.postToGroup(gid, 'and again'), /Not yet/);
+  const next = await alice.nextGroupPostAt(gid);
+  assert.equal(next.nfts, 3);
+  assert.equal(next.allowedAt - clock.t, 8 * 60 * MINUTE);
+
+  let list = await bob.listGroups();
+  assert.deepEqual(list.map((g) => [g.name, g.owner, g.members, g.member, g.asking]), [['Fire Breeders', 'Alice', 1, false, false]]);
+  assert.equal(await bob.joinGroup(gid), 'asking');
+  assert.equal((await bob.listGroups())[0].asking, true);
+  await alice.checkMail(); // Alice's Hub sees Bob waiting and hands him the key
+  assert.equal((await bob.checkMail()).joined, 1);
+  list = await bob.listGroups();
+  assert.deepEqual([list[0].member, list[0].asking, list[0].members], [true, false, 2]);
+  assert.deepEqual(await bob.groupPosts(gid), []); // nothing from before he joined
+
+  clock.t += MINUTE;
+  await bob.postToGroup(gid, 'Hi everyone');
+  await alice.checkMail();
+  const seen = await alice.groupPosts(gid);
+  assert.deepEqual(seen.map((p) => [p.nickname, p.text, p.mine]), [['Alice', 'Welcome, Fire fans!', true], ['Bob', 'Hi everyone', false]]);
+  assert.deepEqual((await bob.groupPosts(gid)).map((p) => [p.nickname, p.mine]), [['Bob', true]]);
+
+  // Pinned rules: only the owner; members see them after the next check
+  await alice.setPinned(gid, 'Rules: be nice, no spam.');
+  await assert.rejects(bob.setPinned(gid, 'I rule now'), /Only the group owner/);
+  await bob.checkMail();
+  assert.equal((await bob.listGroups())[0].pinned.text, 'Rules: be nice, no spam.');
+
+  // A newcomer gets the pinned rules right away, but no older posts
+  const carol = await player('Carol', 1);
+  await carol.joinGroup(gid);
+  await bob.checkMail(); // any member's Hub can let her in
+  await carol.checkMail();
+  await carol.checkMail();
+  const cg = (await carol.listGroups())[0];
+  assert.equal(cg.member, true);
+  assert.equal(cg.pinned?.text, 'Rules: be nice, no spam.');
+  assert.deepEqual(await carol.groupPosts(gid), []);
+
+  // Unread counts, and leaving
+  clock.t += 30 * MINUTE;
+  await bob.postToGroup(gid, 'Carol, welcome!');
+  await carol.checkMail();
+  assert.equal((await carol.listGroups())[0].unread, 1);
+  assert.equal((await carol.groupPosts(gid)).length, 1);
+  assert.equal((await carol.listGroups())[0].unread, 0);
+  await carol.leaveGroup(gid);
+  assert.deepEqual((await carol.listGroups()).map((g) => [g.member, g.members]), [[false, 2]]);
+});
+
+test('groups: posts that come too early are hidden by every Hub; blocked players\' posts are hidden for you', async () => {
+  const { player, clock } = world();
+  const alice = await player('Alice', 3);
+  const bob = await player('Bob', 50);
+  const gid = await alice.createGroup('Open Talk');
+  await bob.joinGroup(gid);
+  await alice.checkMail();
+  await bob.checkMail();
+  // A modified Hub posts twice within 8 h for Alice: the postman takes it (1/min), every reader drops the 2nd
+  clock.t += MINUTE;
+  await alice.postToGroup(gid, 'first');
+  clock.t += 2 * MINUTE;
+  const { sealGroupPost } = await import('../src/group.js');
+  const aliceKey = await identityOf(alice);
+  const g = (await alice.db.getAllAsync('SELECT * FROM chat_groups'))[0];
+  const badge = JSON.parse((await alice.db.getAllAsync("SELECT v FROM chat_me WHERE k = 'badge'"))[0].v);
+  await alice.postman.groupPost(sealGroupPost({ group: { id: gid, epoch: g.epoch, key: g.key }, from: aliceKey, text: 'sneaky second', badge, now: clock.t }));
+  await bob.checkMail();
+  assert.deepEqual((await bob.groupPosts(gid)).map((p) => p.text), ['first']);
+
+  // Bob blocks Alice (as a contact): her later posts are hidden for him only
+  await connect(alice, bob, clock);
+  const aliceOnBob = (await bob.listContacts())[0];
+  await bob.blockContact(aliceOnBob.id);
+  clock.t += 9 * 60 * MINUTE;
+  await alice.postToGroup(gid, 'after the block');
+  await bob.checkMail();
+  assert.deepEqual((await bob.groupPosts(gid)).map((p) => p.text), ['first']);
+  assert.ok((await alice.groupPosts(gid)).some((p) => p.text === 'after the block'));
+});
+
+test('groups travel in the chat backup', async () => {
+  const { lockBackup, unlockBackup } = await import('../src/backup.js');
+  const { player, blank, clock } = world();
+  const alice = await player('Alice', 3);
+  const gid = await alice.createGroup('Backup Club');
+  await alice.postToGroup(gid, 'kept');
+  const moved = await blank();
+  await moved.restoreBackupData(await unlockBackup(await lockBackup(await alice.backupData(), 'password1', { rounds: 100000 }), 'password1'));
+  await alice.forgetHere();
+  assert.deepEqual((await moved.groupPosts(gid)).map((p) => p.text), ['kept']);
+  clock.t += 9 * 60 * MINUTE;
+  await moved.postToGroup(gid, 'from the new browser');
+  assert.equal((await moved.groupPosts(gid)).length, 2);
+});
+
+test('groups (review fixes): a fake key is refused, an old post sent again is dropped, limits count per player, a second browser gets the key, the group passes on', async () => {
+  const { sealDirect } = await import('../src/direct.js');
+  const { sealGroupPost } = await import('../src/group.js');
+  const { player, clock } = world();
+  const alice = await player('Alice', 3);
+  const mallory = await player('Mallory', 10);
+  const gid = await alice.createGroup('Safe Group');
+  await mallory.joinGroup(gid);
+  await alice.checkMail();
+  await mallory.checkMail();
+
+  // Bob asks; Mallory (a member) sees his code and sends him a FAKE key first
+  const bob = await player('Bob', 50);
+  await bob.joinGroup(gid);
+  const join = (await mallory.postman.groupJoins(gid)).joins[0];
+  const mk = await identityOf(mallory);
+  await mallory.postman.drop(join.code, sealDirect({ from: mk, toDevices: join.devices, type: 'group-key', body: { group: gid, epoch: 1, key: 'ee'.repeat(32) } }));
+  assert.equal((await bob.checkMail()).joined ?? 0, 0); // refused: doesn't match the group's key check
+  await alice.checkMail(); // the real key
+  assert.equal((await bob.checkMail()).joined, 1);
+
+  // Mallory copies Alice's post and sends it again later: dropped by every Hub
+  clock.t += MINUTE;
+  await alice.postToGroup(gid, 'real post');
+  await bob.checkMail();
+  const copy = (await mallory.postman.groupPosts(gid, 0)).posts.find((p) => p.receivedAt === clock.t);
+  clock.t += 10 * MINUTE;
+  await mallory.postman.groupPost(copy.envelope);
+  await bob.checkMail();
+  assert.deepEqual((await bob.groupPosts(gid)).map((p) => p.text), ['real post']);
+  // ... and Alice's own next post isn't blocked by it
+  assert.equal((await alice.nextGroupPostAt(gid)).allowedAt, clock.t - 10 * MINUTE + 8 * 60 * MINUTE);
+
+  // A second browser of Bob's (same wallet): in the group, but no key → "Get the key"
+  const bob2 = await player('Bob', 50, bob);
+  let g2 = (await bob2.listGroups()).find((x) => x.id === gid);
+  assert.deepEqual([g2.member, g2.needsKey, g2.asking], [false, true, false]);
+  await bob2.joinGroup(gid);
+  await alice.checkMail();
+  await bob2.checkMail();
+  g2 = (await bob2.listGroups()).find((x) => x.id === gid);
+  assert.deepEqual([g2.member, g2.needsKey], [true, false]);
+  // Bob's two browsers share ONE posting allowance (50 Devikins: every ~29 min)
+  clock.t += 30 * MINUTE;
+  await bob.postToGroup(gid, 'from browser 1');
+  await bob2.checkMail();
+  await assert.rejects(bob2.postToGroup(gid, 'from browser 2'), /Not yet/);
+
+  // The group passes on when its owner leaves
+  await alice.leaveGroup(gid);
+  await mallory.checkMail();
+  const g = (await mallory.listGroups()).find((x) => x.id === gid);
+  assert.deepEqual([g.owner, g.isOwner], ['Mallory', true]);
+  await mallory.setPinned(gid, 'New rules');
 });

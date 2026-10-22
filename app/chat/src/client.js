@@ -51,5 +51,17 @@ export function createPostmanClient({ baseUrl, identity, fetchFn = (...a) => fet
     mail: () => call('GET', '/mail'),
     mailDone: (ids) => call('POST', '/mail/done', { ids }),
     leave: () => call('POST', '/leave', {}),
+    groups: () => call('GET', '/groups'),
+    createGroup: ({ id, name, description, keyCheck }) => call('POST', '/groups/create', { id, name, description, keyCheck }),
+    myGroups: () => call('GET', '/groups/mine'),
+    joinGroup: (group, code) => call('POST', '/groups/join', { group, code }),
+    groupJoins: (group) => call('GET', `/groups/joins?group=${group}`),
+    admit: (group, account) => call('POST', '/groups/admit', { group, account }),
+    groupMembers: (group) => call('GET', `/groups/members?group=${group}`),
+    leaveGroup: (group) => call('POST', '/groups/leave', { group }),
+    setPinned: (group, envelope) => call('POST', '/groups/pin', { group, envelope }),
+    pinned: (group) => call('GET', `/groups/pin?group=${group}`),
+    groupPost: (envelope) => call('POST', '/group/post', { envelope }),
+    groupPosts: (group, after) => call('GET', `/group/posts?group=${group}&after=${after}`),
   };
 }

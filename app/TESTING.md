@@ -71,7 +71,10 @@ window) as a brand-new visitor:
   (`tests/web/chatPostman.mjs` runs it locally). "Export all sets" offers
   to include the chat with a password (typed twice); importing the backup
   in a new browser asks for it (a wrong one is refused) and the
-  conversation goes on there.
+  conversation goes on there. Groups: a player starts a group with pinned
+  rules and posts; another joins (let in by the first one's open Hub), sees
+  the rules but not the older post, and the posting limit by holdings is
+  shown.
 
 They never contact Klever, Moonlabs or the relay: every outside request
 is answered by pretend servers with six made-up NFTs
@@ -498,6 +501,10 @@ wallet - see the Signer's TESTING.md)
       chat), Import Set(s) with that file asks for the password and brings
       the chat back (Features > Chat shows your nickname, contacts and
       messages). A wrong password is refused; Skip leaves the chat out.
+- [ ] **W7. Chat groups:** create a group, pin rules, post (the box then
+      says when the next post is possible). With a second browser: Join,
+      wait until the first browser's chat is open – then you're in, see the
+      rules but not the older posts; post, and it shows in the first one.
 
 ---
 

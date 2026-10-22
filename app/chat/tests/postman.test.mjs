@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { generateKeyPairSync, signMessageSync, prepareKlvMessage } from '@klever/connect-crypto';
 import { bech32Encode } from '@klever/connect-encoding';
 import {
-  createIdentity, sealDirect, openDirect, checkBadge, createGroup, sealGroupPost, openGroupPost, acceptPosts,
+  createIdentity, sealDirect, openDirect, checkBadge, createGroup, sealGroupPost, openGroupPost, acceptPosts, groupKeyCheck,
   DAY, MINUTE, HOUR,
 } from '../src/index.js';
 import { MAX_ENVELOPE_CHARS as DIRECT_MAX } from '../src/direct.js';
@@ -345,32 +345,88 @@ test('mail waits until collected – or 30 days; a device only sees and deletes 
   assert.equal((await call(b.device, 'GET', '/mail')).body.items.length, 0);
 });
 
-test('groups: one stored copy per post, numbered; members read with the postman\'s badges and limits', async () => {
+test('groups: created at the postman, listed, joined with a member\'s help; new members get only newer posts', async () => {
   const { office, call, clock, a, b } = await twoPlayers();
-  const group = createGroup();
+  const newGroup = (name, description) => {
+    const g = createGroup();
+    return { g, body: { id: g.id, name, description, keyCheck: groupKeyCheck(g.id, g.key) } };
+  };
+  const fire = newGroup('Fire Breeders', 'Trading Fire Devikins');
+  const created = await call(a.device, 'POST', '/groups/create', fire.body);
+  assert.equal(created.status, 200, JSON.stringify(created.body));
+  const group = fire.g;
+  assert.equal((await call(a.device, 'POST', '/groups/create', fire.body)).status, 400); // same id again
+  assert.equal((await call(b.device, 'POST', '/groups/create', newGroup('fire  breeders').body)).status, 409);
+  assert.equal((await call(b.device, 'POST', '/groups/create', newGroup('x').body)).status, 400);
   const post = async (who, text) => call(who.device, 'POST', '/group/post', { envelope: sealGroupPost({ group, from: who.device, text, badge: who.badge, now: clock.t }) });
 
-  const p1 = await post(a, 'Selling a Devikin, anyone?');
+  const p1 = await post(a, 'Welcome!');
   assert.equal(p1.status, 200);
   assert.equal((await post(a, 'Again!')).status, 429); // flood limit: 1 per minute
+  assert.equal((await post(b, 'Me!')).status, 403); // not a member yet
+  assert.equal((await call(b.device, 'GET', `/group/posts?group=${group.id}`)).status, 403);
+
+  // The list: Bob sees the group, not a member
+  let list = (await call(b.device, 'GET', '/groups')).body.groups;
+  assert.deepEqual(list.map((g) => [g.name, g.owner, g.members, g.member, g.isOwner]), [['Fire Breeders', 'Alice', 1, false, false]]);
+  assert.equal(list[0].keyCheck, groupKeyCheck(group.id, group.key));
+  assert.equal(list[0].lastSeq, undefined); // no activity details for outsiders
+
+  // Bob asks to join, with a drop code for his own mailboxes
+  const code = randomCode();
+  assert.equal((await call(b.device, 'POST', '/groups/join', { group: group.id, code })).status, 400); // code not registered
+  await call(b.device, 'POST', '/codes', { add: [code] });
+  assert.equal((await call(b.device, 'POST', '/groups/join', { group: group.id, code })).body.asking, true);
+  assert.equal((await call(b.device, 'GET', `/groups/joins?group=${group.id}`)).status, 403); // only members see who asks
+  const joins = (await call(a.device, 'GET', `/groups/joins?group=${group.id}`)).body.joins;
+  assert.deepEqual(joins.map((j) => [j.nickname, j.code, j.devices]), [['Bob', code, [b.device.publicKey]]]);
+  assert.equal((await call(a.device, 'GET', '/groups/mine')).body.groups[0].waiting, 1);
+  // (Alice's Hub would now send Bob the key, sealed, with his code) and let him in:
+  assert.equal((await call(a.device, 'POST', '/groups/admit', { group: group.id, account: joins[0].account })).body.admitted, true);
+  // The code is single-use: gone once he's in
+  assert.equal((await call(null, 'POST', '/drop/devices', { code })).status, 403);
+  assert.equal((await call(a.device, 'GET', '/groups/mine')).body.groups[0].waiting, 0);
+
   clock.t += MINUTE;
-  assert.equal((await post(b, 'Me!')).status, 200);
-  assert.equal((await call(createIdentity(), 'POST', '/group/post', { envelope: { v: 1, group: group.id, epoch: 1, payload: 'x' } })).status, 403);
-
-  const all = (await call(b.device, 'GET', `/group/posts?group=${group.id}`)).body.posts;
-  assert.equal(all.length, 2);
-  const newer = (await call(b.device, 'GET', `/group/posts?group=${group.id}&after=${p1.body.seq}`)).body.posts;
-  assert.equal(newer.length, 1);
-
-  const items = all.map((p) => ({ post: openGroupPost(p.envelope, { groupId: group.id, keys: { 1: group.key } }), receivedAt: p.receivedAt }));
+  assert.equal((await post(b, 'Hi all')).status, 200);
+  clock.t += MINUTE;
+  assert.equal((await post(a, 'Hi Bob')).status, 200);
+  const bobSees = (await call(b.device, 'GET', `/group/posts?group=${group.id}`)).body.posts;
+  assert.equal(bobSees.length, 2); // not "Welcome!" from before he joined
+  const aliceSees = (await call(a.device, 'GET', `/group/posts?group=${group.id}`)).body.posts;
+  assert.equal(aliceSees.length, 3);
+  const newer = (await call(a.device, 'GET', `/group/posts?group=${group.id}&after=${p1.body.seq}`)).body.posts;
+  assert.equal(newer.length, 2);
+  const items = aliceSees.map((p) => ({ post: openGroupPost(p.envelope, { groupId: group.id, keys: { 1: group.key } }), receivedAt: p.receivedAt }));
   const { shown, dropped } = acceptPosts(items, { postmanPublicKey: office.postmanPublicKey });
-  assert.equal(shown.length, 2, JSON.stringify(dropped));
-  assert.equal(shown[0].post.text, 'Selling a Devikin, anyone?');
+  // Alice holds 3 Devikins: one post per 8 hours, so her second post is dropped by every reader.
+  assert.deepEqual(shown.map((x) => x.post.text), ['Welcome!', 'Hi all']);
+  assert.deepEqual(dropped.map((d) => [d.item.post.text, d.reason]), [['Hi Bob', 'too early']]);
+  const members = (await call(b.device, 'GET', `/groups/members?group=${group.id}`)).body.members;
+  assert.deepEqual(members.map((m) => m.nickname), ['Alice', 'Bob']);
 
+  // Pinned: only the owner
+  const pin = sealGroupPost({ group, from: a.device, text: 'Rules: be nice', badge: a.badge, now: clock.t });
+  assert.equal((await call(b.device, 'POST', '/groups/pin', { group: group.id, envelope: pin })).status, 403);
+  assert.equal((await call(a.device, 'POST', '/groups/pin', { group: group.id, envelope: pin })).status, 200);
+  assert.deepEqual((await call(b.device, 'GET', `/groups/pin?group=${group.id}`)).body.envelope, pin);
+
+  // Leaving: the owner's group goes to the earliest member (pinned message cleared); the last one out deletes it
+  assert.equal((await call(a.device, 'POST', '/groups/leave', { group: group.id })).body.deleted, false);
+  const handed = (await call(b.device, 'GET', '/groups')).body.groups[0];
+  assert.deepEqual([handed.owner, handed.isOwner, handed.members], ['Bob', true, 1]);
+  assert.equal((await call(b.device, 'GET', `/groups/pin?group=${group.id}`)).body.envelope, null);
+  assert.equal((await call(b.device, 'POST', '/groups/leave', { group: group.id })).body.deleted, true);
+  assert.equal((await call(a.device, 'GET', '/groups')).body.groups.length, 0);
+
+  // Group posts are deleted after 30 days
+  const second = newGroup('Second group');
+  const g2 = (await call(a.device, 'POST', '/groups/create', second.body)).body.id;
+  clock.t += MINUTE;
+  await call(a.device, 'POST', '/group/post', { envelope: sealGroupPost({ group: { id: g2, epoch: 1, key: group.key }, from: a.device, text: 'x', badge: a.badge, now: clock.t }) });
   clock.t += 30 * DAY + 1000;
   office.cleanUp();
-  await call(a.device, 'POST', '/signin/start'); // (keeps nothing else)
-  assert.equal((await call(b.device, 'GET', `/group/posts?group=${group.id}`)).status, 403); // badge week is over
+  await call(a.device, 'POST', '/signin/start');
 });
 
 test('leaving: the device is forgotten; with the last device the account and nickname go too', async () => {
@@ -489,6 +545,7 @@ test('too-big or damaged requests are refused, not crashing the postman', async 
   assert.equal((await call(null, 'POST', '/drop', { code: [code], items: [] })).status, 403);
   // The longest possible group post fits the postman's group limit.
   const group = createGroup();
+  await call(a.device, 'POST', '/groups/create', { id: group.id, name: 'Longest posts', keyCheck: groupKeyCheck(group.id, group.key) });
   const longest = sealGroupPost({ group, from: a.device, text: '\u{FFFD}'.repeat(2000), badge: a.badge });
   assert.ok(JSON.stringify(longest).length <= POSTMAN_GROUP_MAX, String(JSON.stringify(longest).length));
   assert.equal((await call(a.device, 'POST', '/group/post', { envelope: longest })).status, 200);

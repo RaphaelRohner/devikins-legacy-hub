@@ -720,3 +720,15 @@ the zip. Importing hands that file back (`exportImport.web.js`), asks for
 the password and restores it with `messenger.restoreBackupData()` - only
 into a browser without a chat of its own. The phone app ignores the file.
 
+Open groups (stage 3, 22 Oct 2026): `ChatGroupView.web.js` (the Groups box
+on the Chat overview and one group's screen); logic in `messenger.js`
+(createGroup, joinGroup, syncGroups …). A group's posts are sealed once
+with a group key that only members' Hubs hold. Joining: the newcomer gives
+the postman a drop code of their own; the first member Hub that's open
+seals the key for them (control message `group-key`) and tells the postman
+to admit them; the postman then serves them only posts from after joining.
+Every Hub applies the posting limit (24 h ÷ Devikins, from the postman's
+badge) and hides posts of players it blocked. The owner's pinned message
+is sealed with the group key too and checked against the owner's devices.
+No key rotation yet (comes with removal votes, stage 4).
+
