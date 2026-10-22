@@ -40,6 +40,23 @@ export function signInText({ site, deviceKey, code, expiresAt }) {
   ].join('\n');
 }
 
+/** The text the wallet signs to vote in a group (its holdings are checked now and when the vote closes). */
+export function voteProofText({ site, deviceKey, code, expiresAt }) {
+  return [
+    'Devikins Legacy Hub – group vote',
+    `Postman: ${site}`,
+    '',
+    'This is NOT a transaction. It costs nothing and moves nothing.',
+    '',
+    'It shows that this wallet holds enough Devikins to vote, for this chat key:',
+    deviceKey,
+    'The wallet is checked again when the vote closes, then forgotten.',
+    '',
+    `One-time code: ${code}`,
+    `Valid until: ${new Date(expiresAt).toISOString().replace(/\.\d{3}Z$/, 'Z')}`,
+  ].join('\n');
+}
+
 /** The wallet's public key (32 bytes) from its klv1… address; throws if it isn't one. */
 export function walletPublicKey(address) {
   if (typeof address !== 'string' || !ADDRESS.test(address)) throw new Error('Not a Klever address.');

@@ -733,5 +733,15 @@ once a minute whatever they hold, so they can always answer (Raphael, 22
 Oct 2026). The owner's pinned messages (up to 5, changed any time) are
 sealed with the group key as one envelope and checked against the owner's
 devices.
-No key rotation yet (comes with removal votes, stage 4).
+Removal votes (stage 4, 22 Oct 2026): the Members panel starts a vote
+(with a reason, sealed with the group key); the vote card lets members
+holding the threshold vote. Every vote needs a fresh Klever wallet
+signature (`POST /proof/start` text, signed with the extension); the
+postman checks the holdings then and again when the vote closes after 48 h
+(moved NFTs count once), counts it (`rules.js` voteResult), and on a pass
+removes and bans the member and marks the group for a new key. The first
+member Hub that's open makes the new key (next epoch), seals it for every
+remaining member's devices (`POST /groups/rekey`, checked against a new
+key check); Hubs keep all of a group's keys (`chat_group_keys`) so older
+posts stay readable.
 

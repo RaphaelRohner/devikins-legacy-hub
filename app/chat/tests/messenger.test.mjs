@@ -33,7 +33,7 @@ function postmanSql() {
 
 function world() {
   const clock = { t: Date.UTC(2026, 9, 22, 10, 0, 0) };
-  const holdings = new Map();
+  const holdings = new Map([['klv1a35lsdqvsmk370ujzjc4js2666kvp7wukumtjejj7ze8ehde5slqe0uvpf', 1066763]]); // the game account: voting threshold 10
   const office = createPostOffice({
     sql: postmanSql(),
     now: () => clock.t,
@@ -64,6 +64,10 @@ function world() {
     const signature = Buffer.from(signMessageSync(prepareKlvMessage(text), privateKey.bytes)).toString('hex');
     const signedIn = await m.finishSignIn({ code, wallet, signature });
     m.walletKeys = { privateKey, publicKey };
+    // What the Klever extension does when asked to sign a text:
+    m.sign = async (t) => ({ address: wallet, signature: Buffer.from(signMessageSync(prepareKlvMessage(t), privateKey.bytes)).toString('hex') });
+    m.wallet = wallet;
+    m.holdings = holdings;
     if (sameWalletAs) return m; // a second browser of the same player
     assert.equal(signedIn.state, 'needs-nickname');
     assert.equal((await m.setNickname(nickname)).state, 'ready');
@@ -76,7 +80,11 @@ function world() {
     m.db = db;
     return m;
   }
-  return { clock, network, player, blank };
+  /** The postman's alarm: counts the votes whose time is over. */
+  async function decide() {
+    while (await office.decideAllVotes()) { /* (a few wallets per run) */ }
+  }
+  return { clock, network, player, blank, decide, office };
 }
 
 test('request → accept → messages both ways; history stays on each device', async () => {
@@ -609,4 +617,199 @@ test('groups: the owner may always answer (once a minute); several pinned messag
   await member.checkMail();
   assert.equal((await member.listGroups())[0].pinned, null);
   await assert.rejects(owner.setPins(gid, ['1', '2', '3', '4', '5', '6']), /At most 5/);
+});
+
+test('removal votes: threshold from the game account, a paused accused, 48 h, removal, a new key, and letting back in', async () => {
+  const { player, clock, decide } = world();
+  const owner = await player('Owner', 12);
+  const bea = await player('Bea', 12);
+  const cid = await player('Cid', 12);
+  const dot = await player('Dot', 3); // below the threshold of 10
+  const max = await player('Max', 12); // the accused
+  const gid = await owner.createGroup('Vote Club');
+  for (const p of [bea, cid, dot, max]) {
+    await p.joinGroup(gid);
+    await owner.checkMail();
+    await p.checkMail();
+  }
+  assert.equal((await owner.listGroups())[0].members, 5);
+
+  let v = await bea.groupVotes(gid);
+  assert.deepEqual([v.threshold, v.canVote, v.canOpen], [10, true, true]);
+  assert.equal((await dot.groupVotes(gid)).canVote, false);
+  await assert.rejects(bea.openVote(gid, 'Owner', 'bossy', bea.sign), /owner can't be voted out/);
+  await assert.rejects(dot.openVote(gid, 'Max', 'spam', dot.sign), /at least 10 Devikins/);
+  await bea.openVote(gid, 'Max', 'Spams links all day', bea.sign);
+  await assert.rejects(bea.openVote(gid, 'Dot', 'again', bea.sign), /one vote per week/);
+
+  // Everyone in the group sees it, with the reason
+  v = await cid.groupVotes(gid);
+  assert.deepEqual(v.votes.map((x) => [x.accused, x.opener, x.reason, x.yes, x.no]), [['Max', 'Bea', 'Spams links all day', 1, 0]]);
+  assert.equal((await max.groupVotes(gid)).votes[0].aboutMe, true);
+
+  // Max can still post until a second member supports the vote
+  clock.t += MINUTE;
+  await max.postToGroup(gid, 'I did nothing!');
+  await cid.castVote(v.votes[0].id, true, cid.sign);
+  await assert.rejects(dot.castVote(v.votes[0].id, true, dot.sign), /at least 10 Devikins/);
+  await assert.rejects(max.castVote(v.votes[0].id, false, max.sign), /about yourself/);
+  await assert.rejects(cid.castVote(v.votes[0].id, false, cid.sign), /voted already/);
+  clock.t += 3 * 60 * MINUTE; // (past Max's own posting limit)
+  await assert.rejects(max.postToGroup(gid, 'still here'), /paused while a vote about you is open/);
+  await max.checkMail();
+  assert.ok((await max.listGroups())[0].pausedUntil > clock.t);
+  await owner.castVote(v.votes[0].id, true, owner.sign);
+
+  // 48 h later: decided, Max is out, the owner's Hub makes a new key
+  clock.t += 48 * 60 * MINUTE;
+  await assert.rejects(cid.castVote(v.votes[0].id, true, cid.sign), /voted already|has ended/);
+  await decide();
+  await owner.checkMail();
+  const decided = (await owner.groupVotes(gid)).votes[0];
+  assert.deepEqual([decided.decided, decided.valid, decided.passed, decided.removed], [true, true, true, true]);
+  assert.equal((await owner.listGroups())[0].members, 4);
+  assert.equal((await bea.checkMail()).newKeys, 1);
+  await owner.postToGroup(gid, 'With the new key');
+  await bea.checkMail();
+  assert.ok((await bea.groupPosts(gid)).some((p) => p.text === 'With the new key'));
+  const maxView = (await max.listGroups()).find((g) => g.id === gid);
+  assert.deepEqual([maxView.member, maxView.banned], [false, true]);
+  await assert.rejects(max.joinGroup(gid), /removed from this group by a vote/);
+
+  // The owner can let him back in
+  const banned = (await owner.groupVotes(gid)).banned;
+  assert.deepEqual(banned.map((b) => b.nickname), ['Max']);
+  await owner.letBackIn(gid, banned[0].id);
+  assert.equal(await max.joinGroup(gid), 'asking');
+  await bea.checkMail();
+  await max.checkMail();
+  assert.equal((await max.listGroups()).find((g) => g.id === gid).member, true);
+});
+
+test('removal votes: too few votes means no removal', async () => {
+  const { player, clock, decide } = world();
+  const owner = await player('Owner', 12);
+  const bea = await player('Bea', 12);
+  const max = await player('Max', 12);
+  const gid = await owner.createGroup('Small Club');
+  for (const p of [bea, max]) {
+    await p.joinGroup(gid);
+    await owner.checkMail();
+    await p.checkMail();
+  }
+  await bea.openVote(gid, 'Max', 'rude', bea.sign);
+  await owner.castVote((await owner.groupVotes(gid)).votes[0].id, true, owner.sign);
+  clock.t += 49 * 60 * MINUTE;
+  await decide();
+  const d = (await owner.groupVotes(gid)).votes[0];
+  assert.deepEqual([d.decided, d.valid, d.passed], [true, false, false]); // only 2 votes, 3 needed
+  assert.equal((await owner.listGroups())[0].members, 3);
+});
+
+test('removal votes: moving Devikins to a second wallet doesn\'t give extra votes (wallets are checked again at the end)', async () => {
+  const { player, clock, decide } = world();
+  const owner = await player('Owner', 12);
+  const bea = await player('Bea', 12);
+  const cid = await player('Cid', 12);
+  const sly = await player('Sly', 12);
+  const sly2 = await player('SlyTwo', 1); // Sly's second wallet, almost empty for now
+  const max = await player('Max', 12);
+  const gid = await owner.createGroup('Fair Votes');
+  for (const p of [bea, cid, sly, sly2, max]) {
+    await p.joinGroup(gid);
+    await owner.checkMail();
+    await p.checkMail();
+  }
+  await sly.openVote(gid, 'Max', 'I just dislike him', sly.sign);
+  const id = (await sly.groupVotes(gid)).votes[0].id;
+  await assert.rejects(sly2.castVote(id, true, sly2.sign), /holds 1 right now/);
+  // Sly moves his 12 Devikins to the second wallet, which then votes too
+  sly.holdings.set(sly.wallet, 0);
+  sly.holdings.set(sly2.wallet, 12);
+  await sly2.castVote(id, true, sly2.sign);
+  await bea.castVote(id, false, bea.sign);
+  await cid.castVote(id, false, cid.sign);
+  // Someone else's wallet can't be used to vote
+  await assert.rejects(owner.castVote(id, true, bea.sign), /wallet you signed in/);
+  clock.t += 49 * 60 * MINUTE;
+  await decide();
+  const d = (await owner.groupVotes(gid)).votes[0];
+  // Sly's first vote no longer counts (that wallet is empty now): 1 yes, 2 no
+  assert.deepEqual(d.ballots.map((b) => [b.voter, b.yes, b.counts]).sort(), [['Bea', false, true], ['Cid', false, true], ['Sly', true, false], ['SlyTwo', true, true]]);
+  assert.deepEqual([d.valid, d.passed], [true, false]);
+});
+
+test('removal votes (review fixes): leaving early or starting over doesn\'t dodge the ban; late joiners can\'t vote', async () => {
+  const { player, clock, decide } = world();
+  const owner = await player('Owner', 12);
+  const bea = await player('Bea', 12);
+  const cid = await player('Cid', 12);
+  const max = await player('Max', 12);
+  const gid = await owner.createGroup('Strict Club');
+  for (const p of [bea, cid, max]) {
+    await p.joinGroup(gid);
+    await owner.checkMail();
+    await p.checkMail();
+  }
+  await bea.openVote(gid, 'Max', 'scams', bea.sign);
+  const id = (await bea.groupVotes(gid)).votes[0].id;
+  // A friend who joins after the vote started can't vote in it
+  clock.t += MINUTE;
+  const pal = await player('Pal', 12);
+  await pal.joinGroup(gid);
+  await owner.checkMail();
+  await pal.checkMail();
+  await assert.rejects(pal.castVote(id, false, pal.sign), /when the vote started/);
+  await cid.castVote(id, true, cid.sign);
+  await owner.castVote(id, true, owner.sign);
+  // Max leaves the group before the end, and even leaves the chat entirely
+  await max.leaveGroup(gid);
+  clock.t += 49 * 60 * MINUTE;
+  await decide();
+  const d = (await owner.groupVotes(gid)).votes[0];
+  assert.deepEqual([d.passed, d.removed], [true, false]); // passed; he had left already
+  // Signing in again with the same wallet: still banned from this group
+  await max.leave();
+  const maxAgain = await player('Max', 12, max);
+  await maxAgain.setNickname('Max');
+  await assert.rejects(maxAgain.joinGroup(gid), /removed from this group by a vote/);
+  // The weekly limit on starting votes also stays with the wallet
+  const beaAgain = bea;
+  await assert.rejects(beaAgain.openVote(gid, 'Pal', 'test', beaAgain.sign), /one vote per week/);
+});
+
+test('removal votes: a member who missed the new key gets it again; nobody can be left out of the new key', async () => {
+  const { player, clock, decide } = world();
+  const owner = await player('Owner', 12);
+  const bea = await player('Bea', 12);
+  const cid = await player('Cid', 12);
+  const max = await player('Max', 12);
+  const gid = await owner.createGroup('Key Club');
+  for (const p of [bea, cid, max]) {
+    await p.joinGroup(gid);
+    await owner.checkMail();
+    await p.checkMail();
+  }
+  await bea.openVote(gid, 'Max', 'scams', bea.sign);
+  const id = (await bea.groupVotes(gid)).votes[0].id;
+  await cid.castVote(id, true, cid.sign);
+  await owner.castVote(id, true, owner.sign);
+  clock.t += 49 * 60 * MINUTE;
+  await decide();
+  // A member's Hub can't hand the new key to only some members
+  const { sealDirect } = await import('../src/direct.js');
+  const ck = await identityOf(cid);
+  const onlyMe = sealDirect({ from: ck, toDevices: [cid.identity.publicKey], type: 'group-key', body: { group: gid, epoch: 2, key: 'ab'.repeat(32) } });
+  await assert.rejects(cid.postman.rekey({ group: gid, epoch: 2, keyCheck: 'cd'.repeat(32), items: onlyMe }), /every member/);
+  await owner.checkMail(); // the owner's Hub makes the new key for everyone
+  // Bea's mailbox loses it (e.g. away longer than 30 days)
+  const lost = (await bea.postman.mail()).items.map((m) => m.id);
+  await bea.postman.mailDone(lost);
+  await bea.checkMail(); // she notices the group has a newer key and asks again
+  await owner.checkMail(); // a member's Hub hands it over
+  await bea.checkMail();
+  clock.t += 3 * MINUTE;
+  await owner.postToGroup(gid, 'new epoch post');
+  await bea.checkMail();
+  assert.ok((await bea.groupPosts(gid)).some((p) => p.text === 'new epoch post'));
 });

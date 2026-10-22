@@ -28,7 +28,9 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { createIdentity, isPublicKey, secretBytes } from './identity.js';
 import { sealDirect, openDirect } from './direct.js';
 import { cleanText, nicknameKey, nextPostAllowedAt, MIN_POST_INTERVAL } from './rules.js';
-import { sealGroupPost, openGroupPost, acceptPosts, readGroupKeyMessage, sealPinned, openPinned, groupKeyCheck } from './group.js';
+import {
+  sealGroupPost, openGroupPost, acceptPosts, readGroupKeyMessage, sealPinned, openPinned, groupKeyCheck, VOTE_REASON_KIND,
+} from './group.js';
 import { checkBadge } from './badge.js';
 import { createPostmanClient } from './client.js';
 
@@ -89,6 +91,7 @@ CREATE TABLE IF NOT EXISTS chat_group_posts (
 CREATE INDEX IF NOT EXISTS chat_group_posts_by_group ON chat_group_posts (grp, seq);
 CREATE TABLE IF NOT EXISTS chat_group_last (grp TEXT NOT NULL, author TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (grp, author));
 CREATE TABLE IF NOT EXISTS chat_group_names (grp TEXT NOT NULL, device TEXT NOT NULL, nickname TEXT NOT NULL, PRIMARY KEY (grp, device));
+CREATE TABLE IF NOT EXISTS chat_group_keys (grp TEXT NOT NULL, epoch INTEGER NOT NULL, key TEXT NOT NULL, PRIMARY KEY (grp, epoch));
 `;
 
 /** Group states on this device. */
@@ -97,7 +100,7 @@ export const GROUP_STATUS = {
   MEMBER: 'member',
 };
 
-const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_names'];
+const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_names', 'chat_group_keys'];
 
 /** Contact states. */
 export const STATUS = {
@@ -135,7 +138,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
   // (CREATE TABLE IF NOT EXISTS leaves an existing table as it was).
   const added = {
     chat_contacts: [['ended', 'INTEGER NOT NULL DEFAULT 0'], ['before_block', 'TEXT']],
-    chat_groups: [['owner_account', 'TEXT']],
+    chat_groups: [['owner_account', 'TEXT'], ['paused_until', 'INTEGER NOT NULL DEFAULT 0']],
   };
   for (const [table, cols] of Object.entries(added)) {
     const columns = new Set((await all(`PRAGMA table_info(${table})`)).map((c) => c.name));
@@ -143,6 +146,8 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       if (!columns.has(name)) await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
     }
   }
+  // Every key a group ever had (older posts stay readable after a new key).
+  await db.execAsync('INSERT OR IGNORE INTO chat_group_keys (grp, epoch, key) SELECT id, epoch, key FROM chat_groups WHERE key IS NOT NULL');
 
   async function getMe(k) {
     const r = await first('SELECT v FROM chat_me WHERE k = ?', [k]);
@@ -458,12 +463,20 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       let g;
       try { g = readGroupKeyMessage(opened.data); } catch { return 'damaged'; }
       const mine = await first('SELECT * FROM chat_groups WHERE id = ?', [g.id]);
-      if (!mine || (mine.status !== GROUP_STATUS.ASKING && mine.key)) return 'ignored';
-      // Only the group's real key: it must match the fingerprint stored at
-      // the postman when the group was made (nobody can hand us a fake one).
+      if (!mine) return 'ignored';
+      const isNewEpoch = mine.status === GROUP_STATUS.MEMBER && mine.key && g.epoch > mine.epoch;
+      if (!isNewEpoch && mine.status !== GROUP_STATUS.ASKING && mine.key) return 'ignored';
+      // Only the group's real (current) key: it must match the fingerprint
+      // the postman keeps for it (nobody can hand us a fake one).
       const { groups } = await postman.groups();
       const there = groups.find((x) => x.id === g.id);
-      if (!there || groupKeyCheck(g.id, g.key) !== there.keyCheck) return 'fake key';
+      // The key AND its number must be the group's current ones.
+      if (!there || g.epoch !== there.epoch || groupKeyCheck(g.id, g.key) !== there.keyCheck) return 'fake key';
+      await run('INSERT OR REPLACE INTO chat_group_keys (grp, epoch, key) VALUES (?, ?, ?)', [g.id, g.epoch, g.key]);
+      if (isNewEpoch) {
+        await run('UPDATE chat_groups SET key = ?, epoch = ? WHERE id = ?', [g.key, g.epoch, g.id]);
+        return 'new key';
+      }
       await run('UPDATE chat_groups SET key = ?, epoch = ?, status = ?, code = NULL, joined_at = ? WHERE id = ?',
         [g.key, g.epoch, GROUP_STATUS.MEMBER, t, g.id]);
       // (The code we gave for this is single-use: the postman removes it when we're let in.)
@@ -539,6 +552,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       if (result === 'request') counts.requests += 1;
       if (result === 'accepted') counts.accepted += 1;
       if (result === 'joined') counts.joined = (counts.joined || 0) + 1;
+      if (result === 'new key') counts.newKeys = (counts.newKeys || 0) + 1;
     }
     if (done.length) await postman.mailDone(done);
     await run('DELETE FROM chat_seen WHERE at < ?', [now() - SEEN_KEEP]);
@@ -598,6 +612,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     unread: r.unread,
     pinned: readPins(r.pinned_text),
     hasKey: !!r.key,
+    pausedUntil: r.paused_until > now() ? r.paused_until : 0,
   });
 
   /**
@@ -626,6 +641,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
         hasKey,
         member: g.member && hasKey,
         asking,
+        pausedUntil: mine?.pausedUntil ?? 0,
         // In the group, but this browser has no key (e.g. a new browser): "Get the key" asks again.
         needsKey: g.member && !hasKey && !asking,
       };
@@ -651,13 +667,14 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     groupsCache = null;
     await run('INSERT INTO chat_groups (id, name, description, owner, is_owner, status, key, epoch, joined_at) VALUES (?, ?, ?, ?, 1, ?, ?, 1, ?)',
       [id, saved, description, await getMe('nickname'), GROUP_STATUS.MEMBER, key, now()]);
+    await run('INSERT OR REPLACE INTO chat_group_keys (grp, epoch, key) VALUES (?, 1, ?)', [id, key]);
     return id;
   }
 
   /** Asks to join: the first member's Hub that's open lets us in (hands over the key). */
-  async function joinGroup(id) {
+  async function joinGroup(id, { force = false } = {}) {
     const existing = await first('SELECT * FROM chat_groups WHERE id = ?', [id]);
-    if (existing?.status === GROUP_STATUS.MEMBER && existing.key) return 'member';
+    if (existing?.status === GROUP_STATUS.MEMBER && existing.key && !force) return 'member';
     const code = existing?.code ?? await newCode();
     await postman.joinGroup(id, code);
     groupsCache = null;
@@ -716,6 +733,12 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     return members.find((m) => m.devices.includes(device))?.nickname ?? null;
   }
 
+  async function keysOf(grp) {
+    const keys = {};
+    for (const r of await all('SELECT epoch, key FROM chat_group_keys WHERE grp = ?', [grp])) keys[r.epoch] = r.key;
+    return keys;
+  }
+
   /** Collects a group's new posts, applies the posting limits, files them. → number of new posts from others */
   async function collectGroup(g) {
     const pk = await postmanKey();
@@ -724,6 +747,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     let total = 0;
     const runState = { asked: false };
     const seen = new Set((await all('SELECT pid FROM chat_group_posts WHERE grp = ? AND pid IS NOT NULL', [g.id])).map((r) => r.pid));
+    const keys = await keysOf(g.id);
     for (;;) {
       let added = 0;
       const { posts } = await postman.groupPosts(g.id, g.last_seq);
@@ -731,7 +755,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       const items = [];
       for (const p of posts) {
         let post = null;
-        try { post = openGroupPost(p.envelope, { groupId: g.id, keys: { [g.epoch]: g.key } }); } catch { post = null; }
+        try { post = openGroupPost(p.envelope, { groupId: g.id, keys }); } catch { post = null; }
         if (post) items.push({ post, receivedAt: p.receivedAt, seq: p.seq });
       }
       const lastAccepted = {};
@@ -762,7 +786,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     let text = null;
     if (envelope) {
       let opened = null;
-      try { opened = openPinned(envelope, { groupId: g.id, keys: { [g.epoch]: g.key } }); } catch { opened = null; }
+      try { opened = openPinned(envelope, { groupId: g.id, keys: await keysOf(g.id) }); } catch { opened = null; }
       if (opened) {
         const ownerPlayer = owner ? await playerAt(owner) : null;
         // The owner isn't listed right now (e.g. their weekly check ran out):
@@ -784,15 +808,96 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
         await run('UPDATE chat_groups SET owner = ?, is_owner = ?, owner_account = ? WHERE id = ?', [there.owner, there.isOwner ? 1 : 0, there.ownerAccount ?? null, g.id]);
         g.owner_account = there.ownerAccount ?? null;
       }
+      if ((there.pausedUntil || 0) !== (g.paused_until || 0)) await run('UPDATE chat_groups SET paused_until = ? WHERE id = ?', [there.pausedUntil || 0, g.id]);
       if (g.status !== GROUP_STATUS.MEMBER || !g.key) continue;
+      // Someone was removed by a vote: the first open Hub makes the new key.
+      if (there.needsRekey && there.epoch === g.epoch) await renewKey(g, there.epoch + 1);
+      // A new key was made while we weren't looking and didn't reach us: ask again.
+      else if (!there.needsRekey && there.epoch > g.epoch && !g.code) await joinGroup(g.id, { force: true }).catch(() => {});
       if (there.lastSeq > g.last_seq) await collectGroup(g);
       if ((there.pinnedAt ?? null) !== (g.pinned_at ?? null)) await collectPinned(g, there.owner);
-      if (there.waiting > 0) await admitWaiting(g);
+      // (Only a Hub with the group's current key lets people in.)
+      if (there.waiting > 0 && there.epoch === g.epoch && !there.needsRekey) await admitWaiting(g);
     }
     // Groups we're no longer in (e.g. the group was deleted) are forgotten here.
     for (const g of await all('SELECT id FROM chat_groups WHERE status = ?', [GROUP_STATUS.MEMBER])) {
       if (!groups.some((x) => x.id === g.id)) await forgetGroup(g.id);
     }
+  }
+
+  /** After a removal: a new key for the group, sealed for every remaining member's devices. */
+  async function renewKey(g, epoch) {
+    const key = randomCode();
+    const { members } = await postman.groupMembers(g.id);
+    const devices = [...new Set(members.flatMap((m) => m.devices))];
+    const items = devices.length ? sealDirect({ from: identity, toDevices: devices, type: 'group-key', body: { group: g.id, epoch, key } }) : [];
+    try {
+      await postman.rekey({ group: g.id, epoch, keyCheck: groupKeyCheck(g.id, key), items });
+    } catch (e) {
+      if (e.status === 409) return; // another member's Hub was quicker; its key arrives by mail
+      throw e;
+    }
+    await run('INSERT OR REPLACE INTO chat_group_keys (grp, epoch, key) VALUES (?, ?, ?)', [g.id, epoch, key]);
+    await run('UPDATE chat_groups SET key = ?, epoch = ? WHERE id = ?', [key, epoch, g.id]);
+    g.key = key;
+    g.epoch = epoch;
+  }
+
+  /**
+   * The group's removal votes (open, and decided in the last week), with the
+   * reasons opened, the threshold, and whether I may start one.
+   */
+  async function groupVotes(id) {
+    const r = await postman.votes(id);
+    const keys = await keysOf(id);
+    const votes = r.votes.map((v) => {
+      let reason = null;
+      try { reason = openPinned(v.reason, { groupId: id, keys, kind: VOTE_REASON_KIND })?.pins?.[0] ?? null; } catch { reason = null; }
+      const yes = v.ballots.filter((b) => b.yes).length;
+      return { ...v, reason, yes, no: v.ballots.length - yes };
+    });
+    // (A first guess from the weekly badge; the postman checks the wallet
+    // itself when you vote, and again when the vote closes.)
+    const badge = await getMe('badge');
+    const check = badge ? checkBadge(badge, { postmanPublicKey: await postmanKey(), holder: identity.publicKey, at: now() }) : { ok: false };
+    return {
+      threshold: r.threshold,
+      canVote: check.ok && check.nfts >= r.threshold,
+      canOpen: r.canOpen,
+      votes,
+      banned: r.banned,
+    };
+  }
+
+  /**
+   * Voting needs the wallet to sign a short text (no transaction):
+   * `signText(text)` → { address, signature } (the Klever extension).
+   */
+  async function walletProof(signText) {
+    const { code, text } = await postman.proofStart();
+    const { address, signature } = await signText(text);
+    return { code, wallet: address, signature };
+  }
+
+  async function openVote(id, nickname, reason, signText) {
+    const g = await myGroup(id);
+    const text = cleanText(reason);
+    if (!text) throw new Error('Please give a reason.');
+    const sealed = sealPinned({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, pins: [text], now: now(), kind: VOTE_REASON_KIND });
+    return postman.openVote({ group: id, accused: nickname, reason: sealed, proof: await walletProof(signText) });
+  }
+
+  async function castVote(voteId, yes, signText) {
+    return postman.castVote({ vote: voteId, yes: !!yes, proof: await walletProof(signText) });
+  }
+
+  /** The members' nicknames (for "start a vote"). */
+  async function groupMemberNames(id) {
+    return (await postman.groupMembers(id)).members.map((m) => m.nickname).filter(Boolean);
+  }
+
+  async function letBackIn(id, banId) {
+    return postman.unban(id, banId);
   }
 
   async function groupPosts(id) {
@@ -858,6 +963,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       groups: await all('SELECT * FROM chat_groups'),
       groupPosts: await all('SELECT * FROM chat_group_posts ORDER BY id'),
       groupLast: await all('SELECT * FROM chat_group_last'),
+      groupKeys: await all('SELECT * FROM chat_group_keys'),
     };
   }
 
@@ -908,6 +1014,13 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       if (typeof p.grp !== 'string' || typeof p.text !== 'string') continue;
       await run('INSERT INTO chat_group_posts (grp, seq, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [p.grp, Number(p.seq) || 0, String(p.author ?? ''), p.nickname ?? null, p.text, Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine ? 1 : 0]);
+    }
+    for (const k of Array.isArray(data.groupKeys) ? data.groupKeys : []) {
+      if (typeof k.grp !== 'string' || !/^[0-9a-f]{64}$/.test(k.key || '')) continue;
+      await run('INSERT OR REPLACE INTO chat_group_keys (grp, epoch, key) VALUES (?, ?, ?)', [k.grp, Number(k.epoch) || 1, k.key]);
+    }
+    for (const g of Array.isArray(data.groups) ? data.groups : []) {
+      if (g.key) await run('INSERT OR IGNORE INTO chat_group_keys (grp, epoch, key) VALUES (?, ?, ?)', [g.id, Number(g.epoch) || 1, g.key]);
     }
     for (const l of Array.isArray(data.groupLast) ? data.groupLast : []) {
       if (typeof l.grp !== 'string' || typeof l.author !== 'string') continue;
@@ -961,6 +1074,11 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     nextGroupPostAt,
     setPinned,
     setPins,
+    groupVotes,
+    openVote,
+    castVote,
+    letBackIn,
+    groupMemberNames,
     syncGroups,
     forgetHere,
     hasChat,

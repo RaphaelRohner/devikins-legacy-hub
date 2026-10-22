@@ -62,6 +62,12 @@ export function createPostmanClient({ baseUrl, identity, fetchFn = (...a) => fet
     setPinned: (group, envelope) => call('POST', '/groups/pin', { group, envelope }),
     pinned: (group) => call('GET', `/groups/pin?group=${group}`),
     groupPost: (envelope) => call('POST', '/group/post', { envelope }),
+    votes: (group) => call('GET', `/groups/votes?group=${group}`),
+    proofStart: () => call('POST', '/proof/start'),
+    openVote: ({ group, accused, reason, proof }) => call('POST', '/groups/vote/open', { group, accused, reason, proof }),
+    castVote: ({ vote, yes, proof }) => call('POST', '/groups/vote/cast', { vote, yes, proof }),
+    unban: (group, ban) => call('POST', '/groups/unban', { group, ban }),
+    rekey: ({ group, epoch, keyCheck, items }) => call('POST', '/groups/rekey', { group, epoch, keyCheck, items }),
     groupPosts: (group, after) => call('GET', `/group/posts?group=${group}&after=${after}`),
   };
 }

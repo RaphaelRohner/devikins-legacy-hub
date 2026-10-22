@@ -18,7 +18,8 @@ import { createPostOffice } from '../../chat/postman/src/postOffice.js';
 
 const POSTMAN = 'https://devi-postman-test.raphaelrohner.workers.dev';
 const db = new DatabaseSync(':memory:');
-const holdings = new Map();
+// The game account's holdings set the voting threshold (1,066,763 → 10 Devikins).
+const holdings = new Map([['klv1a35lsdqvsmk370ujzjc4js2666kvp7wukumtjejj7ze8ehde5slqe0uvpf', 1066763]]);
 const wallets = new Map();
 const office = createPostOffice({
   sql: { exec: (q, ...p) => { const rows = db.prepare(q).all(...p); return { toArray: () => rows }; } },

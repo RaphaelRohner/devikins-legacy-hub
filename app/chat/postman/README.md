@@ -52,6 +52,24 @@ posts to or reads which group mailbox.
 
 Players who don't sign in for 180 days are forgotten completely.
 
+**Removal votes (stage 4):** the postman keeps each vote (who is accused,
+who opened it, the reason sealed with the group key, when) and each ballot
+(who, yes/no). To vote, the wallet signs a one-time text; the postman checks
+it's the player's own chat wallet and holds at least the threshold, and
+keeps the **wallet address with the ballot only until the vote is counted**
+(48 h): then every voter's wallet is checked again (a vote counts only if it
+still holds the threshold, so Devikins moved to a second wallet count once)
+and the addresses are deleted. The threshold comes from the game account's
+holdings (asked once a day). Votes are counted by the postman's alarm a
+few wallets per run (Cloudflare's free plan allows 50 outside requests per
+run), each address deleted right after its check. Removed members are
+banned from that group by wallet fingerprint (so leaving early or starting
+over with the same wallet doesn't undo it) until its owner lets them back
+in. Only members who were in the group when a vote started can vote in it;
+the weekly limit on starting votes also stays with the wallet. Closed votes
+show which ballots counted – so the group can see that a voter no longer
+held the threshold at the end (accepted, 22 Oct 2026).
+
 ## Limits against misuse (all per day, so the free plan can't be used up)
 
 - 1,500 actions per player (contact requests, drop-code changes, group posts);
@@ -94,6 +112,12 @@ someone who intercepted it (no request today is harmful to repeat).
 | `GET /groups/members?group=` | member | members' nicknames and devices (to show who wrote) |
 | `POST /groups/leave` | member | leave (the owner only when alone; the last one out deletes the group) |
 | `POST /groups/pin`, `GET /groups/pin?group=` | owner / member | the sealed pinned message |
+| `POST /proof/start` | signed-in | a one-time text for the wallet to sign before voting |
+| `GET /groups/votes?group=` | member | the group's votes (open / last 7 days), threshold, may I start one; for the owner: who was removed |
+| `POST /groups/vote/open` | member ≥ threshold | `{group, accused, reason (sealed), proof}` – start a removal vote (one per week) |
+| `POST /groups/vote/cast` | member ≥ threshold | `{vote, yes, proof}` – vote once |
+| `POST /groups/unban` | owner | let a removed member back in |
+| `POST /groups/rekey` | member | after a removal: the new group key, sealed for every member's devices (the first one counts) |
 | `POST /group/post` | member | one sealed group post (at most 1 per minute) |
 | `GET /group/posts?group=&after=` | member | a group's posts after number N – only those from after you joined |
 | `POST /leave` | device | forget this device (and the account with its last device) |

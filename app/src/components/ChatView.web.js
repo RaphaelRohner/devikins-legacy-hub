@@ -59,6 +59,7 @@ export default function ChatView({ onClose }) {
   const [openGroupId, setOpenGroupId] = useState(null);
   const [groupPosts, setGroupPosts] = useState([]);
   const [groupNext, setGroupNext] = useState(null);
+  const [groupVotes, setGroupVotes] = useState(null);
   const openIdRef = useRef(null);
   openIdRef.current = openId;
   const openGroupRef = useRef(null);
@@ -81,6 +82,11 @@ export default function ChatView({ onClose }) {
       if (openGroupRef.current) {
         setGroupPosts(await m.groupPosts(openGroupRef.current));
         setGroupNext(await m.nextGroupPostAt(openGroupRef.current));
+        try {
+          setGroupVotes(await m.groupVotes(openGroupRef.current));
+        } catch {
+          // (e.g. just removed from the group)
+        }
       }
     }
     return s;
@@ -179,8 +185,10 @@ export default function ChatView({ onClose }) {
   const openGroupThread = (id) => act(async () => {
     setGroupPosts(await messenger.groupPosts(id));
     setGroupNext(await messenger.nextGroupPostAt(id));
+    setGroupVotes(null);
     setError('');
     setOpenGroupId(id);
+    setGroupVotes(await messenger.groupVotes(id).catch(() => null));
   });
 
   const openThread = (id) => act(async () => {
@@ -327,6 +335,7 @@ export default function ChatView({ onClose }) {
     return (
       <ChatGroupView
         group={openGroup}
+        me={status.nickname}
         posts={groupPosts}
         next={groupNext}
         busy={busy}
@@ -334,6 +343,11 @@ export default function ChatView({ onClose }) {
         onBack={() => setOpenGroupId(null)}
         onPost={(text) => act(() => messenger.postToGroup(openGroup.id, text))}
         onPins={(pins) => act(() => messenger.setPins(openGroup.id, pins))}
+        votes={groupVotes}
+        loadMembers={() => messenger.groupMemberNames(openGroup.id)}
+        onOpenVote={(nickname, reason) => act(() => messenger.openVote(openGroup.id, nickname, reason, signTextWithExtension))}
+        onCastVote={(voteId, yes) => act(() => messenger.castVote(voteId, yes, signTextWithExtension))}
+        onLetBackIn={(account) => act(() => messenger.letBackIn(openGroup.id, account))}
         onLeave={() => act(async () => {
           await messenger.leaveGroup(openGroup.id);
           setOpenGroupId(null);

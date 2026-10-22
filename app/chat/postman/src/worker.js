@@ -20,6 +20,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:8081', // the Hub's local web preview (npx expo start --web)
 ];
 const CLEAN_UP_EVERY = 24 * 60 * 60 * 1000;
+const COUNT_AGAIN_AFTER = 5 * 60 * 1000;
 
 function corsHeaders(origin) {
   const h = {
@@ -68,21 +69,34 @@ export class PostOffice extends DurableObject {
   }
 
   async fetch(request) {
-    if ((await this.ctx.storage.getAlarm()) === null) {
-      await this.ctx.storage.setAlarm(Date.now() + CLEAN_UP_EVERY);
-    }
     const result = await this.office.handle({
       method: request.method,
       url: request.url,
       bodyText: request.method === 'POST' ? await request.text() : '',
       authorization: request.headers.get('Authorization'),
     });
+    // (a vote may have been started: the alarm must also come when it ends)
+    await this.planAlarm();
     return Response.json(result.body, { status: result.status });
+  }
+
+  /** The next alarm: the daily clean-up, or earlier when a vote ends. */
+  async planAlarm(soon = false) {
+    const current = await this.ctx.storage.getAlarm();
+    const voteEnd = this.office.nextVoteEnd();
+    let next = Date.now() + CLEAN_UP_EVERY;
+    // (a vote that ended already but isn't counted yet: in a few minutes, not in a tight loop)
+    if (voteEnd !== null && voteEnd > Date.now()) next = Math.min(next, voteEnd + 1000);
+    if (soon || (voteEnd !== null && voteEnd <= Date.now())) next = Math.min(next, Date.now() + COUNT_AGAIN_AFTER);
+    if (current === null || current > next) await this.ctx.storage.setAlarm(next);
   }
 
   async alarm() {
     this.office.cleanUp();
-    await this.ctx.storage.setAlarm(Date.now() + CLEAN_UP_EVERY);
+    // Votes are counted a few wallets at a time; if some are still waiting,
+    // the next run comes in a few minutes.
+    const pending = await this.office.decideAllVotes().catch(() => true);
+    await this.planAlarm(pending);
   }
 }
 

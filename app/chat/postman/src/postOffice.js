@@ -38,9 +38,12 @@ import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { issueBadge, BADGE_DAYS } from '../../src/badge.js';
 import { isPublicKey } from '../../src/identity.js';
-import { contactRequestWait, DAY, MINUTE, MIN_POST_INTERVAL, nicknameKey } from '../../src/rules.js';
+import {
+  contactRequestWait, DAY, MINUTE, MIN_POST_INTERVAL, nicknameKey,
+  GAME_ACCOUNT, votingThreshold, voteResult, canOpenVote, isPostingPaused, VOTE_DURATION,
+} from '../../src/rules.js';
 import { checkAuthHeader } from '../../src/httpAuth.js';
-import { signInText, isWalletSignature, devikinsHeld, walletPublicKey } from './kleverProof.js';
+import { signInText, voteProofText, isWalletSignature, devikinsHeld, walletPublicKey } from './kleverProof.js';
 
 export const VERSION = '1';
 export const KEEP_FOR = 30 * DAY;
@@ -67,6 +70,8 @@ export const GROUP_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9 _.,'&!?()-]{1,38}[A-Za-z0-9
 export const MAX_GROUP_DESCRIPTION = 200;
 export const MAX_PINNED_CHARS = 32 * 1024;
 export const JOIN_WAIT_DAYS = 14;
+/** Wallets checked per counting run (Cloudflare's free plan allows 50 outside requests per run). */
+export const DECIDE_BATCH = 20;
 export const MAX_BODY_CHARS = MAX_ENVELOPE_CHARS * (MAX_ITEMS_PER_SEND + 1);
 const HOUR_MS = 60 * MINUTE;
 export const NICKNAME = /^[A-Za-z0-9](?:[A-Za-z0-9 _.-]{0,18}[A-Za-z0-9])?$/;
@@ -107,6 +112,17 @@ const SCHEMA = [
   'CREATE INDEX IF NOT EXISTS group_members_by_account ON group_members (account)',
   `CREATE TABLE IF NOT EXISTS group_joins (grp TEXT NOT NULL, account TEXT NOT NULL, code TEXT NOT NULL,
      code_fp TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (grp, account))`,
+  `CREATE TABLE IF NOT EXISTS votes (id TEXT PRIMARY KEY, grp TEXT NOT NULL, accused TEXT NOT NULL, opener TEXT NOT NULL,
+     accused_fp TEXT NOT NULL, accused_nick TEXT, opener_fp TEXT NOT NULL,
+     reason TEXT NOT NULL, opened_at INTEGER NOT NULL, members INTEGER NOT NULL, decided INTEGER NOT NULL DEFAULT 0,
+     passed INTEGER, valid INTEGER, removed INTEGER, decided_at INTEGER)`,
+  'CREATE INDEX IF NOT EXISTS votes_by_group ON votes (grp)',
+  `CREATE TABLE IF NOT EXISTS ballots (vote TEXT NOT NULL, account TEXT NOT NULL, yes INTEGER NOT NULL,
+     eligible INTEGER NOT NULL, at INTEGER NOT NULL, wallet TEXT, checked INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (vote, account))`,
+  'CREATE TABLE IF NOT EXISTS proofs (code TEXT PRIMARY KEY, device TEXT NOT NULL, expires INTEGER NOT NULL)',
+  // Bans are kept by wallet fingerprint, so leaving the chat and signing in again doesn't undo them.
+  `CREATE TABLE IF NOT EXISTS group_bans (id INTEGER PRIMARY KEY AUTOINCREMENT, grp TEXT NOT NULL, player TEXT NOT NULL,
+     nickname TEXT, at INTEGER NOT NULL, UNIQUE (grp, player))`,
 ];
 
 function randomHex(bytes) {
@@ -140,6 +156,10 @@ export { nicknameKey };
  */
 export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (...a) => fetch(...a) }) {
   for (const statement of SCHEMA) sql.exec(statement);
+  // Columns added after a table first went live (stage 4: group keys renewed after a removal).
+  for (const [table, name, type] of [['groups', 'epoch', 'INTEGER NOT NULL DEFAULT 1'], ['groups', 'needs_rekey', 'INTEGER NOT NULL DEFAULT 0']]) {
+    if (!sql.exec(`PRAGMA table_info(${table})`).toArray().some((c) => c.name === name)) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  }
   const rows = (query, ...params) => sql.exec(query, ...params).toArray();
   const row = (query, ...params) => rows(query, ...params)[0];
   const run = (query, ...params) => { sql.exec(query, ...params).toArray(); };
@@ -243,7 +263,126 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     run('DELETE FROM group_joins WHERE grp = ? AND account = ?', group, account);
   }
 
+  // --- removal votes (stage 4) -------------------------------------------------
+
+  /** The voting threshold, from the game account's holdings (asked once a day). */
+  async function currentThreshold() {
+    const t = now();
+    const at = Number(row('SELECT v FROM meta WHERE k = ?', 'game_balance_at')?.v ?? 0);
+    if (t - at > DAY) {
+      // (the attempt counts too, so a Klever outage doesn't mean a question on every request)
+      run('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', 'game_balance_at', String(t - DAY + 60 * MINUTE));
+      try {
+        const balance = await devikinsHeld(GAME_ACCOUNT, fetchKlever);
+        run('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', 'game_balance', String(balance));
+        run('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', 'game_balance_at', String(t));
+      } catch {
+        // Klever didn't answer: the last known figure (or, if none, the safe maximum).
+      }
+    }
+    const known = row('SELECT v FROM meta WHERE k = ?', 'game_balance')?.v;
+    return votingThreshold(known === undefined ? null : Number(known));
+  }
+
+  /**
+   * A vote needs a fresh wallet signature (POST /proof/start gives the text):
+   * it must be this player's own wallet (its fingerprint), holding at least
+   * the threshold right now. → the wallet address (kept with the ballot only
+   * until the vote is counted, to check it again then).
+   */
+  async function checkVoteProof({ device, account, body, threshold, host }) {
+    const { code, wallet, signature } = body.proof || {};
+    const p = typeof code === 'string' ? row('SELECT * FROM proofs WHERE code = ?', code) : null;
+    if (p) run('DELETE FROM proofs WHERE code = ?', code);
+    if (!p || p.device !== device || p.expires <= now()) refuse(400, 'The wallet check has expired; please try again.');
+    try { walletPublicKey(wallet); } catch { refuse(400, 'Not a Klever address.'); }
+    const text = voteProofText({ site: host, deviceKey: device, code, expiresAt: p.expires });
+    if (!(await isWalletSignature(text, wallet, signature))) refuse(403, "The wallet's signature doesn't match.");
+    if ((await hmacHex(walletSalt, wallet)) !== account.wallet_fp) refuse(403, 'Please use the wallet you signed in to the chat with.');
+    let held;
+    try { held = await devikinsHeld(wallet, fetchKlever); } catch { refuse(502, "Klever's server didn't answer; please try again in a minute."); }
+    if (held < threshold) refuse(403, `Only members holding at least ${threshold} Devikins can vote (this wallet holds ${held} right now).`);
+    return wallet;
+  }
+
+  const ballotsOf = (vote) => rows('SELECT * FROM ballots WHERE vote = ? ORDER BY at, rowid', vote);
+
+  const isBanned = (group, walletFp) => !!row('SELECT 1 AS x FROM group_bans WHERE grp = ? AND player = ?', group, walletFp);
+
+  /**
+   * Counts votes whose 48 h are over, a few wallets per run (Cloudflare
+   * allows only so many outside questions per request): every voter's wallet
+   * is checked again - a vote counts only if that wallet still holds the
+   * threshold and the voter is still a member, so Devikins moved to another
+   * wallet count once - and each address is deleted right after its check.
+   * Once all are checked, the vote is decided; if it passed, the member is
+   * banned (by wallet fingerprint, even if they left meanwhile) and removed,
+   * and the group is marked for a new key. Runs from the alarm.
+   * → true if votes are still waiting to be counted.
+   */
+  async function decideAllVotes(budget = DECIDE_BATCH) {
+    const t = now();
+    const due = rows('SELECT * FROM votes WHERE decided = 0 AND opened_at <= ? ORDER BY opened_at', t - VOTE_DURATION);
+    if (!due.length) return false;
+    const threshold = await currentThreshold();
+    for (const v of due) {
+      const members = new Set(rows('SELECT account FROM group_members WHERE grp = ?', v.grp).map((m) => m.account));
+      for (const b of rows('SELECT * FROM ballots WHERE vote = ? AND checked = 0', v.id)) {
+        if (budget <= 0) return true;
+        let held = 0;
+        if (b.wallet) {
+          try { held = await devikinsHeld(b.wallet, fetchKlever); } catch { return true; }
+          budget -= 1;
+        }
+        run('UPDATE ballots SET eligible = ?, checked = 1, wallet = NULL WHERE vote = ? AND account = ?',
+          b.eligible && held >= threshold && members.has(b.account) ? 1 : 0, v.id, b.account);
+      }
+      if (row('SELECT decided FROM votes WHERE id = ?', v.id).decided) continue;
+      const result = voteResult({
+        members: v.members,
+        accused: v.accused,
+        votes: ballotsOf(v.id).map((b) => ({ voter: b.account, yes: !!b.yes, counts: !!b.eligible })),
+      });
+      const g = row('SELECT owner FROM groups WHERE id = ?', v.grp);
+      // (If the accused has become the group's owner meanwhile, they stay.)
+      const passed = result.passed && !!g && g.owner !== v.accused;
+      let removed = false;
+      if (passed) {
+        run('INSERT OR IGNORE INTO group_bans (grp, player, nickname, at) VALUES (?, ?, ?, ?)', v.grp, v.accused_fp, v.accused_nick, t);
+        dropJoin(v.grp, v.accused);
+        if (members.has(v.accused)) {
+          removed = true;
+          const r = removeMember(v.grp, v.accused);
+          // A new key, so the removed member can't read on: a member's Hub makes it.
+          if (!r.deleted) run('UPDATE groups SET needs_rekey = 1 WHERE id = ?', v.grp);
+        }
+      }
+      run('UPDATE votes SET decided = 1, passed = ?, valid = ?, removed = ?, decided_at = ? WHERE id = ?',
+        passed ? 1 : 0, result.valid ? 1 : 0, removed ? 1 : 0, t, v.id);
+      run('UPDATE ballots SET wallet = NULL WHERE vote = ?', v.id);
+    }
+    return false;
+  }
+
+  /** When the next open vote ends (for the alarm), or null. */
+  function nextVoteEnd() {
+    const v = row('SELECT MIN(opened_at) AS o FROM votes WHERE decided = 0');
+    return v?.o ? v.o + VOTE_DURATION : null;
+  }
+
+  /** Is this member's posting paused by a supported, still open vote about them? → the vote's end time, or 0 */
+  function pausedUntil(group, account, t) {
+    for (const v of rows('SELECT * FROM votes WHERE grp = ? AND accused = ? AND decided = 0', group, account)) {
+      const supporters = ballotsOf(v.id).filter((b) => b.yes && b.eligible).map((b) => b.account);
+      if (isPostingPaused({ openedAt: v.opened_at, opener: v.opener, supporters, decided: false }, t)) return v.opened_at + VOTE_DURATION;
+    }
+    return 0;
+  }
+
   function deleteGroup(group) {
+    for (const v of rows('SELECT id FROM votes WHERE grp = ?', group)) run('DELETE FROM ballots WHERE vote = ?', v.id);
+    run('DELETE FROM votes WHERE grp = ?', group);
+    run('DELETE FROM group_bans WHERE grp = ?', group);
     run('DELETE FROM posts WHERE grp = ?', group);
     run('DELETE FROM group_joins WHERE grp = ?', group);
     run('DELETE FROM group_members WHERE grp = ?', group);
@@ -268,6 +407,16 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       const expiresAt = t + SIGNIN_VALID_FOR;
       run('INSERT INTO signins (code, device, expires) VALUES (?, ?, ?)', code, device, expiresAt);
       return { code, expiresAt, text: signInText({ site: host, deviceKey: device, code, expiresAt }) };
+    },
+
+    'POST /proof/start': ({ device, t, host }) => {
+      verifiedAccount(device, t);
+      run('DELETE FROM proofs WHERE expires <= ?', t);
+      if (row('SELECT COUNT(*) AS n FROM proofs WHERE device = ?', device).n >= MAX_OPEN_SIGNINS) refuse(429, 'Too many wallet checks started; please wait 5 minutes.');
+      const code = randomHex(8);
+      const expiresAt = t + SIGNIN_VALID_FOR;
+      run('INSERT INTO proofs (code, device, expires) VALUES (?, ?, ?)', code, device, expiresAt);
+      return { code, expiresAt, text: voteProofText({ site: host, deviceKey: device, code, expiresAt }) };
     },
 
     'POST /signin/finish': async ({ device, body, t, host }) => {
@@ -427,9 +576,10 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       const account = verifiedAccount(device, t);
       const mine = new Set(rows('SELECT grp FROM group_members WHERE account = ?', account.id).map((r) => r.grp));
       const asking = new Set(rows('SELECT grp FROM group_joins WHERE account = ?', account.id).map((r) => r.grp));
+      const banned = new Set(rows('SELECT grp FROM group_bans WHERE player = ?', account.wallet_fp).map((r) => r.grp));
       return {
         groups: rows(
-          `SELECT g.id, g.name, g.description, g.owner, g.pinned_at, g.key_check, a.nickname AS owner_nickname,
+          `SELECT g.id, g.name, g.description, g.owner, g.pinned_at, g.key_check, g.epoch, a.nickname AS owner_nickname,
              (SELECT COUNT(*) FROM group_members m WHERE m.grp = g.id) AS members
            FROM groups g LEFT JOIN accounts a ON a.id = g.owner ORDER BY members DESC, g.created`,
         ).map((g) => ({
@@ -441,18 +591,21 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
           members: g.members,
           member: mine.has(g.id),
           asking: asking.has(g.id),
+          banned: banned.has(g.id),
           keyCheck: g.key_check,
+          epoch: g.epoch,
         })),
       };
     },
 
     // Only the groups this player is in, with what their Hub needs to keep up
     // (asked on every mail check, so it stays small).
-    'GET /groups/mine': ({ device, t }) => {
+    'GET /groups/mine': async ({ device, t }) => {
       const account = verifiedAccount(device, t);
       return {
         groups: rows(
-          `SELECT g.id, g.owner, g.pinned_at, g.key_check, a.nickname AS owner_nickname,
+          `SELECT g.id, g.owner, g.pinned_at, g.key_check, g.epoch, g.needs_rekey, a.nickname AS owner_nickname,
+             (SELECT MAX(opened_at) FROM votes v WHERE v.grp = g.id) AS last_vote,
              (SELECT MAX(seq) FROM posts p WHERE p.grp = g.id) AS last_seq
            FROM group_members m JOIN groups g ON g.id = m.grp LEFT JOIN accounts a ON a.id = g.owner
            WHERE m.account = ?`, account.id,
@@ -466,6 +619,10 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
           lastSeq: g.last_seq ?? 0,
           pinnedAt: g.pinned_at ?? null,
           keyCheck: g.key_check,
+          epoch: g.epoch,
+          needsRekey: !!g.needs_rekey,
+          lastVote: g.last_vote ?? null,
+          pausedUntil: pausedUntil(g.id, account.id, t),
           waiting: row(`SELECT COUNT(*) AS n ${OPEN_JOINS}`, g.id, t).n,
         })),
       };
@@ -502,6 +659,9 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       const fp = await sha256Hex(body.code);
       const account = verifiedAccount(device, now());
       if (!account.nickname) refuse(400, 'Please choose a nickname first.');
+      if (isBanned(g.id, account.wallet_fp)) {
+        refuse(403, 'You were removed from this group by a vote. Only its owner can let you back in (you can ask them in a 1:1 chat).');
+      }
       // (A member asking again - e.g. a new browser without the key - is handed the key again too.)
       const isMember = !!row('SELECT 1 AS x FROM group_members WHERE grp = ? AND account = ?', g.id, account.id);
       // The code must open this player's own mailboxes (the new member's Hub registered it).
@@ -528,6 +688,11 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       const group = memberGroup(body.group, account);
       const join = typeof body.account === 'string' ? row('SELECT * FROM group_joins WHERE grp = ? AND account = ?', group, body.account) : null;
       if (!join) return { admitted: false };
+      const joiner = row('SELECT wallet_fp FROM accounts WHERE id = ?', join.account);
+      if (!joiner || isBanned(group, joiner.wallet_fp)) {
+        dropJoin(group, join.account);
+        return { admitted: false };
+      }
       const lastSeq = row('SELECT MAX(seq) AS s FROM posts WHERE grp = ?', group).s ?? 0;
       dropJoin(group, join.account);
       run('INSERT OR IGNORE INTO group_members (grp, account, joined_seq, joined_at) VALUES (?, ?, ?, ?)', group, join.account, lastSeq, t);
@@ -579,6 +744,123 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       return { envelope: g.pinned ? JSON.parse(g.pinned) : null, at: g.pinned_at ?? null };
     },
 
+    // --- removal votes ------------------------------------------------------
+
+    'GET /groups/votes': async ({ device, query, t }) => {
+      const account = verifiedAccount(device, t);
+      const group = memberGroup(query.get('group'), account);
+      const nick = (id) => row('SELECT nickname FROM accounts WHERE id = ?', id)?.nickname ?? null;
+      const myJoin = row('SELECT joined_at FROM group_members WHERE grp = ? AND account = ?', group, account.id).joined_at;
+      return {
+        threshold: await currentThreshold(),
+        canOpen: canOpenVote(rows('SELECT opened_at FROM votes WHERE opener_fp = ?', account.wallet_fp).map((v) => v.opened_at), t),
+        votes: rows('SELECT * FROM votes WHERE grp = ? AND (decided = 0 OR decided_at > ?) ORDER BY opened_at DESC', group, t - 7 * DAY).map((v) => {
+          const ballots = ballotsOf(v.id);
+          return {
+            id: v.id,
+            accused: nick(v.accused) ?? v.accused_nick ?? null,
+            aboutMe: v.accused === account.id,
+            opener: nick(v.opener),
+            reason: JSON.parse(v.reason),
+            openedAt: v.opened_at,
+            endsAt: v.opened_at + VOTE_DURATION,
+            members: v.members,
+            decided: !!v.decided,
+            passed: v.passed === null ? null : !!v.passed,
+            valid: v.valid === null ? null : !!v.valid,
+            removed: !!v.removed,
+            // Members who joined after the vote started can't vote in it.
+            mayVote: myJoin <= v.opened_at && v.accused !== account.id,
+            // Who voted how is visible inside the group (decided 21 Oct 2026);
+            // whether a voter's holdings count is only "counts / doesn't".
+            ballots: ballots.map((b) => ({ voter: nick(b.account), yes: !!b.yes, counts: !!b.eligible })),
+            myBallot: ballots.find((b) => b.account === account.id) ? { yes: !!ballots.find((b) => b.account === account.id).yes } : null,
+          };
+        }),
+        banned: account.id === row('SELECT owner FROM groups WHERE id = ?', group).owner
+          ? rows('SELECT id, nickname FROM group_bans WHERE grp = ?', group).map((b) => ({ id: b.id, nickname: b.nickname }))
+          : [],
+      };
+    },
+
+    'POST /groups/vote/open': async ({ device, body, t, host }) => {
+      let account = verifiedAccount(device, t);
+      let group = memberGroup(body.group, account);
+      const threshold = await currentThreshold();
+      const wallet = await checkVoteProof({ device, account, body, threshold, host });
+      account = verifiedAccount(device, now());
+      group = memberGroup(body.group, account);
+      const accused = typeof body.accused === 'string' ? row('SELECT id, wallet_fp, nickname FROM accounts WHERE nick_key = ?', nicknameKey(body.accused)) : null;
+      if (!accused || !row('SELECT 1 AS x FROM group_members WHERE grp = ? AND account = ?', group, accused.id)) refuse(404, 'No member with this nickname.');
+      if (accused.id === account.id) refuse(400, "That's you.");
+      if (accused.id === row('SELECT owner FROM groups WHERE id = ?', group).owner) refuse(403, "The group's owner can't be voted out. Members who disagree can leave and start their own group.");
+      if (row('SELECT 1 AS x FROM votes WHERE grp = ? AND accused = ? AND decided = 0', group, accused.id)) refuse(409, 'There is already an open vote about this member.');
+      if (!canOpenVote(rows('SELECT opened_at FROM votes WHERE opener_fp = ?', account.wallet_fp).map((v) => v.opened_at), t)) refuse(429, 'You can start at most one vote per week.');
+      const e = body.reason;
+      if (!e || e.v !== 1 || e.group !== group || typeof e.payload !== 'string') refuse(400, 'Please give a reason.');
+      const reason = stringify(e);
+      if (reason.length > MAX_GROUP_ENVELOPE_CHARS) refuse(413, 'The reason is too long.');
+      spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
+      const id = randomHex(16);
+      const members = row('SELECT COUNT(*) AS n FROM group_members WHERE grp = ?', group).n;
+      run(`INSERT INTO votes (id, grp, accused, opener, accused_fp, accused_nick, opener_fp, reason, opened_at, members)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, group, accused.id, account.id, accused.wallet_fp, accused.nickname, account.wallet_fp, reason, t, members);
+      run('INSERT INTO ballots (vote, account, yes, eligible, at, wallet) VALUES (?, ?, 1, 1, ?, ?)', id, account.id, t, wallet);
+      return { id, endsAt: t + VOTE_DURATION };
+    },
+
+    'POST /groups/vote/cast': async ({ device, body, t, host }) => {
+      let account = verifiedAccount(device, t);
+      const v = typeof body.vote === 'string' && HEX32.test(body.vote) ? row('SELECT * FROM votes WHERE id = ?', body.vote) : null;
+      if (!v) refuse(404, 'This vote no longer exists.');
+      memberGroup(v.grp, account);
+      if (v.accused === account.id) refuse(403, "You can't vote about yourself. You can contact the group owner.");
+      if (row('SELECT 1 AS x FROM ballots WHERE vote = ? AND account = ?', v.id, account.id)) refuse(409, 'You have voted already.');
+      if (v.decided || t >= v.opened_at + VOTE_DURATION) refuse(409, 'This vote has ended.');
+      if (row('SELECT joined_at FROM group_members WHERE grp = ? AND account = ?', v.grp, account.id).joined_at > v.opened_at) {
+        refuse(403, 'Only members who were in the group when the vote started can vote.');
+      }
+      const threshold = await currentThreshold();
+      const wallet = await checkVoteProof({ device, account, body, threshold, host });
+      account = verifiedAccount(device, now());
+      memberGroup(v.grp, account);
+      if (row('SELECT decided FROM votes WHERE id = ?', v.id).decided || now() >= v.opened_at + VOTE_DURATION) refuse(409, 'This vote has ended.');
+      if (row('SELECT 1 AS x FROM ballots WHERE vote = ? AND account = ?', v.id, account.id)) refuse(409, 'You have voted already.');
+      spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
+      run('INSERT INTO ballots (vote, account, yes, eligible, at, wallet) VALUES (?, ?, ?, 1, ?, ?)', v.id, account.id, body.yes === true ? 1 : 0, t, wallet);
+      return { voted: true };
+    },
+
+    'POST /groups/unban': ({ device, body, t }) => {
+      const account = verifiedAccount(device, t);
+      const group = memberGroup(body.group, account);
+      if (row('SELECT owner FROM groups WHERE id = ?', group).owner !== account.id) refuse(403, 'Only the group owner can let someone back in.');
+      run('DELETE FROM group_bans WHERE grp = ? AND id = ?', group, Number(body.ban) || 0);
+      return { unbanned: true };
+    },
+
+    // A member's Hub hands the group's NEW key (after a removal) to every
+    // member's devices, sealed for each. Only the first new key counts.
+    'POST /groups/rekey': ({ device, body, t }) => {
+      const account = verifiedAccount(device, t);
+      const group = memberGroup(body.group, account);
+      const g = row('SELECT epoch, needs_rekey FROM groups WHERE id = ?', group);
+      if (!g.needs_rekey || body.epoch !== g.epoch + 1) refuse(409, 'The group has its new key already.');
+      if (!HEX64.test(body.keyCheck || '')) refuse(400, 'Damaged request.');
+      if (!Array.isArray(body.items) || body.items.length > 500) refuse(400, 'Damaged request.');
+      const allowed = new Set();
+      for (const m of rows('SELECT account FROM group_members WHERE grp = ?', group)) for (const d of devicesOf(m.account)) allowed.add(d);
+      const items = body.items.map((i) => ({ to: i?.to, text: checkEnvelopeFor(i?.to, i?.envelope) }));
+      // Every member's every device, exactly once: nobody can be left out of the new key.
+      const to = new Set(items.map((i) => i.to));
+      if (to.size !== items.length || to.size !== allowed.size || ![...allowed].every((d) => to.has(d))) {
+        refuse(409, "The new key must go to every member's devices; please try again.");
+      }
+      for (const item of items) run('INSERT INTO mail (device, kind, envelope, at) VALUES (?, ?, ?, ?)', item.to, 'direct', item.text, Math.floor(t / (60 * MINUTE)) * 60 * MINUTE);
+      run('UPDATE groups SET epoch = ?, key_check = ?, needs_rekey = 0 WHERE id = ?', body.epoch, body.keyCheck, group);
+      return { epoch: body.epoch };
+    },
+
     'POST /group/post': ({ device, body, t }) => {
       const account = verifiedAccount(device, t);
       const envelope = body.envelope;
@@ -587,6 +869,11 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
         refuse(400, 'Not a group envelope.');
       }
       memberGroup(envelope.group, account);
+      if (envelope.epoch !== row('SELECT epoch FROM groups WHERE id = ?', envelope.group).epoch) {
+        refuse(409, 'This group has a new key; your Hub is fetching it. Please try again in a moment.');
+      }
+      const pause = pausedUntil(envelope.group, account.id, t);
+      if (pause) refuse(403, `Your posting in this group is paused while a vote about you is open (until ${new Date(pause).toISOString().slice(0, 16).replace('T', ' ')} UTC). You can contact the group owner.`);
       const text = stringify(envelope);
       if (text.length > MAX_GROUP_ENVELOPE_CHARS) refuse(413, 'This envelope is too big.');
       const last = row('SELECT at FROM lastpost WHERE player = ?', account.wallet_fp);
@@ -670,6 +957,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     run('DELETE FROM mail WHERE at < ?', cutoff);
     run('DELETE FROM posts WHERE at < ?', cutoff);
     run('DELETE FROM signins WHERE expires <= ?', t);
+    run('DELETE FROM proofs WHERE expires <= ?', t);
     run('DELETE FROM requests WHERE at < ?', t - DAY);
     run('DELETE FROM lastpost WHERE at < ?', t - DAY);
     run('DELETE FROM budget WHERE day < ?', Math.floor(t / DAY) - 1);
@@ -686,6 +974,6 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     }
   }
 
-  return { handle, cleanUp, postmanPublicKey: postman.publicKey };
+  return { handle, cleanUp, decideAllVotes, nextVoteEnd, postmanPublicKey: postman.publicKey };
 }
 

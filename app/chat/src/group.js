@@ -163,6 +163,9 @@ export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocke
 /** Our own kind number for a pinned message, so it can never pass as a post (or the other way round). */
 export const PINNED_KIND = 39777;
 
+/** The reason given for a removal vote: sealed like a pinned message, with its own kind number. */
+export const VOTE_REASON_KIND = 39778;
+
 /** At most this many pinned messages per group. */
 export const MAX_PINS = 5;
 
@@ -170,13 +173,13 @@ export const MAX_PINS = 5;
  * The owner's pinned messages (a list, up to MAX_PINS), signed and sealed
  * with the group key as ONE envelope (one per group at the postman).
  */
-export function sealPinned({ group, from, pins, now = Date.now() }) {
+export function sealPinned({ group, from, pins, now = Date.now(), kind = PINNED_KIND }) {
   const list = (pins || []).map((p) => cleanText(p)).filter(Boolean);
   if (list.length === 0) throw new Error('Nothing to pin.');
   if (list.length > MAX_PINS) throw new Error(`At most ${MAX_PINS} pinned messages.`);
   const pinned = finalizeEvent(
     {
-      kind: PINNED_KIND,
+      kind,
       created_at: Math.floor(now / 1000),
       content: JSON.stringify({ pins: list }),
       tags: [['h', group.id], ['epoch', String(group.epoch)]],
@@ -187,7 +190,7 @@ export function sealPinned({ group, from, pins, now = Date.now() }) {
 }
 
 /** Opens the pinned messages → { from, pins: [text …], writtenAt } or null (no key); throws if it isn't genuine. */
-export function openPinned(envelope, { groupId, keys }) {
+export function openPinned(envelope, { groupId, keys, kind = PINNED_KIND }) {
   if (!envelope || envelope.v !== 1 || envelope.group !== groupId || typeof envelope.payload !== 'string'
       || envelope.payload.length > MAX_GROUP_ENVELOPE_CHARS) {
     throw new Error('Not a pinned message of this group.');
@@ -195,7 +198,7 @@ export function openPinned(envelope, { groupId, keys }) {
   const key = keys && keys[envelope.epoch];
   if (!key) return null;
   const pinned = JSON.parse(nip44.decrypt(envelope.payload, hexToBytes(key)));
-  if (pinned.kind !== PINNED_KIND || !verifyEvent(JSON.parse(JSON.stringify(pinned)))) throw new Error('The pinned message was changed.');
+  if (pinned.kind !== kind || !verifyEvent(JSON.parse(JSON.stringify(pinned)))) throw new Error('The pinned message was changed.');
   if (tag(pinned, 'h') !== groupId || Number(tag(pinned, 'epoch')) !== envelope.epoch) throw new Error('The pinned message was moved from elsewhere.');
   let pins;
   try {

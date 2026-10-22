@@ -279,3 +279,48 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await bob.context.close();
   postman.stop();
 });
+
+test('removal votes: a member starts a vote with a reason, another supports it, the accused is paused and told', async ({ browser }) => {
+  test.setTimeout(240_000);
+  const postman = await startPostman();
+  const alice = await openPlayer(browser, postman, await postman.newWallet(12));
+  const bob = await openPlayer(browser, postman, await postman.newWallet(12));
+  const max = await openPlayer(browser, postman, await postman.newWallet(12));
+  await signInAs(alice.page, 'Alice');
+  await signInAs(bob.page, 'Bob');
+  await signInAs(max.page, 'Max');
+  await alice.page.getByTestId('chat-group-new').click();
+  await alice.page.getByTestId('chat-group-name').fill('Vote Club');
+  await alice.page.getByTestId('chat-group-create').click();
+  await expect(alice.page.getByText('you started it')).toBeVisible();
+  for (const p of [bob, max]) {
+    await expect(p.page.getByTestId('chat-group-other')).toContainText('Vote Club', { timeout: 30_000 });
+    await p.page.getByTestId('chat-group-join').click();
+    await expect(p.page.getByTestId('chat-group')).toContainText('Vote Club', { timeout: 30_000 });
+    await p.page.getByTestId('chat-group').click();
+  }
+
+  // Bob starts a vote about Max (his extension signs a short text)
+  await bob.page.getByTestId('chat-group-members-button').click();
+  await expect(bob.page.getByTestId('chat-group-member')).toHaveCount(3);
+  await bob.page.getByTestId('chat-group-member').filter({ hasText: 'Max' }).getByTestId('chat-vote-start').click();
+  await bob.page.getByTestId('chat-vote-reason').fill('Posts scam links');
+  await bob.page.getByTestId('chat-vote-open').click();
+  await expect(bob.page.getByTestId('chat-group-vote')).toContainText('Vote: remove Max?');
+  await expect(bob.page.getByTestId('chat-group-vote')).toContainText('Reason: Posts scam links');
+  await expect(bob.page.getByTestId('chat-group-vote')).toContainText('You voted yes.');
+  // The owner can't be voted out (no button next to Alice)
+  await expect(bob.page.getByTestId('chat-group-member').filter({ hasText: 'Alice' }).getByTestId('chat-vote-start')).toHaveCount(0);
+
+  // Max sees it's about him and can't vote
+  await expect(max.page.getByTestId('chat-group-vote')).toContainText('This vote is about you', { timeout: 30_000 });
+  await expect(max.page.getByTestId('chat-vote-yes')).toHaveCount(0);
+
+  // Alice supports it: now Max's posting is paused
+  await alice.page.getByTestId('chat-vote-yes').click();
+  await expect(alice.page.getByTestId('chat-group-vote')).toContainText('2 yes / 0 no');
+  await expect(max.page.getByTestId('chat-group-paused')).toBeVisible({ timeout: 30_000 });
+
+  for (const p of [alice, bob, max]) await p.context.close();
+  postman.stop();
+});

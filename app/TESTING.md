@@ -505,6 +505,11 @@ wallet - see the Signer's TESTING.md)
       says when the next post is possible). With a second browser: Join,
       wait until the first browser's chat is open – then you're in, see the
       rules but not the older posts; post, and it shows in the first one.
+- [ ] **W8. Removal votes** (three wallets with ≥ 10 Devikins): Members →
+      "Start a vote to remove" with a reason (the extension signs a text);
+      a second member votes yes → the accused sees the red "paused" line and
+      can't vote. After 48 h with 3 votes and 60 % yes they're removed; the
+      owner can "Let back in".
 
 ---
 

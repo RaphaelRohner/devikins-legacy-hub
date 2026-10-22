@@ -100,7 +100,11 @@ export function GroupsCard({ groups, busy, onOpen, onJoin, onCreate }) {
               {g.needsKey ? ' · you are in it, but this browser has no key yet' : ''}
             </Text>
           </View>
-          {g.needsKey ? (
+          {g.banned ? (
+            <Text style={[styles.note, { color: colors.secondaryText, maxWidth: 220 }]}>
+              You were removed by a vote. Only its owner can let you back in (you can ask them in a 1:1 chat).
+            </Text>
+          ) : g.needsKey ? (
             <Button label="Get the key" onPress={() => onJoin(g.id)} disabled={busy} testID="chat-group-getkey" />
           ) : g.asking ? (
             <Text style={[styles.note, { color: colors.secondaryText, maxWidth: 220 }]} testID="chat-group-waiting">
@@ -158,7 +162,152 @@ export function GroupsCard({ groups, busy, onOpen, onJoin, onCreate }) {
   );
 }
 
-export default function ChatGroupView({ group, posts, next, busy, error, onBack, onPost, onPins, onLeave }) {
+function endsLabel(ms) {
+  const left = ms - Date.now();
+  if (left <= 0) return 'counting now';
+  return `ends in ${waitLabel(left)}`;
+}
+
+/** The group's removal votes (open, and decided in the last week). */
+function VotesBox({ votes, busy, onCastVote }) {
+  const { colors } = useTheme();
+  if (!votes || votes.votes.length === 0) return null;
+  return (
+    <View style={[styles.pinned, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]} testID="chat-group-votes">
+      {votes.votes.map((v) => (
+        <View key={v.id} style={styles.pinItem} testID="chat-group-vote">
+          <Text style={[styles.text, { color: colors.text, fontWeight: '700' }]}>
+            {v.decided
+              ? v.passed
+                ? v.removed
+                  ? `🗳 Vote ended: ${v.accused ?? 'a former player'} was removed.`
+                  : `🗳 Vote passed: ${v.accused ?? 'a former player'} had left already and can't rejoin.`
+                : `🗳 Vote ended: ${v.accused ?? 'a former player'} stays (${v.valid ? 'not enough yes votes' : 'too few votes'}).`
+              : `🗳 Vote: remove ${v.accused ?? 'a former player'}?`}
+          </Text>
+          <Text style={[styles.note, { color: colors.text }]}>Reason: {v.reason ?? '(given before you joined)'}</Text>
+          <Text style={[styles.note, { color: colors.secondaryText }]}>
+            Started by {v.opener ?? 'a former player'} · {v.decided
+              ? `${v.ballots.filter((b) => b.counts && b.yes).length} yes / ${v.ballots.filter((b) => b.counts && !b.yes).length} no counted`
+              : `${v.yes} yes / ${v.no} no`}
+            {v.decided ? '' : ` · ${endsLabel(v.endsAt)}`}
+            {v.ballots.length ? ` · ${v.ballots.map((b) => `${b.voter ?? '?'} ${b.yes ? 'yes' : 'no'}${v.decided && !b.counts ? ' (didn\'t count)' : ''}`).join(', ')}` : ''}
+          </Text>
+          {!v.decided && v.aboutMe ? (
+            <Text style={[styles.note, { color: colors.secondaryText }]}>
+              This vote is about you, so you can't vote. You can write to the group's owner in a 1:1 chat.
+            </Text>
+          ) : null}
+          {!v.decided && !v.aboutMe && v.myBallot ? (
+            <Text style={[styles.note, { color: colors.secondaryText }]}>You voted {v.myBallot.yes ? 'yes' : 'no'}.</Text>
+          ) : null}
+          {!v.decided && !v.aboutMe && !v.myBallot && !v.mayVote ? (
+            <Text style={[styles.note, { color: colors.secondaryText }]}>You joined after this vote started, so you can't vote in it.</Text>
+          ) : null}
+          {!v.decided && !v.aboutMe && !v.myBallot && v.mayVote ? (
+            votes.canVote ? (
+              <View style={styles.row}>
+                <Button label={`Yes, remove ${v.accused}`} onPress={() => onCastVote(v.id, true)} disabled={busy} testID="chat-vote-yes" />
+                <Button label="No" quiet onPress={() => onCastVote(v.id, false)} disabled={busy} testID="chat-vote-no" />
+              </View>
+            ) : (
+              <Text style={[styles.note, { color: colors.secondaryText }]}>
+                Members holding at least {votes.threshold} Devikins can vote.
+              </Text>
+            )
+          ) : null}
+        </View>
+      ))}
+      <Text style={[styles.note, { color: colors.secondaryText }]}>
+        A vote counts if at least 10 % of the members (never fewer than 3) vote; 60 % yes removes the member. Voting asks your
+        Klever extension to sign a short text (no fee); your wallet is checked again when the vote closes, then forgotten.
+      </Text>
+    </View>
+  );
+}
+
+/** The members, with "start a vote" (and, for the owner, letting removed members back in). */
+function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBackIn, onClose }) {
+  const { colors } = useTheme();
+  const [members, setMembers] = useState(null);
+  const [voting, setVoting] = useState(null);
+  const [reason, setReason] = useState('');
+  useEffect(() => {
+    let alive = true;
+    loadMembers().then((m) => alive && setMembers(m)).catch(() => alive && setMembers([]));
+    return () => { alive = false; };
+    // (loaded once each time the panel opens)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const open = new Set((votes?.votes || []).filter((v) => !v.decided).map((v) => v.accused));
+  return (
+    <View style={[styles.pinned, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]} testID="chat-group-members">
+      <View style={styles.row}>
+        <Text style={[styles.text, { color: colors.text, fontWeight: '700', flex: 1 }]}>Members</Text>
+        <TouchableOpacity onPress={onClose}><Text style={[styles.link, { color: colors.primary }]}>Close</Text></TouchableOpacity>
+      </View>
+      {members === null ? <Text style={[styles.note, { color: colors.secondaryText }]}>Loading…</Text> : null}
+      {(members || []).map((name) => (
+        <View key={name} style={[styles.row, styles.pinItem]} testID="chat-group-member">
+          <Text style={[styles.text, { color: colors.text, flex: 1 }]}>{name}{name === group.owner ? ' (owner)' : ''}</Text>
+          {name !== group.owner && name !== me && !open.has(name) && votes?.canVote && votes?.canOpen && voting !== name ? (
+            <TouchableOpacity onPress={() => { setVoting(name); setReason(''); }} testID="chat-vote-start">
+              <Text style={[styles.link, { color: colors.cancelText }]}>Start a vote to remove</Text>
+            </TouchableOpacity>
+          ) : null}
+          {open.has(name) ? <Text style={[styles.note, { color: colors.secondaryText }]}>vote open</Text> : null}
+          {voting === name ? (
+            <View style={[styles.form, { width: '100%' }]}>
+              <TextInput
+                testID="chat-vote-reason"
+                style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                value={reason}
+                onChangeText={setReason}
+                placeholder={`Why should ${name} be removed? (seen by the group)`}
+                placeholderTextColor={colors.secondaryText}
+                maxLength={500}
+              />
+              <View style={styles.row}>
+                <Button
+                  label="Start the vote"
+                  testID="chat-vote-open"
+                  disabled={busy || !reason.trim()}
+                  onPress={async () => { if (await onOpenVote(name, reason)) setVoting(null); }}
+                />
+                <Button label="Cancel" quiet onPress={() => setVoting(null)} />
+              </View>
+              <Text style={[styles.note, { color: colors.secondaryText }]}>
+                You can start one vote per week. It runs 48 hours; once a second member supports it, {name} can't post until it's decided.
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ))}
+      {votes && !votes.canVote ? (
+        <Text style={[styles.note, { color: colors.secondaryText }]}>Members holding at least {votes.threshold} Devikins can start and cast votes.</Text>
+      ) : null}
+      {votes && votes.canVote && !votes.canOpen ? (
+        <Text style={[styles.note, { color: colors.secondaryText }]}>You started a vote in the last 7 days; one per week.</Text>
+      ) : null}
+      {group.isOwner && votes?.banned?.length ? (
+        <>
+          <Text style={[styles.text, { color: colors.text, fontWeight: '700' }]}>Removed by a vote</Text>
+          {votes.banned.map((b) => (
+            <View key={b.id} style={styles.row} testID="chat-group-banned">
+              <Text style={[styles.text, { color: colors.text, flex: 1 }]}>{b.nickname ?? 'a former player'}</Text>
+              <Button label="Let back in" quiet onPress={() => onLetBackIn(b.id)} disabled={busy} testID="chat-group-unban" />
+            </View>
+          ))}
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+export default function ChatGroupView({
+  group, me, posts, next, busy, error, onBack, onPost, onPins, onLeave, votes, loadMembers, onOpenVote, onCastVote, onLetBackIn,
+}) {
+  const [showMembers, setShowMembers] = useState(false);
   const { colors } = useTheme();
   const [draft, setDraft] = useState('');
   // Which pinned message the owner is editing: its number, 'new', or null.
@@ -208,7 +357,7 @@ export default function ChatGroupView({ group, posts, next, busy, error, onBack,
   );
 
   const waitMs = next?.allowedAt ? Math.max(0, next.allowedAt - Date.now()) : 0;
-  const canPost = next?.allowedAt !== null && next?.allowedAt !== undefined && waitMs === 0;
+  const canPost = next?.allowedAt !== null && next?.allowedAt !== undefined && waitMs === 0 && !group.pausedUntil;
 
   const send = async () => {
     if (!draft.trim() || busy || !canPost) return;
@@ -239,8 +388,28 @@ export default function ChatGroupView({ group, posts, next, busy, error, onBack,
             {group.members} member{group.members === 1 ? '' : 's'} · {group.isOwner ? 'you started it' : `by ${group.owner ?? '?'}`}
           </Text>
         </View>
+        <Button label="Members" quiet onPress={() => setShowMembers((x) => !x)} testID="chat-group-members-button" />
         <Button label="Leave" quiet onPress={leave} disabled={busy} testID="chat-group-leave" />
       </View>
+
+      {showMembers ? (
+        <MembersPanel
+          group={group}
+          me={me}
+          votes={votes}
+          busy={busy}
+          loadMembers={loadMembers}
+          onOpenVote={onOpenVote}
+          onLetBackIn={onLetBackIn}
+          onClose={() => setShowMembers(false)}
+        />
+      ) : null}
+      <VotesBox votes={votes} busy={busy} onCastVote={onCastVote} />
+      {group.pausedUntil ? (
+        <Text style={[styles.note, styles.pad, { color: colors.cancelText }]} testID="chat-group-paused">
+          Your posting here is paused while a vote about you is open ({endsLabel(group.pausedUntil)}). You can write to the owner in a 1:1 chat.
+        </Text>
+      ) : null}
 
       {group.pinned || group.isOwner ? (
         <View style={[styles.pinned, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]} testID="chat-group-pinned">
@@ -349,7 +518,7 @@ const styles = StyleSheet.create({
   buttonText: { fontSize: 14, fontWeight: '700' },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15 },
   form: { gap: 10 },
-  pinned: { marginHorizontal: 12, padding: 12, borderRadius: 10, borderWidth: 1, gap: 6, maxWidth: 720 },
+  pinned: { marginHorizontal: 12, marginBottom: 8, padding: 12, borderRadius: 10, borderWidth: 1, gap: 6, maxWidth: 720 },
   pinItem: { gap: 4, paddingTop: 6 },
   thread: { padding: 12, gap: 8, maxWidth: 720, width: '100%' },
   bubble: { maxWidth: '80%', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, gap: 2 },
