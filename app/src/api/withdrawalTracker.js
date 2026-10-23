@@ -204,6 +204,35 @@ export async function fetchArrivals(address, knownHashes = new Set()) {
 }
 
 /**
+ * Looks up who holds each NFT, one by one, gently (a few at a time with a
+ * short pause). `list` = [{ kind, nonce }]. Returns a Map "kind:nonce" ->
+ * address (or null = not found on the chain); NFTs whose lookup failed are
+ * left out and named in `errors`. Also used by the wallet overview.
+ */
+export async function lookUpHolders(list, { onProgress, shouldCancel, errors = [] } = {}) {
+  const holderByKey = new Map();
+  let done = 0;
+  onProgress?.({ phase: 'lookups', current: 0, total: list.length });
+  for (let i = 0; i < list.length; i += LOOKUP_PARALLEL) {
+    if (shouldCancel?.()) break;
+    const batch = list.slice(i, i + LOOKUP_PARALLEL);
+    await Promise.all(
+      batch.map(async (item) => {
+        try {
+          holderByKey.set(`${item.kind}:${item.nonce}`, await fetchNftHolder(item.kind, item.nonce));
+        } catch (e) {
+          errors.push(`${KIND_LABEL[item.kind]} #${item.nonce}: ${e.message}`);
+        }
+      })
+    );
+    done += batch.length;
+    onProgress?.({ phase: 'lookups', current: done, total: list.length });
+    await sleep(LOOKUP_PAUSE_MS);
+  }
+  return holderByKey;
+}
+
+/**
  * Runs one check. Returns { updates, arrivals, errors } for the caller to
  * save (database.js: saveWithdrawalCheckResults / addWithdrawalArrivals).
  *
@@ -224,10 +253,12 @@ export async function runWithdrawalCheck({ items, fromAddress, toAddress, full, 
   // 1. Arrivals into the receiving wallet.
   onProgress?.({ phase: 'arrivals' });
   let arrivals = [];
-  try {
-    arrivals = await fetchArrivals(toAddress, knownHashes);
-  } catch (e) {
-    errors.push(`Arrivals log: ${e.message}`);
+  if (toAddress) {
+    try {
+      arrivals = await fetchArrivals(toAddress, knownHashes);
+    } catch (e) {
+      errors.push(`Arrivals log: ${e.message}`);
+    }
   }
 
   // 2. (No bulk wallet listing: Klever's "what does this wallet hold" list
@@ -242,24 +273,8 @@ export async function runWithdrawalCheck({ items, fromAddress, toAddress, full, 
     if (!item.checked_at) return true; // new on the list
     return item.holder !== toAddress; // not arrived yet
   });
-  let done = 0;
-  onProgress?.({ phase: 'lookups', current: 0, total: toLookUp.length });
-  for (let i = 0; i < toLookUp.length; i += LOOKUP_PARALLEL) {
-    if (shouldCancel?.()) break;
-    const batch = toLookUp.slice(i, i + LOOKUP_PARALLEL);
-    await Promise.all(
-      batch.map(async (item) => {
-        try {
-          holderByKey.set(`${item.kind}:${item.nonce}`, await fetchNftHolder(item.kind, item.nonce));
-        } catch (e) {
-          errors.push(`${KIND_LABEL[item.kind]} #${item.nonce}: ${e.message}`);
-        }
-      })
-    );
-    done += batch.length;
-    onProgress?.({ phase: 'lookups', current: done, total: toLookUp.length });
-    await sleep(LOOKUP_PAUSE_MS);
-  }
+  const found = await lookUpHolders(toLookUp, { onProgress, shouldCancel, errors });
+  for (const [key, holder] of found) holderByKey.set(key, holder);
 
   // 4. Results per NFT (NFTs not looked up this time keep their last place).
   const arrivalByKey = new Map();

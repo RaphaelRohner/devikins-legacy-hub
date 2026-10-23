@@ -13,7 +13,7 @@
  *
  *   Set Up       Getting started (the start checklist), Wallets (x),
  *                Fetch/Update, Kleverscan (find a wallet to try the Hub)
- *   Browse NFTs  Devikins, Weapons, Equipment
+ *   Browse NFTs  Devikins, Weapons, Equipment, Where are my NFTs?
  *   Features     Chat (website only for now, since 22 Oct 2026),
  *                Withdrawals, Breeding Helper, KLV Signer (test - Android
  *                app only; signs with the separate KLV Signer app)
@@ -107,6 +107,13 @@ export default function HamburgerMenu({
       onPress: () => onSelectScreen('equipment'),
     },
     {
+      key: 'overview',
+      label: 'Where are my NFTs?',
+      hint: 'How many in each wallet',
+      screen: 'overview',
+      onPress: () => onSelectScreen('overview'),
+    },
+    {
       key: 'breeding',
       label: 'Breeding Helper',
       screen: 'breeding',
@@ -195,7 +202,7 @@ export default function HamburgerMenu({
     // there as a quiet extra; "Tools" became "Features" (a tester would
     // "never have looked under Tools" for the Breeding Helper).
     { key: 'setup', title: 'Set Up', entries: ['guide', 'wallets', 'fetch', 'kleverscan'] },
-    { key: 'browse', title: 'Browse NFTs', entries: ['devikin', 'weapon', 'equipment'] },
+    { key: 'browse', title: 'Browse NFTs', entries: ['devikin', 'weapon', 'equipment', 'overview'] },
     { key: 'features', title: 'Features', entries: ['chat', 'withdrawals', 'breeding', 'signer'] },
     { key: 'help', title: 'Help', entries: ['help', 'feedback', 'about'] },
   ];

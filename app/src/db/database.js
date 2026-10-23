@@ -1072,6 +1072,17 @@ export async function countNfts(kind, ownerAddresses, excludeDeleted = false) {
 }
 
 /**
+ * Every NFT of one collection in the given wallets, with just what the
+ * wallet overview (WalletOverviewView.js) needs: where the Hub saw it
+ * last, whether it's marked deleted, and when it was fetched.
+ */
+export async function getNftPlaces(kind, ownerAddresses) {
+  const db = await getDatabase();
+  const { clause, params } = ownerAddressClause(ownerAddresses);
+  return db.getAllAsync(`SELECT nonce, owner_address, deleted, fetched_at FROM ${kind} WHERE ${clause}`, params);
+}
+
+/**
  * Marks (or un-marks) one NFT as deleted, with an optional note attached -
  * see NftCard.js's "Mark as Deleted"/"Restore" buttons at the bottom of
  * every detail view. This is a soft flag, not a real delete - nothing is

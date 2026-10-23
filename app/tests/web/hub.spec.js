@@ -287,7 +287,7 @@ test('menu categories open and close, and the menu starts tidy each time', async
   const menu = page.locator('[role="dialog"][aria-modal="true"]').filter({ hasText: 'Menu' }).last();
   const menuText = async () => (await menu.innerText()).replace(/\s+/g, ' ');
   await page.getByText('☰').first().click();
-  await expect.poll(menuText).toMatch(/Browse NFTs ▾ Devikins Weapons Equipment Features Chat, Withdrawals, Breeding Helper ▸/);
+  await expect.poll(menuText).toMatch(/Browse NFTs ▾ Devikins Weapons Equipment Where are my NFTs\? How many in each wallet Features Chat, Withdrawals, Breeding Helper ▸/);
   // Closed categories say what's inside.
   await expect.poll(menuText).toMatch(/Set Up Getting started, Wallets, Fetch\/Update, Kleverscan ▸/);
   await expect.poll(menuText).toMatch(/Help Ask Devi, Feedback, About ▸/);
@@ -303,7 +303,7 @@ test('menu categories open and close, and the menu starts tidy each time', async
   await menu.getByText('Features', { exact: true }).click();
   await menu.getByText('✕', { exact: true }).click();
   await page.getByText('☰').first().click();
-  await expect.poll(menuText).toMatch(/Set Up Getting.* ▸ Browse NFTs ▾ Devikins Weapons Equipment Features .* ▸ Help .* ▸/);
+  await expect.poll(menuText).toMatch(/Set Up Getting.* ▸ Browse NFTs ▾ Devikins Weapons Equipment Where are my NFTs\? .* Features .* ▸ Help .* ▸/);
   await page.setViewportSize({ width: 390, height: 844 });
   await menu.getByText('Help', { exact: true }).click();
   await page.screenshot({ path: 'test-results/menu-phone.png' });

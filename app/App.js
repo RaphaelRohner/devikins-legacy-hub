@@ -101,6 +101,7 @@ import ChatView from './src/components/ChatView';
 import DonateView from './src/components/DonateView';
 import AboutView from './src/components/AboutView';
 import WithdrawalTrackerView from './src/components/WithdrawalTrackerView';
+import WalletOverviewView from './src/components/WalletOverviewView';
 import GettingStartedCard, { loadGuideState, setGuideHidden, GUIDE_KEYS } from './src/components/GettingStartedCard';
 import { countVisit } from './src/api/usage';
 import SortPickerModal from './src/components/SortPickerModal';
@@ -272,6 +273,15 @@ function AppContent() {
   // screen is simpler to reason about than several booleans that could
   // theoretically all be true/false in an invalid combination.
   const [currentScreen, setCurrentScreen] = useState(Object.keys(COLLECTIONS)[0]);
+
+  // "Where are my NFTs?" (WalletOverviewView.js): tapping a wallet row
+  // shows the normal Browse list with just those NFTs -
+  // { label, nonces: { devikin: [...], weapon: [...], equipment: [...] } }
+  // until "Show all" (or another wallet set is loaded).
+  const [walletFocus, setWalletFocus] = useState(null);
+  useEffect(() => {
+    setWalletFocus(null);
+  }, [activeWalletSetId]);
 
   // The "Getting started" checklist (GettingStartedCard.js): what's done
   // so far, re-read whenever something relevant may have changed.
@@ -674,7 +684,7 @@ function AppContent() {
         setIsMenuOpen(false);
         return true; // handled - don't also exit the app
       }
-      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help' || currentScreen === 'breeding' || currentScreen === 'kleverscan' || currentScreen === 'signer' || currentScreen === 'withdrawals' || currentScreen === 'about' || currentScreen === 'donate' || currentScreen === 'chat') {
+      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help' || currentScreen === 'breeding' || currentScreen === 'kleverscan' || currentScreen === 'signer' || currentScreen === 'withdrawals' || currentScreen === 'about' || currentScreen === 'donate' || currentScreen === 'chat' || currentScreen === 'overview') {
         goToScreen(lastCollectionScreen);
         return true; // handled - don't also exit the app
       }
@@ -1379,6 +1389,29 @@ Continue anyway?`
     );
   }
 
+  // "Where are my NFTs?" - the wallet overview (WalletOverviewView.js).
+  if (currentScreen === 'overview') {
+    const activeSet = walletSets.find((set) => set.id === activeWalletSetId);
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <WalletOverviewView
+          wallets={wallets}
+          ownerAddresses={ownerAddresses}
+          includeIdList={includeIdList}
+          setName={activeSet ? activeSet.name : ''}
+          onClose={() => goToScreen(lastCollectionScreen)}
+          onShowWallet={(focus) => {
+            setWalletFocus(focus);
+            const kinds = Object.keys(COLLECTIONS);
+            const kind = focus.nonces[lastCollectionScreen]?.length ? lastCollectionScreen : kinds.find((k) => focus.nonces[k]?.length) || lastCollectionScreen;
+            goToScreen(kind);
+          }}
+        />
+      </SafeAreaView>
+    );
+  }
+
   // Chat (website only for now; see ChatView.web.js and app/chat).
   if (currentScreen === 'chat') {
     return (
@@ -1670,6 +1703,20 @@ Continue anyway?`
 
       {ownerAddresses.length > 0 ? null : guideCard}
 
+      {walletFocus && ownerAddresses.length > 0 && COLLECTIONS[currentScreen] ? (
+        <View style={[styles.focusBanner, { backgroundColor: colors.chipBackground, borderColor: colors.primary }]} testID="wallet-focus">
+          <Text style={[styles.focusBannerText, { color: colors.text }]} numberOfLines={2}>
+            Only NFTs in: {walletFocus.label}
+          </Text>
+          <TouchableOpacity onPress={() => goToScreen('overview')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={[styles.focusBannerLink, { color: colors.primary }]}>Overview</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setWalletFocus(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} testID="wallet-focus-clear">
+            <Text style={[styles.focusBannerLink, { color: colors.primary }]}>Show all ✕</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {ownerAddresses.length > 0 ? (
         <CollectionView
           listTopContent={guideCard}
@@ -1680,6 +1727,7 @@ Continue anyway?`
           kind={currentScreen}
           ownerAddresses={ownerAddresses}
           refreshKey={refreshKey}
+          onlyNonces={walletFocus ? walletFocus.nonces[currentScreen] || [] : null}
           searchText={searchText}
           starFilter={starFilter}
           onStarFilterChange={setStarFilter}
@@ -1716,6 +1764,9 @@ Continue anyway?`
 }
 
 const styles = StyleSheet.create({
+  focusBanner: { flexDirection: 'row', alignItems: 'center', gap: 14, marginHorizontal: 12, marginTop: 6, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderRadius: 10 },
+  focusBannerText: { flex: 1, fontSize: 14, fontWeight: '600' },
+  focusBannerLink: { fontSize: 14, fontWeight: '700' },
   container: {
     flex: 1,
   },

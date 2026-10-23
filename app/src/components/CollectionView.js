@@ -76,7 +76,7 @@ import WeaponSummaryRow from './WeaponSummaryRow';
 import EquipmentSummaryRow from './EquipmentSummaryRow';
 import CompareView from './CompareView';
 import NftHistoryModal from './NftHistoryModal';
-import { queryNfts, countNfts, getDistinctColumnValues, getColumnRange, getNftHistory, getGlobalSetting, setGlobalSetting, getWithdrawalItems, WITHDRAW_SETTING_KEYS } from '../db/database';
+import { queryNfts, countNfts, getNftPlaces, getDistinctColumnValues, getColumnRange, getNftHistory, getGlobalSetting, setGlobalSetting, getWithdrawalItems, WITHDRAW_SETTING_KEYS } from '../db/database';
 import { ID_LIST_OWNER } from '../constants/idList';
 import { GAME_MAIN_WALLET } from '../api/withdrawalTracker';
 import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER } from '../constants/schema';
@@ -147,7 +147,7 @@ const iconStyles = StyleSheet.create({
   gridCell: { width: 6, height: 6, borderRadius: 1.5 },
 });
 
-export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onSetViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded, onAppliedFiltersChange = () => {}, onStatusTextChange = () => {}, listTopContent = null, onFindBreedingPartners = null }) {
+export default function CollectionView({ kind, ownerAddresses, refreshKey, searchText = '', starFilter = 0, onStarFilterChange, viewMode = 'list', onSetViewMode, sortField = 'nonce', sortDirection = 'asc', expanded, setExpanded, onAppliedFiltersChange = () => {}, onStatusTextChange = () => {}, listTopContent = null, onFindBreedingPartners = null, onlyNonces = null }) {
   const { colors } = useTheme();
 
   // Tablet support: how many tiles fit per row, and how much extra
@@ -309,11 +309,19 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     // (e.g. "My wallets" switched off) could otherwise finish in the wrong
     // order and an older, slower one would put stale rows back.
     const loadId = (latestLoadRef.current += 1);
-    const result = await queryNfts(kind, ownerAddresses, filters, excludeDeleted, searchText, starFilter, sortField, sortDirection, excludeBlanks);
+    let result = await queryNfts(kind, ownerAddresses, filters, excludeDeleted, searchText, starFilter, sortField, sortDirection, excludeBlanks);
     // Re-count too, so marking one as deleted / restoring it updates the
     // "2 Devikins" count straight away (fresh-eyes review, 14 Oct 2026:
     // it stayed stale until the page was reloaded).
-    const total = await countNfts(kind, ownerAddresses, true);
+    let total;
+    if (onlyNonces) {
+      // Opened from "Where are my NFTs?": just the NFTs of one wallet row.
+      const only = new Set(onlyNonces);
+      result = result.filter((r) => only.has(r.nonce));
+      total = (await getNftPlaces(kind, ownerAddresses)).filter((r) => only.has(r.nonce) && !r.deleted).length;
+    } else {
+      total = await countNfts(kind, ownerAddresses, true);
+    }
     let newTags = {};
     // NFTs that are here because of the Withdrawals list get a small tag
     // saying where they are (Raphael, 15 Oct 2026).
@@ -346,7 +354,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     setRows(result);
     setIsLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, ownerAddresses, filters, excludeDeleted, excludeBlanks, refreshKey, searchText, starFilter, sortField, sortDirection]);
+  }, [kind, ownerAddresses, filters, excludeDeleted, excludeBlanks, refreshKey, searchText, starFilter, sortField, sortDirection, onlyNonces]);
 
   useEffect(() => {
     reloadRows();
@@ -566,7 +574,13 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
         if (!cancelled) setNotDeletedCount(0);
         return;
       }
-      const count = await countNfts(kind, ownerAddresses, true);
+      let count;
+      if (onlyNonces) {
+        const only = new Set(onlyNonces);
+        count = (await getNftPlaces(kind, ownerAddresses)).filter((r) => only.has(r.nonce) && !r.deleted).length;
+      } else {
+        count = await countNfts(kind, ownerAddresses, true);
+      }
       if (!cancelled) setNotDeletedCount(count);
     }
 
@@ -576,7 +590,7 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, ownerAddresses, refreshKey]);
+  }, [kind, ownerAddresses, refreshKey, onlyNonces]);
 
   function handleTextFilterChange(columnName, value) {
     const nextFilters = { ...pendingFilters };
