@@ -39,6 +39,13 @@ jobs:
     # Fixed to Ubuntu 24.04: GitHub moves "ubuntu-latest" to Ubuntu 26 from
     # October 2026, and Playwright cannot install its browser helpers there yet.
     runs-on: ubuntu-24.04
+    # Inside Playwright's own ready-made machine image: Chrome and everything
+    # it needs are already installed. Installing them each time (from
+    # Ubuntu's servers) sometimes hung for many minutes on 23 Oct 2026.
+    # The version must match @playwright/test in app/package.json.
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+      options: --user 1001
     strategy:
       # All four always finish, so a red run shows every failing test.
       fail-fast: false
@@ -62,14 +69,12 @@ jobs:
       # Each machine builds the website itself (same code, same result) -
       # quicker than waiting for one build to be handed around.
       - run: npx expo export -p web
+      # (Already in the image - this only downloads Chrome if the Playwright
+      # version was updated and the image above wasn't yet: no system packages.)
+      - run: npx playwright install chromium
       # The automatic website tests on that build - this machine runs its
       # quarter. They use pretend servers only, so they never contact
       # Klever or Moonlabs.
-      # (Usually ~20 s. On 23 Oct one machine hung here for 13 minutes while
-      # installing system packages - so it gives up after 4 minutes and
-      # tries once more.)
-      - run: timeout 240 npx playwright install --with-deps chromium || timeout 240 npx playwright install --with-deps chromium
-        timeout-minutes: 10
       - run: npx playwright test --shard=${{ matrix.shard }}/4
       - if: failure()
         uses: actions/upload-artifact@v4
