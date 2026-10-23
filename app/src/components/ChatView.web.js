@@ -41,7 +41,7 @@ function minutesUntil(ms) {
   return `${Math.max(1, min)} min`;
 }
 
-export default function ChatView({ onClose, onUnreadChange, onSetUpChange }) {
+export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visible = true }) {
   const { colors } = useTheme();
   const [messenger, setMessenger] = useState(null);
   const [status, setStatus] = useState(null);
@@ -65,12 +65,17 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange }) {
   const openGroupRef = useRef(null);
   openGroupRef.current = openGroupId;
   const scrollRef = useRef(null);
+  // Minimised in the chat window (ChatDock.web.js): an open conversation or
+  // group isn't being read, so new messages stay unread (and counted) until
+  // the window is opened again (Raphael, 23 Oct 2026).
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   const refresh = useCallback(async (m, { freshGroups = false } = {}) => {
     const s = await m.status();
     setStatus(s);
     if (s.state === 'ready' || s.state === 'signed-out') setContacts(await m.listContacts());
-    if (openIdRef.current) setThread(await m.messages(openIdRef.current));
+    if (openIdRef.current && visibleRef.current) setThread(await m.messages(openIdRef.current));
     if (s.state === 'ready') {
       try {
         // The full group list is asked for at most every 6th mail check - once a
@@ -79,7 +84,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange }) {
       } catch {
         // (shown again with the next check)
       }
-      if (openGroupRef.current) {
+      if (openGroupRef.current && visibleRef.current) {
         setGroupPosts(await m.groupPosts(openGroupRef.current));
         setGroupNext(await m.nextGroupPostAt(openGroupRef.current));
         try {
@@ -106,6 +111,12 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange }) {
       alive = false;
     };
   }, [refresh]);
+
+  // Opened again: show (and so mark as read) what came in meanwhile.
+  useEffect(() => {
+    if (visible && messenger) refresh(messenger).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   // For the chat window's bubble (ChatDock.web.js): how many messages and
   // group posts are unread, and whether this browser has a chat at all.

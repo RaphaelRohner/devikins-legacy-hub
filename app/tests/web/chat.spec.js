@@ -137,6 +137,17 @@ test('two players: sign in, find each other, request, accept, write, block', asy
   await bob.page.getByTestId('chat-draft').press('Enter');
   await expect(alice.page.getByText('Sure, which one?')).toBeVisible();
 
+  // Bob minimises the chat with Alice's conversation still open: her next
+  // message stays counted as new until he opens the window again
+  await bob.page.getByTestId('chat-dock-minimise').click();
+  await alice.page.getByTestId('chat-draft').fill('Still there?');
+  await alice.page.getByTestId('chat-send').click();
+  await expect(bob.page.getByTestId('chat-bubble-count')).toHaveText('1', { timeout: 30_000 });
+  await bob.page.waitForTimeout(3000); // (a few mail checks later)
+  await expect(bob.page.getByTestId('chat-bubble-count')).toHaveText('1');
+  await bob.page.getByTestId('chat-bubble').click();
+  await expect(bob.page.getByText('Still there?')).toBeVisible();
+
   // Bob blocks Alice: her next message is refused by the postman
   await bob.page.getByText('Block', { exact: true }).click();
   await expect(bob.page.getByText('You blocked Alice.')).toBeVisible();

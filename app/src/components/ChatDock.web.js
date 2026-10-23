@@ -105,6 +105,7 @@ export default function ChatDock() {
               onClose={() => setMode('closed')}
               onUnreadChange={setUnread}
               onSetUpChange={(ready) => writeFlag(ready)}
+              visible={isOpen}
             />
           </View>
         </View>
