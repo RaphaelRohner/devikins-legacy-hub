@@ -287,23 +287,23 @@ test('menu categories open and close, and the menu starts tidy each time', async
   const menu = page.locator('[role="dialog"][aria-modal="true"]').filter({ hasText: 'Menu' }).last();
   const menuText = async () => (await menu.innerText()).replace(/\s+/g, ' ');
   await page.getByText('☰').first().click();
-  await expect.poll(menuText).toMatch(/Browse NFTs ▾ Devikins Weapons Equipment Where are my NFTs\? How many in each wallet Features Chat, Withdrawals, Breeding Helper ▸/);
+  await expect.poll(menuText).toMatch(/Browse NFTs ▾ Devikins G D Weapons G A Equipment G E Where are my NFTs\? G O How many in each wallet Features Chat, Withdrawals, Breeding Helper ▸/);
   // Closed categories say what's inside.
   await expect.poll(menuText).toMatch(/Set Up Getting started, Wallets, Fetch\/Update, Kleverscan ▸/);
   await expect.poll(menuText).toMatch(/Help Ask Devi, Feedback, About ▸/);
   await menu.getByText('Features', { exact: true }).click();
-  await expect.poll(menuText).toMatch(/Features ▾ Chat Talk to other players \(new\) Withdrawals Breeding Helper/);
+  await expect.poll(menuText).toMatch(/Features ▾ Chat G C Talk to other players \(new\) Withdrawals G W Breeding Helper G B/);
   await menu.getByText('Features', { exact: true }).click();
   await expect.poll(menuText).toMatch(/Features Chat, Withdrawals, Breeding Helper ▸ Help/);
   // Kleverscan sits at the end of Set Up, with a line saying what it's for.
   await menu.getByText('Set Up', { exact: true }).click();
-  await expect.poll(menuText).toMatch(/Set Up ▾ Getting started Wallets Fetch\/Update[^K]*Kleverscan Find a wallet to try the Hub with/);
+  await expect.poll(menuText).toMatch(/Set Up ▾ Getting started Wallets G S Fetch\/Update[^K]*Kleverscan Find a wallet to try the Hub with/);
   // Open Features again, close the menu, reopen: only the current screen's
   // category (Browse NFTs) is open.
   await menu.getByText('Features', { exact: true }).click();
   await menu.getByText('✕', { exact: true }).click();
   await page.getByText('☰').first().click();
-  await expect.poll(menuText).toMatch(/Set Up Getting.* ▸ Browse NFTs ▾ Devikins Weapons Equipment Where are my NFTs\? .* Features .* ▸ Help .* ▸/);
+  await expect.poll(menuText).toMatch(/Set Up Getting.* ▸ Browse NFTs ▾ Devikins G D Weapons G A Equipment G E Where are my NFTs\? .* Features .* ▸ Help .* ▸/);
   await page.setViewportSize({ width: 390, height: 844 });
   await menu.getByText('Help', { exact: true }).click();
   await page.screenshot({ path: 'test-results/menu-phone.png' });

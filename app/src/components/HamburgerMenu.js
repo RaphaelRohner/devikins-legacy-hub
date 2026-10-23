@@ -45,6 +45,7 @@ import { DONATION_ADDRESS } from '../constants/donation';
 // and the Signer entry is left out. The Donate entry appears only once a
 // donation address is set in src/constants/donation.js.
 const IS_WEB = Platform.OS === 'web';
+import { shortcutFor, showShortcutsHelp } from '../web/shortcuts';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 
@@ -82,6 +83,7 @@ export default function HamburgerMenu({
     },
     {
       key: 'fetch',
+      shortcut: 'fetch',
       label: isBusy ? 'Fetch/Update (running...)' : 'Fetch/Update',
       shortLabel: 'Fetch/Update',
       screen: null,
@@ -245,9 +247,17 @@ export default function HamburgerMenu({
         onPress={entry.onPress}
         disabled={entry.disabled}
       >
-        <Text style={[styles.entryLabel, nested && styles.entryLabelNested, { color: isActive ? colors.primary : colors.text }]}>
-          {entry.label}
-        </Text>
+        <View style={styles.entryLabelRow}>
+          <Text style={[styles.entryLabel, nested && styles.entryLabelNested, { color: isActive ? colors.primary : colors.text, flexShrink: 1 }]}>
+            {entry.label}
+          </Text>
+          {/* The keyboard shortcut (website only - src/web/shortcuts.js) */}
+          {IS_WEB && shortcutFor(entry.shortcut || entry.screen) ? (
+            <Text style={[styles.entryShortcut, { color: colors.secondaryText, borderColor: colors.border }]}>
+              {shortcutFor(entry.shortcut || entry.screen)}
+            </Text>
+          ) : null}
+        </View>
         {entry.hint ? (
           <Text style={[styles.entryHint, { color: colors.secondaryText }]} numberOfLines={1}>
             {entry.hint}
@@ -301,6 +311,18 @@ export default function HamburgerMenu({
             );
           })}
           {looseEntries.map((entry) => renderEntry(entry, false))}
+          {IS_WEB ? (
+            <TouchableOpacity
+              onPress={() => {
+                onClose();
+                showShortcutsHelp();
+              }}
+              style={styles.shortcutsLink}
+              testID="menu-shortcuts"
+            >
+              <Text style={[styles.entryHint, { color: colors.secondaryText }]}>⌨ Keyboard shortcuts: press ? anywhere</Text>
+            </TouchableOpacity>
+          ) : null}
         </ScrollView>
       </View>
     </Modal>
@@ -395,6 +417,9 @@ const styles = StyleSheet.create({
   entryRowDisabled: {
     opacity: 0.5,
   },
+  entryLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  entryShortcut: { fontSize: 12, fontWeight: '700', borderWidth: 1, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
+  shortcutsLink: { alignSelf: 'center', paddingVertical: 10 },
   entryLabel: {
     fontSize: 17,
     fontWeight: '600',

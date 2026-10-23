@@ -102,6 +102,8 @@ import DonateView from './src/components/DonateView';
 import AboutView from './src/components/AboutView';
 import WithdrawalTrackerView from './src/components/WithdrawalTrackerView';
 import WalletOverviewView from './src/components/WalletOverviewView';
+import ShortcutsHelp from './src/components/ShortcutsHelp';
+import { useKeyboardShortcuts, showShortcutsHelp } from './src/web/shortcuts';
 import GettingStartedCard, { loadGuideState, setGuideHidden, GUIDE_KEYS } from './src/components/GettingStartedCard';
 import { countVisit } from './src/api/usage';
 import SortPickerModal from './src/components/SortPickerModal';
@@ -153,6 +155,7 @@ export default function App() {
       <ThemeProvider>
         <AppContent />
         <KleverscanLayer />
+        <ShortcutsHelp />
       </ThemeProvider>
     </SafeAreaProvider>
   );
@@ -1010,6 +1013,22 @@ Continue anyway?`
     if (screen === 'breeding') setBreedingStart(null); // from the menu: start at Step 1
     goToScreen(screen);
   }
+
+  // Keyboard shortcuts on the website: G then a letter, ? for the list
+  // (src/web/shortcuts.js). They work from any screen, closing the menu.
+  useKeyboardShortcuts((action) => {
+    if (action === 'help') {
+      showShortcutsHelp();
+      return;
+    }
+    setIsMenuOpen(false);
+    if (action === 'fetch') {
+      if (!isFetching && !isRetrying && ownerAddresses.length > 0) handleFetchPress();
+      return;
+    }
+    if (action === 'breeding') setBreedingStart(null);
+    goToScreen(action);
+  });
 
   function handleMenuSelectFetch() {
     setIsMenuOpen(false);
