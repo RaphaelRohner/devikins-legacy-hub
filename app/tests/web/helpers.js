@@ -27,6 +27,8 @@ async function openHub(page, options = {}) {
   // automatically (see src/web/alertForWeb.js). One test checks the
   // Hub's in-page box on purpose (dialogs.spec.js).
   if (!options.inPageDialogs) await page.addInitScript(() => { window.__HUB_NATIVE_DIALOGS = true; });
+  // The pretend Klever has no "30 a minute" limit: no need to space out its holder lookups.
+  await page.addInitScript(() => { window.__HUB_KLEVER_API_GAP_MS = 20; });
   await page.goto('./');
   // A brand-new visitor lands on Wallets with the welcome box (14 Oct
   // 2026). Most tests start from the NFT list, so they go back there

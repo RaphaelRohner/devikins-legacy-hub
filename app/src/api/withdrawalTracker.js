@@ -20,6 +20,11 @@
 import { COLLECTIONS } from '../constants/schema';
 
 const KLEVER_API_BASE = 'https://api.mainnet.klever.org/v1.0';
+// Klever's node answers "does this wallet hold this NFT?" straight from the
+// chain, without the API's limit (23 Oct 2026: the API's "who holds this
+// NFT" allows only 30 questions a minute per visitor - lookups beyond that
+// failed quietly, which left most of a long list "not looked up yet").
+const KLEVER_NODE_BASE = 'https://node.mainnet.klever.org';
 
 export const KINDS = ['devikin', 'weapon', 'equipment'];
 export const KIND_LABEL = { devikin: 'Devikin', weapon: 'Weapon', equipment: 'Equipment' };
@@ -31,8 +36,14 @@ export const DEFAULT_OVERDUE_MINUTES = 30;
 
 // One-by-one lookups: a few at a time with a short pause, so even a list
 // of 1,500 NFTs doesn't hammer Klever's API.
-const LOOKUP_PARALLEL = 4;
+const LOOKUP_PARALLEL = 8;
 const LOOKUP_PAUSE_MS = 150;
+// The API's "who holds this NFT" (only needed when none of the likely
+// wallets holds it): at most 30 a minute, so one every 2.5 seconds, and a
+// pause when Klever says "too many".
+const API_HOLDER_GAP_MS = 2500;
+const API_BUSY_WAIT_MS = 20000;
+const API_BUSY_TRIES = 6;
 // How far back the arrivals log looks the first time (later checks stop
 // at the newest arrival already known).
 const ARRIVALS_MAX_PAGES = 20;
@@ -170,6 +181,36 @@ export async function fetchNftHolder(kind, nonce) {
   return null; // e.g. "not found" error message
 }
 
+/** Does `address` hold this NFT right now? (Klever's node; true/false, throws on network trouble) */
+export async function holdsNft(address, kind, nonce) {
+  const url = `${KLEVER_NODE_BASE}/address/${address}/kda?asset=${COLLECTIONS[kind].assetId}/${nonce}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Klever's node answered ${response.status}`);
+  const json = await response.json();
+  return Number(json?.data?.userKDA?.Balance || 0) > 0;
+}
+
+// One API holder question at a time, spaced out (see API_HOLDER_GAP_MS).
+let apiQueue = Promise.resolve();
+function askApiForHolder(kind, nonce, onWait) {
+  const job = apiQueue.then(async () => {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        const holder = await fetchNftHolder(kind, nonce);
+        // (The website tests use a shorter gap: their pretend Klever has no limit.)
+        await sleep((typeof window !== 'undefined' && window.__HUB_KLEVER_API_GAP_MS) || API_HOLDER_GAP_MS);
+        return holder;
+      } catch (e) {
+        if (!/answered 429/.test(e.message) || attempt >= API_BUSY_TRIES) throw e;
+        onWait?.();
+        await sleep(API_BUSY_WAIT_MS);
+      }
+    }
+  });
+  apiQueue = job.catch(() => {});
+  return job;
+}
+
 /**
  * NFT transfers into `address` (newest first), stopping at transfers
  * already known (`knownHashes`) or after ARRIVALS_MAX_PAGES pages.
@@ -204,29 +245,49 @@ export async function fetchArrivals(address, knownHashes = new Set()) {
 }
 
 /**
- * Looks up who holds each NFT, one by one, gently (a few at a time with a
- * short pause). `list` = [{ kind, nonce }]. Returns a Map "kind:nonce" ->
- * address (or null = not found on the chain); NFTs whose lookup failed are
- * left out and named in `errors`. Also used by the wallet overview.
+ * Looks up who holds each NFT, a few at a time. `list` = [{ kind, nonce,
+ * known }] (`known` = where it was last seen, if anywhere). First Klever's
+ * node is asked whether the NFT is still where it was, or in one of the
+ * likely wallets (`guesses`: the in-game wallet, the game's main wallet,
+ * your own wallets) - fast and without a limit; only NFTs found in none of
+ * them are asked from the API, which allows 30 a minute (so those take
+ * longer). Returns a Map "kind:nonce" -> address (or null = not found on
+ * the chain); NFTs whose lookup failed are left out and named in `errors`.
+ * Also used by the wallet overview.
  */
-export async function lookUpHolders(list, { onProgress, shouldCancel, errors = [] } = {}) {
+export async function lookUpHolders(list, { guesses = [], onProgress, shouldCancel, errors = [] } = {}) {
   const holderByKey = new Map();
   let done = 0;
-  onProgress?.({ phase: 'lookups', current: 0, total: list.length });
+  let slowCount = 0;
+  onProgress?.({ phase: 'lookups', current: 0, total: list.length, slow: 0 });
   for (let i = 0; i < list.length; i += LOOKUP_PARALLEL) {
     if (shouldCancel?.()) break;
     const batch = list.slice(i, i + LOOKUP_PARALLEL);
     await Promise.all(
       batch.map(async (item) => {
         try {
-          holderByKey.set(`${item.kind}:${item.nonce}`, await fetchNftHolder(item.kind, item.nonce));
+          const candidates = [...new Set([item.known, ...guesses].filter((a) => typeof a === 'string' && a.startsWith('klv1')))];
+          let holder;
+          for (const address of candidates) {
+            if (shouldCancel?.()) return;
+            if (await holdsNft(address, item.kind, item.nonce)) {
+              holder = address;
+              break;
+            }
+          }
+          if (holder === undefined) {
+            slowCount += 1;
+            if (shouldCancel?.()) return;
+            holder = await askApiForHolder(item.kind, item.nonce, () => onProgress?.({ phase: 'waiting', current: done, total: list.length }));
+          }
+          holderByKey.set(`${item.kind}:${item.nonce}`, holder);
         } catch (e) {
           errors.push(`${KIND_LABEL[item.kind]} #${item.nonce}: ${e.message}`);
         }
       })
     );
     done += batch.length;
-    onProgress?.({ phase: 'lookups', current: done, total: list.length });
+    onProgress?.({ phase: 'lookups', current: done, total: list.length, slow: slowCount });
     await sleep(LOOKUP_PAUSE_MS);
   }
   return holderByKey;
@@ -273,7 +334,10 @@ export async function runWithdrawalCheck({ items, fromAddress, toAddress, full, 
     if (!item.checked_at) return true; // new on the list
     return item.holder !== toAddress; // not arrived yet
   });
-  const found = await lookUpHolders(toLookUp, { onProgress, shouldCancel, errors });
+  const found = await lookUpHolders(
+    toLookUp.map((item) => ({ kind: item.kind, nonce: item.nonce, known: item.holder })),
+    { guesses: [fromAddress, GAME_MAIN_WALLET, toAddress], onProgress, shouldCancel, errors }
+  );
   for (const [key, holder] of found) holderByKey.set(key, holder);
 
   // 4. Results per NFT (NFTs not looked up this time keep their last place).

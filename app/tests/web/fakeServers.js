@@ -133,6 +133,20 @@ async function installFakeServers(context) {
     fake.requests.push(url.href);
     if (fake.offline) return route.abort('internetdisconnected');
 
+    // Klever's node: "does this wallet hold this NFT?"
+    if (url.hostname === 'node.mainnet.klever.org') {
+      const m = url.pathname.match(/^\/address\/([^/]+)\/kda$/);
+      const asset = url.searchParams.get('asset') || '';
+      const [collection, nonce] = asset.split('/');
+      const kind = Object.keys(COLLECTION_IDS).find((k) => COLLECTION_IDS[k] === collection);
+      if (m && kind && nonce) {
+        let holder = fake.chain.holders.get(`${kind}:${nonce}`);
+        if (holder === undefined && m[1] === TEST_WALLET && TEST_NFTS[kind].some((n) => n.nonce === Number(nonce))) holder = TEST_WALLET;
+        const userKDA = holder === m[1] ? { Balance: 1 } : { LastClaim: {} };
+        return json(route, { data: { userKDA, address: m[1], asset }, error: '', code: 'successful' });
+      }
+    }
+
     if (url.hostname === 'api.mainnet.klever.org') {
       // Which NFTs a wallet holds
       let m = url.pathname.match(/\/address\/([^/]+)\/collection\/([^/]+)$/);

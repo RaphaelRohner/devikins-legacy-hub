@@ -230,12 +230,13 @@ test('"Check selected" looks up exactly the selected NFTs', async ({ page }) => 
   await page.getByText('Add to the list', { exact: true }).click();
   await expect(page.getByText(/2 added/)).toBeVisible();
 
-  const lookups = (nonce) => fake.requests.filter((u) => u.includes('/assets/nft/holder/') && u.endsWith(`/${nonce}`)).length;
+  // Requests about one NFT (Klever's node, "is it still there?", or the API, "who holds it?")
+  const lookups = (nonce) => fake.requests.filter((u) => (u.includes('/assets/nft/holder/') && u.endsWith(`/${nonce}`)) || (u.includes('/kda?asset=') && u.endsWith(`%2F${nonce}`)) || (u.includes('/kda?asset=') && u.endsWith(`/${nonce}`))).length;
   await row(page, 'Weapon #1442').click();
   await expect(page.getByText('1 selected')).toBeVisible();
   await page.getByText('Check selected', { exact: true }).click();
   await expect(page.getByText(/Last check:/)).toBeVisible();
-  expect(lookups(1442)).toBe(1);
+  expect(lookups(1442)).toBeGreaterThan(0);
   expect(lookups(3265)).toBe(0);
 });
 
@@ -290,24 +291,27 @@ test('"Check" skips arrived NFTs; "Check selected" can look at an arrived one ag
   await page.getByText('Add to the list', { exact: true }).click();
   await expect(page.getByText(/2 added/)).toBeVisible();
 
-  const lookups = (nonce) => fake.requests.filter((u) => u.includes('/assets/nft/holder/') && u.endsWith(`/${nonce}`)).length;
+  // Requests about one NFT (Klever's node, "is it still there?", or the API, "who holds it?")
+  const lookups = (nonce) => fake.requests.filter((u) => (u.includes('/assets/nft/holder/') && u.endsWith(`/${nonce}`)) || (u.includes('/kda?asset=') && u.endsWith(`%2F${nonce}`)) || (u.includes('/kda?asset=') && u.endsWith(`/${nonce}`))).length;
   await page.getByText('Check', { exact: true }).click();
   await expect(row(page, 'Weapon #3265')).toContainText('Arrived');
-  expect(lookups(3265)).toBe(1);
-  expect(lookups(1442)).toBe(1);
+  const first3265 = lookups(3265);
+  const first1442 = lookups(1442);
+  expect(first3265).toBeGreaterThan(0);
+  expect(first1442).toBeGreaterThan(0);
 
   // A second Check only looks at the one that hasn't arrived.
   await page.getByText('Check', { exact: true }).click();
-  await expect.poll(() => lookups(1442)).toBe(2);
+  await expect.poll(() => lookups(1442)).toBeGreaterThan(first1442);
   await expect(page.getByText(/Looking up|Reading arrivals/)).toHaveCount(0);
-  expect(lookups(3265)).toBe(1);
+  expect(lookups(3265)).toBe(first3265);
 
   // Later #3265 is sold on (the marketplace case): Check selected sees it.
   fake.chain.holders.set('weapon:3265', SELLER);
   await row(page, 'Weapon #3265').click();
   await page.getByText('Check selected', { exact: true }).click();
   await expect(row(page, 'Weapon #3265')).toContainText('In another wallet');
-  expect(lookups(3265)).toBe(2);
+  expect(lookups(3265)).toBeGreaterThan(first3265);
 });
 
 test('resting the mouse on a chip explains it; tapping still filters', async ({ page }) => {

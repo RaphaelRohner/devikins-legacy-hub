@@ -565,7 +565,8 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
         shouldCancel: () => cancelRef.current,
         onProgress: (p) => {
           if (p.phase === 'arrivals') setProgress('Reading arrivals in your receiving wallet…');
-          else if (p.phase === 'lookups') setProgress(p.total ? `Looking up NFTs one by one: ${p.current} of ${p.total}` : '');
+          else if (p.phase === 'lookups') setProgress(p.total ? `Looking up NFTs: ${p.current} of ${p.total}` : '');
+          else if (p.phase === 'waiting') setProgress(`Looking up NFTs: ${p.current} of ${p.total} - Klever asks to slow down, waiting a moment…`);
         },
       });
       await addWithdrawalArrivals(result.arrivals);

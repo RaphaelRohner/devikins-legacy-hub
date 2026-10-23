@@ -12,6 +12,10 @@
  *     "what does this wallet hold" list can lag behind - see
  *     withdrawalTracker.js), and the table then shows those answers.
  *
+ * Lookups ask Klever's node first whether an NFT is still where it was (or
+ * in one of the likely wallets) - quick; only the rest go through the API,
+ * which allows 30 a minute (see withdrawalTracker.js lookUpHolders).
+ *
  * Where each NFT is comes from:
  *   - NFTs from the Withdrawals list: the tracker's last lookup (the same
  *     lookup "Check now" runs, so the tracker is updated too);
@@ -151,11 +155,14 @@ export function buildOverview({ wallets, rowsByKind, listItems = [], includeList
  *   errors       lookups that failed
  *   stopped      true if Stop was pressed (whatever was found is kept)
  */
-export async function runOverviewCheck({ rowsByKind, listItems = [], previousCheck, fromAddress, toAddress, knownHashes, onProgress, shouldCancel }) {
+export async function runOverviewCheck({ wallets = [], rowsByKind, listItems = [], previousCheck, fromAddress, toAddress, knownHashes, onProgress, shouldCancel }) {
   const ownNfts = [];
+  const before = previousCheck?.holders || {};
   for (const kind of KINDS) {
     for (const nft of rowsByKind[kind] || []) {
-      if (!nft.deleted && nft.owner_address !== ID_LIST_OWNER) ownNfts.push({ kind, nonce: nft.nonce });
+      if (nft.deleted || nft.owner_address === ID_LIST_OWNER) continue;
+      const key = `${kind}:${nft.nonce}`;
+      ownNfts.push({ kind, nonce: nft.nonce, known: before[key] || nft.owner_address });
     }
   }
   const total = ownNfts.length + listItems.length;
@@ -163,9 +170,10 @@ export async function runOverviewCheck({ rowsByKind, listItems = [], previousChe
 
   // 1. The wallets' own NFTs.
   const found = await lookUpHolders(ownNfts, {
+    guesses: [...wallets.map((w) => w.address), fromAddress, GAME_MAIN_WALLET, toAddress],
     errors,
     shouldCancel,
-    onProgress: (p) => p.phase === 'lookups' && onProgress?.({ current: p.current, total }),
+    onProgress: (p) => onProgress?.({ current: p.current, total, waiting: p.phase === 'waiting' }),
   });
   const holders = { ...(previousCheck?.holders || {}) };
   for (const [key, holder] of found) holders[key] = holder;
@@ -184,7 +192,7 @@ export async function runOverviewCheck({ rowsByKind, listItems = [], previousChe
       full: true,
       knownHashes,
       shouldCancel,
-      onProgress: (p) => p.phase === 'lookups' && onProgress?.({ current: ownNfts.length + p.current, total }),
+      onProgress: (p) => (p.phase === 'lookups' || p.phase === 'waiting') && onProgress?.({ current: ownNfts.length + p.current, total, waiting: p.phase === 'waiting' }),
     });
     errors.push(...listResult.errors);
   }

@@ -69,6 +69,7 @@ export default function WalletOverviewView({ wallets, ownerAddresses, includeIdL
     try {
       const arrivals = data.toAddress ? await getWithdrawalArrivals(1000) : [];
       const result = await runOverviewCheck({
+        wallets,
         rowsByKind: data.rowsByKind,
         listItems: data.listItems,
         previousCheck: data.check,
@@ -76,7 +77,12 @@ export default function WalletOverviewView({ wallets, ownerAddresses, includeIdL
         toAddress: data.toAddress,
         knownHashes: new Set(arrivals.map((a) => a.tx_hash)),
         shouldCancel: () => cancelRef.current,
-        onProgress: ({ current, total }) => setProgress(`Looking up your NFTs one by one: ${current} of ${total}`),
+        onProgress: ({ current, total, waiting }) =>
+          setProgress(
+            waiting
+              ? `Looking up your NFTs: ${current} of ${total} - Klever asks to slow down, waiting a moment…`
+              : `Looking up your NFTs: ${current} of ${total}`
+          ),
       });
       await setSetting(OVERVIEW_CHECK_KEY, JSON.stringify(result.check));
       if (result.listResult) {
@@ -191,7 +197,7 @@ export default function WalletOverviewView({ wallets, ownerAddresses, includeIdL
                 </TouchableOpacity>
               )}
               <Text style={[styles.small, { color: colors.secondaryText }]}>
-                One lookup per NFT, a few at a time, so a long list takes a few minutes. It also updates the Withdrawals tracker.
+                NFTs still where they were are confirmed quickly; NFTs that moved are found more slowly (Klever allows 30 of those lookups a minute). It also updates the Withdrawals tracker.
               </Text>
               {message ? <Text style={[styles.note, { color: colors.text }]}>{message}</Text> : null}
             </View>
