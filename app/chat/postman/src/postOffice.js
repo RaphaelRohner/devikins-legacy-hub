@@ -324,10 +324,15 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     return voteDecidedEarly({ members: v.members, voters: voters.size, yes, no: counted.length - yes });
   }
 
-  /** After a ballot: if the result can't change any more, count the vote now (from the alarm). */
-  function closeEarlyIfDecided(voteId) {
+  /**
+   * If the result can't change any more, count the vote now (from the alarm).
+   * votes.closing: 0 = open, 1 = to be counted now, -1 = an early count found
+   * an emptied wallet; tried again only after a new ballot (not in a loop).
+   */
+  function closeEarlyIfDecided(voteId, { afterBallot = false } = {}) {
     const v = row('SELECT * FROM votes WHERE id = ?', voteId);
-    if (v && !v.decided && !v.closing && earlyOutcome(v)) run('UPDATE votes SET closing = 1 WHERE id = ?', v.id);
+    if (!v || v.decided || v.closing === 1 || (v.closing === -1 && !afterBallot)) return;
+    if (earlyOutcome(v)) run('UPDATE votes SET closing = 1 WHERE id = ?', v.id);
   }
 
   /**
@@ -375,7 +380,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
         if (!early) {
           // Not certain any more: stays open; every ballot is checked again at the end.
           run('UPDATE ballots SET eligible = 1, checked = 0 WHERE vote = ? AND wallet IS NOT NULL', v.id);
-          run('UPDATE votes SET closing = 0 WHERE id = ?', v.id);
+          run('UPDATE votes SET closing = -1 WHERE id = ?', v.id);
           continue;
         }
         outcome = early === 'pass';
@@ -403,6 +408,9 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
 
   /** When the next vote has to be counted (for the alarm), or null: when one ends, or right away if one is already certain. */
   function nextVoteEnd() {
+    // (Also catches votes that became certain some other way - e.g. a member
+    // leaving - or before this rule existed: votes cast before 23 Oct 2026.)
+    for (const v of rows('SELECT id FROM votes WHERE decided = 0 AND closing = 0')) closeEarlyIfDecided(v.id);
     if (row('SELECT 1 AS x FROM votes WHERE decided = 0 AND closing = 1')) return now() + 1000;
     const v = row('SELECT MIN(opened_at) AS o FROM votes WHERE decided = 0');
     return v?.o ? v.o + VOTE_DURATION : null;
@@ -844,7 +852,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       run(`INSERT INTO votes (id, grp, accused, opener, accused_fp, accused_nick, opener_fp, reason, opened_at, members)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, group, accused.id, account.id, accused.wallet_fp, accused.nickname, account.wallet_fp, reason, t, members);
       run('INSERT INTO ballots (vote, account, yes, eligible, at, wallet) VALUES (?, ?, 1, 1, ?, ?)', id, account.id, t, wallet);
-      closeEarlyIfDecided(id);
+      closeEarlyIfDecided(id, { afterBallot: true });
       return { id, endsAt: t + VOTE_DURATION };
     },
 
@@ -867,7 +875,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       if (row('SELECT 1 AS x FROM ballots WHERE vote = ? AND account = ?', v.id, account.id)) refuse(409, 'You have voted already.');
       spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
       run('INSERT INTO ballots (vote, account, yes, eligible, at, wallet) VALUES (?, ?, ?, 1, ?, ?)', v.id, account.id, body.yes === true ? 1 : 0, t, wallet);
-      closeEarlyIfDecided(v.id);
+      closeEarlyIfDecided(v.id, { afterBallot: true });
       return { voted: true };
     },
 

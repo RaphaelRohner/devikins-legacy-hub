@@ -714,7 +714,7 @@ test('removal votes end early once the result can\'t change: removed, kept, or o
 });
 
 test('removal votes end early: enough "no" keeps the member and lifts the pause; an emptied wallet keeps a vote open', async () => {
-  const { player, clock, decide } = world();
+  const { player, clock, decide, office } = world();
   const owner = await player('Owner', 12);
   const bea = await player('Bea', 12);
   const cid = await player('Cid', 12);
@@ -761,6 +761,8 @@ test('removal votes end early: enough "no" keeps the member and lifts the pause;
   await owner.castVote(id2, true, owner.sign);
   await decide();
   assert.equal((await owner.groupVotes(gid2)).votes[0].decided, false);
+  // ...and isn't counted again and again meanwhile: the alarm waits for its end
+  assert.ok(office.nextVoteEnd() > clock.t + 47 * 60 * MINUTE);
   clock.t += 49 * 60 * MINUTE;
   await decide();
   const d2 = (await owner.groupVotes(gid2)).votes[0];
