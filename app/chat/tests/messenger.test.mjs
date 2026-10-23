@@ -681,8 +681,11 @@ test('removal votes: threshold from the game account, a paused accused, 48 h, re
   assert.deepEqual(banned.map((b) => b.nickname), ['Max']);
   await owner.letBackIn(gid, banned[0].id);
   assert.equal(await max.joinGroup(gid), 'asking');
+  await max.listGroups({ maxAgeMs: 60 * MINUTE }); // (the screen's cached list)
   await bea.checkMail();
   await max.checkMail();
+  // Let in: shown as a member at once, even from the cached list
+  assert.equal((await max.listGroups({ maxAgeMs: 60 * MINUTE })).find((g) => g.id === gid).member, true);
   assert.equal((await max.listGroups()).find((g) => g.id === gid).member, true);
 });
 

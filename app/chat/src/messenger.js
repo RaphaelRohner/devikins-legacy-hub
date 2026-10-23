@@ -469,6 +469,8 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       // Only the group's real (current) key: it must match the fingerprint
       // the postman keeps for it (nobody can hand us a fake one).
       const { groups } = await postman.groups();
+      // (A fresh list: the screen shows us as a member straight away, not after the cache runs out.)
+      groupsCache = { at: now(), groups };
       const there = groups.find((x) => x.id === g.id);
       // The key AND its number must be the group's current ones.
       if (!there || g.epoch !== there.epoch || groupKeyCheck(g.id, g.key) !== there.keyCheck) return 'fake key';
