@@ -243,6 +243,8 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await alice.page.getByTestId('chat-group-description').fill('Trading Fire Devikins');
   await alice.page.getByTestId('chat-group-create').click();
   await expect(alice.page.getByText('you started it')).toBeVisible();
+  // Pinned messages, a vote and the members each take one line that opens (Raphael, 23 Oct 2026)
+  await alice.page.getByTestId('chat-group-pinned-toggle').click();
   await alice.page.getByTestId('chat-group-pin-add').click();
   await alice.page.getByTestId('chat-group-pin-draft').fill('Rules: be nice, no spam.');
   await alice.page.getByTestId('chat-group-pin-save').click();
@@ -307,7 +309,7 @@ test('removal votes: a member starts a vote with a reason, another supports it, 
   }
 
   // Bob starts a vote about Max (his extension signs a short text)
-  await bob.page.getByTestId('chat-group-members-button').click();
+  await bob.page.getByTestId('chat-group-members-toggle').click();
   await expect(bob.page.getByTestId('chat-group-member')).toHaveCount(3);
   // His sign-in counted 2: no vote link yet. He now holds 12 and updates.
   await expect(bob.page.getByTestId('chat-vote-start')).toHaveCount(0);
@@ -319,16 +321,22 @@ test('removal votes: a member starts a vote with a reason, another supports it, 
   await bob.page.getByTestId('chat-vote-reason').fill('Posts scam links');
   await bob.page.getByTestId('chat-vote-open').click();
   await expect(bob.page.getByTestId('chat-group-vote')).toContainText('Vote: remove Max?');
+  await expect(bob.page.getByTestId('chat-group-vote')).not.toContainText('Reason:'); // one line until opened
+  await bob.page.getByTestId('chat-group-vote-toggle').click();
   await expect(bob.page.getByTestId('chat-group-vote')).toContainText('Reason: Posts scam links');
   await expect(bob.page.getByTestId('chat-group-vote')).toContainText('You voted yes.');
   // The owner can't be voted out (no button next to Alice)
   await expect(bob.page.getByTestId('chat-group-member').filter({ hasText: 'Alice' }).getByTestId('chat-vote-start')).toHaveCount(0);
 
   // Max sees it's about him and can't vote
-  await expect(max.page.getByTestId('chat-group-vote')).toContainText('This vote is about you', { timeout: 30_000 });
+  await expect(max.page.getByTestId('chat-group-vote')).toContainText('Vote: remove Max?', { timeout: 30_000 });
+  await max.page.getByTestId('chat-group-vote-toggle').click();
+  await expect(max.page.getByTestId('chat-group-vote')).toContainText('This vote is about you');
   await expect(max.page.getByTestId('chat-vote-yes')).toHaveCount(0);
 
   // Alice supports it: now Max's posting is paused
+  await expect(alice.page.getByTestId('chat-group-vote')).toContainText('your vote?', { timeout: 30_000 });
+  await alice.page.getByTestId('chat-group-vote-toggle').click();
   await alice.page.getByTestId('chat-vote-yes').click();
   await expect(alice.page.getByTestId('chat-group-vote')).toContainText('2 yes / 0 no');
   await expect(max.page.getByTestId('chat-group-paused')).toBeVisible({ timeout: 30_000 });
