@@ -41,7 +41,7 @@ function minutesUntil(ms) {
   return `${Math.max(1, min)} min`;
 }
 
-export default function ChatView({ onClose }) {
+export default function ChatView({ onClose, onUnreadChange, onSetUpChange }) {
   const { colors } = useTheme();
   const [messenger, setMessenger] = useState(null);
   const [status, setStatus] = useState(null);
@@ -107,7 +107,22 @@ export default function ChatView({ onClose }) {
     };
   }, [refresh]);
 
-  // Look for new mail while the screen is open (and once right away).
+  // For the chat window's bubble (ChatDock.web.js): how many messages and
+  // group posts are unread, and whether this browser has a chat at all.
+  useEffect(() => {
+    if (!onUnreadChange) return;
+    const fromContacts = (contacts || []).reduce((n, c) => n + (c.unread || 0), 0);
+    const fromGroups = (groups || []).filter((g) => g.member).reduce((n, g) => n + (g.unread || 0), 0);
+    onUnreadChange(fromContacts + fromGroups);
+  }, [contacts, groups, onUnreadChange]);
+  const hasAccount = !!status?.account;
+  useEffect(() => {
+    if (status) onSetUpChange?.(hasAccount);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasAccount, status === null]);
+
+  // Look for new mail while the chat is running - in the chat window, also
+  // while it's minimised (and once right away).
   const checkMail = useCallback(async () => {
     if (!messenger) return;
     try {

@@ -103,6 +103,8 @@ import AboutView from './src/components/AboutView';
 import WithdrawalTrackerView from './src/components/WithdrawalTrackerView';
 import WalletOverviewView from './src/components/WalletOverviewView';
 import ShortcutsHelp from './src/components/ShortcutsHelp';
+import ChatDock from './src/components/ChatDock';
+import { openChatDock, setHubReady } from './src/web/chatDock';
 import { useKeyboardShortcuts, showShortcutsHelp } from './src/web/shortcuts';
 import GettingStartedCard, { loadGuideState, setGuideHidden, GUIDE_KEYS } from './src/components/GettingStartedCard';
 import { countVisit } from './src/api/usage';
@@ -156,6 +158,7 @@ export default function App() {
         <AppContent />
         <KleverscanLayer />
         <ShortcutsHelp />
+        <ChatDock />
       </ThemeProvider>
     </SafeAreaProvider>
   );
@@ -177,6 +180,10 @@ function AppContent() {
   // show the rest of the app until this is true, so nothing tries to
   // query a database that doesn't have its tables yet.
   const [isDatabaseReady, setIsDatabaseReady] = useState(false);
+  // The chat window (ChatDock.web.js) may start once the Hub's database is ready.
+  useEffect(() => {
+    if (isDatabaseReady) setHubReady();
+  }, [isDatabaseReady]);
 
   // How long to keep the "Devikins Legacy" loading screen on screen at
   // minimum, in milliseconds. The database itself sets up almost
@@ -1010,6 +1017,8 @@ Continue anyway?`
   // goToScreen when it's an actual collection kind.
   function handleMenuSelectScreen(screen) {
     setIsMenuOpen(false);
+    // On the website the chat is a window over the Hub (ChatDock.web.js).
+    if (screen === 'chat' && openChatDock()) return;
     if (screen === 'breeding') setBreedingStart(null); // from the menu: start at Step 1
     goToScreen(screen);
   }
@@ -1027,6 +1036,7 @@ Continue anyway?`
       return;
     }
     if (action === 'breeding') setBreedingStart(null);
+    if (action === 'chat' && openChatDock()) return;
     goToScreen(action);
   });
 

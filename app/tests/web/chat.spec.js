@@ -105,6 +105,13 @@ test('two players: sign in, find each other, request, accept, write, block', asy
   await bob.page.getByTestId('chat-accept').click();
   await expect(bob.page.getByTestId('chat-contact')).toHaveText(/Alice/);
 
+  // The chat is a window over the Hub (23 Oct 2026): Bob minimises it and
+  // looks at his withdrawals; it keeps checking for mail meanwhile
+  await bob.page.getByTestId('chat-dock-minimise').click();
+  await expect(bob.page.getByTestId('chat-dock')).toBeHidden();
+  await openMenuEntry(bob.page, 'Withdrawals');
+  await expect(bob.page.getByText('1. Your wallets', { exact: true })).toBeVisible();
+
   // Alice's side turns into a contact; she writes
   await expect(alice.page.getByText('waiting for answer')).toHaveCount(0);
   await alice.page.getByTestId('chat-contact').click();
@@ -112,6 +119,15 @@ test('two players: sign in, find each other, request, accept, write, block', asy
   await alice.page.getByTestId('chat-send').click();
   await expect(alice.page.getByText('Hi Bob! Want to trade?')).toBeVisible();
   await expect(alice.page.getByTestId('chat-draft')).toHaveValue('');
+
+  // Bob's bubble counts the new message; he opens the window over Withdrawals,
+  // makes it fill the screen and back
+  await expect(bob.page.getByTestId('chat-bubble-count')).toHaveText('1', { timeout: 30_000 });
+  await bob.page.getByTestId('chat-bubble').click();
+  await expect(bob.page.getByTestId('chat-dock')).toBeVisible();
+  await expect(bob.page.getByText('1. Your wallets', { exact: true })).toBeVisible(); // (the Hub stays where it was)
+  await bob.page.getByTestId('chat-dock-size').click();
+  await bob.page.getByTestId('chat-dock-size').click();
 
   // Bob sees an unread message, opens it and answers (Enter sends)
   await expect(bob.page.getByTestId('chat-contact')).toContainText('1');
