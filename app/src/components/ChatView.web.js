@@ -162,10 +162,20 @@ export default function ChatView({ onClose }) {
     }
   }
 
-  const signIn = () => act(async () => {
+  async function signInSteps() {
     const { code, text } = await messenger.startSignIn();
     const { address, signature } = await signTextWithExtension(text);
     await messenger.finishSignIn({ code, wallet: address, signature });
+  }
+  const signIn = () => act(signInSteps);
+
+  // "Update my holdings" (Raphael, 23 Oct 2026): the vote buttons and the
+  // posting limit go by the NFTs counted at sign-in. Signing in again with
+  // the same wallet refreshes that count; nothing else changes.
+  const updateHoldings = (groupId) => act(async () => {
+    await signInSteps();
+    setGroupNext(await messenger.nextGroupPostAt(groupId));
+    setGroupVotes(await messenger.groupVotes(groupId).catch(() => null));
   });
 
   const saveNickname = () => act(async () => {
@@ -348,6 +358,7 @@ export default function ChatView({ onClose }) {
         onOpenVote={(nickname, reason) => act(() => messenger.openVote(openGroup.id, nickname, reason, signTextWithExtension))}
         onCastVote={(voteId, yes) => act(() => messenger.castVote(voteId, yes, signTextWithExtension))}
         onLetBackIn={(account) => act(() => messenger.letBackIn(openGroup.id, account))}
+        onUpdateHoldings={() => updateHoldings(openGroup.id)}
         onLeave={() => act(async () => {
           await messenger.leaveGroup(openGroup.id);
           setOpenGroupId(null);

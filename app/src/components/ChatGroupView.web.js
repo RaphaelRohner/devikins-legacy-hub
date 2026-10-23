@@ -169,7 +169,7 @@ function endsLabel(ms) {
 }
 
 /** The group's removal votes (open, and decided in the last week). */
-function VotesBox({ votes, busy, onCastVote }) {
+function VotesBox({ votes, busy, onCastVote, onUpdateHoldings }) {
   const { colors } = useTheme();
   if (!votes || votes.votes.length === 0) return null;
   return (
@@ -211,9 +211,12 @@ function VotesBox({ votes, busy, onCastVote }) {
                 <Button label="No" quiet onPress={() => onCastVote(v.id, false)} disabled={busy} testID="chat-vote-no" />
               </View>
             ) : (
-              <Text style={[styles.note, { color: colors.secondaryText }]}>
-                Members holding at least {votes.threshold} Devikins can vote.
-              </Text>
+              <View>
+                <Text style={[styles.note, { color: colors.secondaryText }]}>
+                  Members holding at least {votes.threshold} Devikins can vote.
+                </Text>
+                <HoldingsNote votes={votes} busy={busy} onUpdateHoldings={onUpdateHoldings} />
+              </View>
             )
           ) : null}
         </View>
@@ -227,7 +230,25 @@ function VotesBox({ votes, busy, onCastVote }) {
 }
 
 /** The members, with "start a vote" (and, for the owner, letting removed members back in). */
-function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBackIn, onClose }) {
+/** "Your sign-in counted N Devikins" + "Update my holdings": the vote
+ *  buttons go by the count from the chat sign-in, which can be older than
+ *  the wallet's NFTs (Raphael, 23 Oct 2026). */
+function HoldingsNote({ votes, busy, onUpdateHoldings }) {
+  const { colors } = useTheme();
+  if (!onUpdateHoldings) return null;
+  return (
+    <View style={styles.row}>
+      <Text style={[styles.note, { color: colors.secondaryText, flex: 1 }]}>
+        Your chat sign-in counted {votes.myNfts ?? 0} Devikin{votes.myNfts === 1 ? '' : 's'}. Got more since?
+      </Text>
+      <TouchableOpacity onPress={onUpdateHoldings} disabled={busy} testID="chat-update-holdings">
+        <Text style={[styles.link, { color: colors.primary }]}>Update my holdings</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBackIn, onUpdateHoldings, onClose }) {
   const { colors } = useTheme();
   const [members, setMembers] = useState(null);
   const [voting, setVoting] = useState(null);
@@ -284,7 +305,10 @@ function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBa
         </View>
       ))}
       {votes && !votes.canVote ? (
-        <Text style={[styles.note, { color: colors.secondaryText }]}>Members holding at least {votes.threshold} Devikins can start and cast votes.</Text>
+        <>
+          <Text style={[styles.note, { color: colors.secondaryText }]}>Members holding at least {votes.threshold} Devikins can start and cast votes.</Text>
+          <HoldingsNote votes={votes} busy={busy} onUpdateHoldings={onUpdateHoldings} />
+        </>
       ) : null}
       {votes && votes.canVote && !votes.canOpen ? (
         <Text style={[styles.note, { color: colors.secondaryText }]}>You started a vote in the last 7 days; one per week.</Text>
@@ -305,7 +329,7 @@ function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBa
 }
 
 export default function ChatGroupView({
-  group, me, posts, next, busy, error, onBack, onPost, onPins, onLeave, votes, loadMembers, onOpenVote, onCastVote, onLetBackIn,
+  group, me, posts, next, busy, error, onBack, onPost, onPins, onLeave, votes, loadMembers, onOpenVote, onCastVote, onLetBackIn, onUpdateHoldings,
 }) {
   const [showMembers, setShowMembers] = useState(false);
   const { colors } = useTheme();
@@ -401,10 +425,11 @@ export default function ChatGroupView({
           loadMembers={loadMembers}
           onOpenVote={onOpenVote}
           onLetBackIn={onLetBackIn}
+          onUpdateHoldings={onUpdateHoldings}
           onClose={() => setShowMembers(false)}
         />
       ) : null}
-      <VotesBox votes={votes} busy={busy} onCastVote={onCastVote} />
+      <VotesBox votes={votes} busy={busy} onCastVote={onCastVote} onUpdateHoldings={onUpdateHoldings} />
       {group.pausedUntil ? (
         <Text style={[styles.note, styles.pad, { color: colors.cancelText }]} testID="chat-group-paused">
           Your posting here is paused while a vote about you is open ({endsLabel(group.pausedUntil)}). You can write to the owner in a 1:1 chat.

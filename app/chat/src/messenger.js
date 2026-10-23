@@ -864,6 +864,9 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       threshold: r.threshold,
       canVote: check.ok && check.nfts >= r.threshold,
       canOpen: r.canOpen,
+      // What this device's sign-in counted (the badge); "Update my holdings"
+      // signs in again to refresh it.
+      myNfts: check.ok ? check.nfts : 0,
       votes,
       banned: r.banned,
     };

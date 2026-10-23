@@ -34,7 +34,11 @@ async function startPostman() {
     stop: () => child.kill(),
     newWallet: async (nfts) => {
       const { address } = await post('/__test/wallet', { nfts });
-      return { address, sign: async (text) => (await post('/__test/sign', { address, text })).signature };
+      return {
+        address,
+        sign: async (text) => (await post('/__test/sign', { address, text })).signature,
+        setHoldings: (nfts) => post('/__test/holdings', { address, nfts }),
+      };
     },
   };
 }
@@ -284,7 +288,9 @@ test('removal votes: a member starts a vote with a reason, another supports it, 
   test.setTimeout(240_000);
   const postman = await startPostman();
   const alice = await openPlayer(browser, postman, await postman.newWallet(12));
-  const bob = await openPlayer(browser, postman, await postman.newWallet(12));
+  // Bob signs in holding only 2; he gets more later (see "Update my holdings").
+  const bobWallet = await postman.newWallet(2);
+  const bob = await openPlayer(browser, postman, bobWallet);
   const max = await openPlayer(browser, postman, await postman.newWallet(12));
   await signInAs(alice.page, 'Alice');
   await signInAs(bob.page, 'Bob');
@@ -303,6 +309,12 @@ test('removal votes: a member starts a vote with a reason, another supports it, 
   // Bob starts a vote about Max (his extension signs a short text)
   await bob.page.getByTestId('chat-group-members-button').click();
   await expect(bob.page.getByTestId('chat-group-member')).toHaveCount(3);
+  // His sign-in counted 2: no vote link yet. He now holds 12 and updates.
+  await expect(bob.page.getByTestId('chat-vote-start')).toHaveCount(0);
+  await expect(bob.page.getByTestId('chat-group-members')).toContainText('Your chat sign-in counted 2 Devikins');
+  await bobWallet.setHoldings(12);
+  await bob.page.getByTestId('chat-update-holdings').click();
+  await expect(bob.page.getByTestId('chat-update-holdings')).toHaveCount(0, { timeout: 30_000 });
   await bob.page.getByTestId('chat-group-member').filter({ hasText: 'Max' }).getByTestId('chat-vote-start').click();
   await bob.page.getByTestId('chat-vote-reason').fill('Posts scam links');
   await bob.page.getByTestId('chat-vote-open').click();

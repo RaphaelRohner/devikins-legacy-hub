@@ -8,6 +8,7 @@
  * Besides the postman's own requests it answers two test-only ones:
  *   POST /__test/wallet {nfts}         → a new wallet holding that many Devikins
  *   POST /__test/sign {address, text}  → that wallet's signature of the text
+ *   POST /__test/holdings {address, nfts} → the wallet now holds that many
  * Prints "ready <port>" when it's listening.
  */
 import { createServer } from 'node:http';
@@ -45,6 +46,11 @@ const server = createServer(async (req, res) => {
     holdings.set(address, nfts);
     wallets.set(address, privateKey.bytes);
     return send(200, { address });
+  }
+  if (req.url === '/__test/holdings') {
+    const { address, nfts } = JSON.parse(bodyText);
+    holdings.set(address, nfts);
+    return send(200, { ok: true });
   }
   if (req.url === '/__test/sign') {
     const { address, text } = JSON.parse(bodyText);
