@@ -1420,6 +1420,7 @@ Continue anyway?`
           includeIdList={includeIdList}
           setName={activeSet ? activeSet.name : ''}
           onClose={() => goToScreen(lastCollectionScreen)}
+          onFetchNow={handleFetchNowFromWallets}
           onShowWallet={(focus) => {
             setWalletFocus(focus);
             const kinds = Object.keys(COLLECTIONS);

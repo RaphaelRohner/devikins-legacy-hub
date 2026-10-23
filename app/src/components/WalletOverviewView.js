@@ -29,12 +29,14 @@ function formatTime(ms) {
   return new Date(ms).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-export default function WalletOverviewView({ wallets, ownerAddresses, includeIdList, setName, onClose, onShowWallet }) {
+export default function WalletOverviewView({ wallets, ownerAddresses, includeIdList, setName, onClose, onShowWallet, onFetchNow }) {
   const { colors } = useTheme();
   const [data, setData] = useState(null);
   const [checking, setChecking] = useState(false);
   const [progress, setProgress] = useState('');
   const [message, setMessage] = useState('');
+  // NFTs the last "Check now" found new in your wallets (their details come with a Fetch/Update)
+  const [newFound, setNewFound] = useState(0);
   const cancelRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -65,6 +67,7 @@ export default function WalletOverviewView({ wallets, ownerAddresses, includeIdL
     if (!data || checking) return;
     setChecking(true);
     setMessage('');
+    setNewFound(0);
     cancelRef.current = false;
     try {
       const arrivals = data.toAddress ? await getWithdrawalArrivals(1000) : [];
@@ -77,11 +80,13 @@ export default function WalletOverviewView({ wallets, ownerAddresses, includeIdL
         toAddress: data.toAddress,
         knownHashes: new Set(arrivals.map((a) => a.tx_hash)),
         shouldCancel: () => cancelRef.current,
-        onProgress: ({ current, total, waiting }) =>
+        onProgress: ({ current, total, waiting, listing }) =>
           setProgress(
-            waiting
-              ? `Looking up your NFTs: ${current} of ${total} - Klever asks to slow down, waiting a moment…`
-              : `Looking up your NFTs: ${current} of ${total}`
+            listing
+              ? 'Asking Klever for new NFTs in your wallets…'
+              : waiting
+                ? `Looking up your NFTs: ${current} of ${total} - Klever asks to slow down, waiting a moment…`
+                : `Looking up your NFTs: ${current} of ${total}`
           ),
       });
       await setSetting(OVERVIEW_CHECK_KEY, JSON.stringify(result.check));
@@ -90,6 +95,7 @@ export default function WalletOverviewView({ wallets, ownerAddresses, includeIdL
         await saveWithdrawalCheckResults(result.listResult.updates);
         if (!result.stopped) await setGlobalSetting(WITHDRAW_SETTING_KEYS.lastCheck, String(result.listResult.checkedAt));
       }
+      setNewFound(result.newFound || 0);
       if (result.stopped) setMessage('Stopped - the NFTs looked up so far are counted where they are now.');
       else if (result.errors.length > 0) setMessage(`Done, but some lookups failed (try again later):\n${result.errors.slice(0, 5).join('\n')}`);
       await load();
@@ -200,6 +206,18 @@ export default function WalletOverviewView({ wallets, ownerAddresses, includeIdL
                 NFTs still where they were are confirmed quickly; NFTs that moved are found more slowly (Klever allows 30 of those lookups a minute). It also updates the Withdrawals tracker.
               </Text>
               {message ? <Text style={[styles.note, { color: colors.text }]}>{message}</Text> : null}
+              {newFound > 0 && !checking ? (
+                <View style={styles.inlineRow} testID="overview-new">
+                  <Text style={[styles.note, { color: colors.text, flex: 1 }]}>
+                    {newFound} new NFT{newFound === 1 ? '' : 's'} found in your wallets - counted above. Their pictures and details come with a Fetch/Update.
+                  </Text>
+                  {onFetchNow ? (
+                    <TouchableOpacity style={[styles.smallButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]} onPress={onFetchNow} testID="overview-fetch">
+                      <Text style={[styles.smallButtonText, { color: colors.text }]}>Fetch now</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
           </>
         )}

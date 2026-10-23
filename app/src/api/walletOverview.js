@@ -27,8 +27,11 @@
 import { COLLECTIONS } from '../constants/schema';
 import { ID_LIST_OWNER } from '../constants/idList';
 import { GAME_MAIN_WALLET, KINDS, lookUpHolders, runWithdrawalCheck } from './withdrawalTracker';
+import { fetchWalletNonces } from './kleverApi';
 
 // Per-set setting: { checkedAt, holders: { "kind:nonce": address | null } }
+// (holders can include NFTs "Check now" found new in your wallets, before a
+// Fetch/Update has loaded their details - they're counted too.)
 export const OVERVIEW_CHECK_KEY = 'wallet_overview_check';
 
 export function shortAddress(address) {
@@ -125,6 +128,14 @@ export function buildOverview({ wallets, rowsByKind, listItems = [], includeList
       place(kind, nft.nonce, where);
     }
   }
+  // NFTs "Check now" found new in your own wallets (not fetched yet) count too.
+  for (const [key, holder] of Object.entries(check.holders || {})) {
+    if (seen.has(key) || !holder || !own.has(holder)) continue;
+    const [kind, nonce] = key.split(':');
+    if (!KINDS.includes(kind) || listByKey.has(key)) continue;
+    seen.add(key);
+    place(kind, Number(nonce), holder);
+  }
   // List NFTs whose details haven't been fetched yet still count.
   if (includeList) {
     for (const item of listItems) {
@@ -153,6 +164,7 @@ export function buildOverview({ wallets, rowsByKind, listItems = [], includeList
  *   check        the new OVERVIEW_CHECK_KEY value for the wallets' own NFTs
  *   listResult   runWithdrawalCheck's result (or null)
  *   errors       lookups that failed
+ *   newFound     NFTs found new in your own wallets (not fetched yet)
  *   stopped      true if Stop was pressed (whatever was found is kept)
  */
 export async function runOverviewCheck({ wallets = [], rowsByKind, listItems = [], previousCheck, fromAddress, toAddress, knownHashes, onProgress, shouldCancel }) {
@@ -165,8 +177,35 @@ export async function runOverviewCheck({ wallets = [], rowsByKind, listItems = [
       ownNfts.push({ kind, nonce: nft.nonce, known: before[key] || nft.owner_address });
     }
   }
-  const total = ownNfts.length + listItems.length;
   const errors = [];
+
+  // 0. New NFTs in your own wallets (since the last Fetch/Update): Klever's
+  // list of what each wallet holds. That list can still show NFTs that
+  // have just left, so only those the lookup below confirms in one of your
+  // wallets are kept.
+  const known = new Set(listItems.map((i) => `${i.kind}:${i.nonce}`));
+  for (const kind of KINDS) for (const nft of rowsByKind[kind] || []) known.add(`${kind}:${nft.nonce}`);
+  const newNfts = [];
+  for (const w of wallets) {
+    for (const kind of KINDS) {
+      if (shouldCancel?.()) break;
+      onProgress?.({ current: 0, total: 0, listing: true });
+      let nonces = [];
+      try {
+        nonces = await fetchWalletNonces(w.address, COLLECTIONS[kind].assetId);
+      } catch (e) {
+        errors.push(`${w.alias || shortAddress(w.address)}: ${e.message}`);
+      }
+      for (const nonce of nonces) {
+        const key = `${kind}:${nonce}`;
+        if (known.has(key)) continue;
+        known.add(key);
+        newNfts.push({ kind, nonce, known: w.address, isNew: true });
+      }
+    }
+  }
+  ownNfts.push(...newNfts);
+  const total = ownNfts.length + listItems.length;
 
   // 1. The wallets' own NFTs.
   const found = await lookUpHolders(ownNfts, {
@@ -176,9 +215,17 @@ export async function runOverviewCheck({ wallets = [], rowsByKind, listItems = [
     onProgress: (p) => onProgress?.({ current: p.current, total, waiting: p.phase === 'waiting' }),
   });
   const holders = { ...(previousCheck?.holders || {}) };
+  const ownAddresses = new Set(wallets.map((w) => w.address));
+  let newFound = 0;
+  for (const n of newNfts) {
+    const key = `${n.kind}:${n.nonce}`;
+    // (Already gone again, or not looked up: not ours to count.)
+    if (!found.has(key) || !ownAddresses.has(found.get(key))) found.delete(key);
+    else newFound += 1;
+  }
   for (const [key, holder] of found) holders[key] = holder;
   // Forget answers about NFTs that aren't in these wallets any more.
-  const stillHere = new Set(ownNfts.map((n) => `${n.kind}:${n.nonce}`));
+  const stillHere = new Set([...ownNfts.filter((n) => !n.isNew).map((n) => `${n.kind}:${n.nonce}`), ...newNfts.map((n) => `${n.kind}:${n.nonce}`).filter((k) => found.has(k))]);
   for (const key of Object.keys(holders)) if (!stillHere.has(key)) delete holders[key];
   const check = { checkedAt: Date.now(), holders };
 
@@ -196,7 +243,7 @@ export async function runOverviewCheck({ wallets = [], rowsByKind, listItems = [
     });
     errors.push(...listResult.errors);
   }
-  return { check, listResult, errors, stopped: Boolean(shouldCancel?.()) };
+  return { check, listResult, errors, newFound, stopped: Boolean(shouldCancel?.()) };
 }
 
 export const KIND_COLUMNS = KINDS.map((kind) => ({ kind, label: COLLECTIONS[kind].label }));

@@ -155,8 +155,10 @@ async function installFakeServers(context) {
         const page = Number(url.searchParams.get('page') || 1);
         let nonces = [];
         if (kind && page === 1) {
-          if (m[1] === TEST_WALLET) nonces = TEST_NFTS[kind].map((n) => n.nonce);
-          else nonces = [...fake.chain.holders].filter(([k, a]) => a === m[1] && k.startsWith(kind + ':')).map(([k]) => Number(k.split(':')[1]));
+          const held = [...fake.chain.holders].filter(([k, a]) => a === m[1] && k.startsWith(kind + ':')).map(([k]) => Number(k.split(':')[1]));
+          // (The test wallet: its six NFTs, plus any the pretend chain gives it later.)
+          if (m[1] === TEST_WALLET) nonces = [...new Set([...TEST_NFTS[kind].map((n) => n.nonce), ...held])];
+          else nonces = held;
         }
         return json(route, { data: { collection: nonces.map((nftNonce) => ({ nftNonce, balance: 1 })) }, code: 'successful' });
       }

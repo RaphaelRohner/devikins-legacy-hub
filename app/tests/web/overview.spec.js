@@ -63,13 +63,25 @@ test('the overview counts per wallet, opens one wallet in Browse, and "Check now
   await page.getByTestId('wallet-focus-clear').click();
   await expect(page.getByText('3 Weapons')).toBeVisible();
 
-  // Devikin #102 moves to someone else: "Check now" finds it.
+  // Devikin #102 moves to someone else, and a new Devikin #105 arrives in
+  // the test wallet: "Check now" finds both.
   fake.chain.holders.set('devikin:102', fakeAddress('o'));
+  fake.chain.holders.set('devikin:105', TEST_WALLET);
+  fake.extraNfts.set('devikin:105', { name: 'Newbie #105', attributes: { Rarity: 'Common', Ancestry: 'Faery', 'Life Stage': 'Adult', 'Procreations Left': 3 } });
   await openMenuEntry(page, 'Where are my NFTs?');
   await page.getByTestId('overview-check').click();
   await expect(page.getByText(/Last looked up on the chain:/)).toBeVisible({ timeout: 60_000 });
   await expect(rowOf(page, 'Another wallet')).toContainText(/1\s*0\s*0/);
-  await expect(page.getByTestId('overview-total-devikin')).toHaveText('2');
+  await expect(page.getByTestId('overview-new')).toContainText('1 new NFT found in your wallets');
+  await expect(page.getByTestId('overview-total-devikin')).toHaveText('3');
+  // "Fetch now" loads its details: it shows up in Devikins
+  await page.getByTestId('overview-fetch').click();
+  await expect.poll(() => fake.requests.some((u) => /\/devikin\/105$/.test(u)), { timeout: 60_000 }).toBe(true);
+  await expect(page.getByText(/^\d+%$/)).toHaveCount(0, { timeout: 60_000 });
+  await openMenuEntry(page, 'Devikins');
+  await expect(page.getByText(/^#105/)).toBeVisible();
+  await openMenuEntry(page, 'Where are my NFTs?');
+  await expect(page.getByTestId('overview-total-devikin')).toHaveText('3');
 
   // Open it and mark it as deleted: it isn't counted any more.
   await rowOf(page, 'Another wallet').click();
@@ -83,5 +95,5 @@ test('the overview counts per wallet, opens one wallet in Browse, and "Check now
   await openMenuEntry(page, 'Where are my NFTs?');
   await expect(rowOf(page, 'Another wallet')).toHaveCount(0);
   await expect(page.getByText("1 NFT marked as deleted isn't counted.")).toBeVisible();
-  await expect(page.getByTestId('overview-total-devikin')).toHaveText('1');
+  await expect(page.getByTestId('overview-total-devikin')).toHaveText('2');
 });
