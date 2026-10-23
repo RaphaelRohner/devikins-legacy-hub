@@ -145,6 +145,30 @@ export function voteResult({ members, votes, accused }) {
 }
 
 /**
+ * voteDecidedEarly — can the vote end before its 48 h? (Raphael, 23 Oct
+ * 2026: "if everyone voted and the result is clear, why not end the vote
+ * instantly?") Only when the outcome can't change any more, counting every
+ * member who hasn't voted yet as a possible vote for the other side:
+ *   'pass' — yes votes from at least 60 % of everyone allowed to vote, and
+ *            enough votes for a valid result;
+ *   'keep' — the yes share can't reach 60 % even if all the rest vote yes
+ *            (no votes from more than 40 % of everyone allowed to vote), or
+ *            there are too few possible voters for a valid vote at all;
+ *   null   — still open.
+ *   members: group members when the vote opened (incl. the accused), as for voteResult
+ *   voters:  how many may vote (members since before the vote, without the accused)
+ *   yes, no: votes cast so far that count
+ */
+export function voteDecidedEarly({ members, voters, yes, no }) {
+  const needed = Math.max(VOTE_MIN_VOTES, Math.ceil(VOTE_MIN_SHARE_OF_MEMBERS * Math.max(0, Number(members) || 0)));
+  const possible = Math.max(Number(voters) || 0, yes + no);
+  if (possible < needed) return 'keep';
+  if (yes + no >= needed && yes / possible >= VOTE_YES_SHARE) return 'pass';
+  if ((possible - no) / possible < VOTE_YES_SHARE) return 'keep';
+  return null;
+}
+
+/**
  * canOpenVote — a member may open at most one removal vote per week.
  * `openedAt` = times this member opened votes before.
  */

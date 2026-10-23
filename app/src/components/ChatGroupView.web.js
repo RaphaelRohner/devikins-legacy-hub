@@ -222,7 +222,7 @@ function VotesBox({ votes, busy, onCastVote, onUpdateHoldings }) {
         </View>
       ))}
       <Text style={[styles.note, { color: colors.secondaryText }]}>
-        A vote counts if at least 10 % of the members (never fewer than 3) vote; 60 % yes removes the member. Voting asks your
+        A vote counts if at least 10 % of the members (never fewer than 3) vote; 60 % yes removes the member. It ends early once the result can't change any more (60 % of everyone allowed to vote said yes, or more than 40 % said no). Voting asks your
         Klever extension to sign a short text (no fee); your wallet is checked again when the vote closes, then forgotten.
       </Text>
     </View>

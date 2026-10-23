@@ -86,7 +86,8 @@ export class PostOffice extends DurableObject {
     const voteEnd = this.office.nextVoteEnd();
     let next = Date.now() + CLEAN_UP_EVERY;
     // (a vote that ended already but isn't counted yet: in a few minutes, not in a tight loop)
-    if (voteEnd !== null && voteEnd > Date.now()) next = Math.min(next, voteEnd + 1000);
+    // (While counting is still going on - a few wallets per run - the next run comes in a few minutes, never in a tight loop.)
+    if (voteEnd !== null && voteEnd > Date.now() && !soon) next = Math.min(next, voteEnd + 1000);
     if (soon || (voteEnd !== null && voteEnd <= Date.now())) next = Math.min(next, Date.now() + COUNT_AGAIN_AFTER);
     if (current === null || current > next) await this.ctx.storage.setAlarm(next);
   }

@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  postInterval, nextPostAllowedAt, contactRequestWait, votingThreshold, voteResult, canOpenVote, isPostingPaused,
+  postInterval, nextPostAllowedAt, contactRequestWait, votingThreshold, voteResult, voteDecidedEarly, canOpenVote, isPostingPaused,
   MINUTE, HOUR, DAY,
 } from '../src/rules.js';
 
@@ -81,4 +81,21 @@ test('one vote per week per member; posting pauses only once a second member sup
   assert.equal(isPostingPaused({ ...vote, supporters: ['a', 'b'] }, now + HOUR), true);
   assert.equal(isPostingPaused({ ...vote, supporters: ['a', 'b'] }, now + 48 * HOUR), false);
   assert.equal(isPostingPaused({ ...vote, supporters: ['a', 'b'], decided: true }, now + HOUR), false);
+});
+
+test('a removal vote ends early only once its result can\'t change any more', () => {
+  // 3 may vote (a group of 4 with the accused): all 3 yes → removed now
+  assert.equal(voteDecidedEarly({ members: 4, voters: 3, yes: 3, no: 0 }), 'pass');
+  assert.equal(voteDecidedEarly({ members: 4, voters: 3, yes: 2, no: 0 }), null); // 3 votes needed
+  // 100 may vote: 60 yes are needed to end early with a removal, or 41 no to end early without
+  assert.equal(voteDecidedEarly({ members: 101, voters: 100, yes: 59, no: 0 }), null);
+  assert.equal(voteDecidedEarly({ members: 101, voters: 100, yes: 60, no: 0 }), 'pass');
+  assert.equal(voteDecidedEarly({ members: 101, voters: 100, yes: 10, no: 40 }), null);
+  assert.equal(voteDecidedEarly({ members: 101, voters: 100, yes: 10, no: 41 }), 'keep');
+  // exactly 60 % of 5
+  assert.equal(voteDecidedEarly({ members: 6, voters: 5, yes: 3, no: 0 }), 'pass');
+  assert.equal(voteDecidedEarly({ members: 6, voters: 5, yes: 1, no: 2 }), null);
+  assert.equal(voteDecidedEarly({ members: 6, voters: 5, yes: 1, no: 3 }), 'keep');
+  // too few possible voters for a valid vote at all
+  assert.equal(voteDecidedEarly({ members: 3, voters: 2, yes: 1, no: 0 }), 'keep');
 });

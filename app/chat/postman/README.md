@@ -57,12 +57,15 @@ who opened it, the reason sealed with the group key, when) and each ballot
 (who, yes/no). To vote, the wallet signs a one-time text; the postman checks
 it's the player's own chat wallet and holds at least the threshold, and
 keeps the **wallet address with the ballot only until the vote is counted**
-(48 h): then every voter's wallet is checked again (a vote counts only if it
-still holds the threshold, so Devikins moved to a second wallet count once)
-and the addresses are deleted. The threshold comes from the game account's
+(48 h, or earlier once the result can't change any more: yes from 60 % of
+everyone allowed to vote, or no from more than 40 %): then every voter's
+wallet is checked again (a vote counts only if it still holds the threshold,
+so Devikins moved to a second wallet count once) and the addresses are
+deleted. If an early count finds an emptied wallet and the result is no
+longer certain, the vote stays open and the addresses are kept until it ends. The threshold comes from the game account's
 holdings (asked once a day). Votes are counted by the postman's alarm a
 few wallets per run (Cloudflare's free plan allows 50 outside requests per
-run), each address deleted right after its check. Removed members are
+run). Removed members are
 banned from that group by wallet fingerprint (so leaving early or starting
 over with the same wallet doesn't undo it) until its owner lets them back
 in. Only members who were in the group when a vote started can vote in it;

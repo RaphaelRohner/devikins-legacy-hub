@@ -40,7 +40,7 @@ import { issueBadge, BADGE_DAYS } from '../../src/badge.js';
 import { isPublicKey } from '../../src/identity.js';
 import {
   contactRequestWait, DAY, MINUTE, MIN_POST_INTERVAL, nicknameKey,
-  GAME_ACCOUNT, votingThreshold, voteResult, canOpenVote, isPostingPaused, VOTE_DURATION,
+  GAME_ACCOUNT, votingThreshold, voteResult, voteDecidedEarly, canOpenVote, isPostingPaused, VOTE_DURATION,
 } from '../../src/rules.js';
 import { checkAuthHeader } from '../../src/httpAuth.js';
 import { signInText, voteProofText, isWalletSignature, devikinsHeld, walletPublicKey } from './kleverProof.js';
@@ -156,8 +156,9 @@ export { nicknameKey };
  */
 export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (...a) => fetch(...a) }) {
   for (const statement of SCHEMA) sql.exec(statement);
-  // Columns added after a table first went live (stage 4: group keys renewed after a removal).
-  for (const [table, name, type] of [['groups', 'epoch', 'INTEGER NOT NULL DEFAULT 1'], ['groups', 'needs_rekey', 'INTEGER NOT NULL DEFAULT 0']]) {
+  // Columns added after a table first went live (stage 4: group keys renewed after a removal;
+  // 23 Oct 2026: votes.closing = the result is already certain, count it now).
+  for (const [table, name, type] of [['groups', 'epoch', 'INTEGER NOT NULL DEFAULT 1'], ['groups', 'needs_rekey', 'INTEGER NOT NULL DEFAULT 0'], ['votes', 'closing', 'INTEGER NOT NULL DEFAULT 0']]) {
     if (!sql.exec(`PRAGMA table_info(${table})`).toArray().some((c) => c.name === name)) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
   }
   const rows = (query, ...params) => sql.exec(query, ...params).toArray();
@@ -309,23 +310,47 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
 
   const isBanned = (group, walletFp) => !!row('SELECT 1 AS x FROM group_bans WHERE grp = ? AND player = ?', group, walletFp);
 
+  /** Who may vote in `v`: members since before it opened, without the accused. */
+  function votersOf(v) {
+    return new Set(rows('SELECT account FROM group_members WHERE grp = ? AND joined_at <= ? AND account != ?', v.grp, v.opened_at, v.accused)
+      .map((m) => m.account));
+  }
+
+  /** The early outcome of `v` from its ballots as they stand ('pass' | 'keep' | null). */
+  function earlyOutcome(v) {
+    const voters = votersOf(v);
+    const counted = ballotsOf(v.id).filter((b) => b.eligible && voters.has(b.account));
+    const yes = counted.filter((b) => b.yes).length;
+    return voteDecidedEarly({ members: v.members, voters: voters.size, yes, no: counted.length - yes });
+  }
+
+  /** After a ballot: if the result can't change any more, count the vote now (from the alarm). */
+  function closeEarlyIfDecided(voteId) {
+    const v = row('SELECT * FROM votes WHERE id = ?', voteId);
+    if (v && !v.decided && !v.closing && earlyOutcome(v)) run('UPDATE votes SET closing = 1 WHERE id = ?', v.id);
+  }
+
   /**
-   * Counts votes whose 48 h are over, a few wallets per run (Cloudflare
-   * allows only so many outside questions per request): every voter's wallet
-   * is checked again - a vote counts only if that wallet still holds the
-   * threshold and the voter is still a member, so Devikins moved to another
-   * wallet count once - and each address is deleted right after its check.
+   * Counts votes whose 48 h are over, or whose result is already certain
+   * (votes.closing), a few wallets per run (Cloudflare allows only so many
+   * outside questions per request): every voter's wallet is checked again -
+   * a vote counts only if that wallet still holds the threshold and the
+   * voter is still a member, so Devikins moved to another wallet count once.
    * Once all are checked, the vote is decided; if it passed, the member is
    * banned (by wallet fingerprint, even if they left meanwhile) and removed,
-   * and the group is marked for a new key. Runs from the alarm.
+   * and the group is marked for a new key. Each wallet address is deleted
+   * once the vote is decided. Early: if the checks change the picture so the
+   * result isn't certain any more, the vote stays open, and every wallet is
+   * checked again when it ends. Runs from the alarm.
    * → true if votes are still waiting to be counted.
    */
   async function decideAllVotes(budget = DECIDE_BATCH) {
     const t = now();
-    const due = rows('SELECT * FROM votes WHERE decided = 0 AND opened_at <= ? ORDER BY opened_at', t - VOTE_DURATION);
+    const due = rows('SELECT * FROM votes WHERE decided = 0 AND (opened_at <= ? OR closing = 1) ORDER BY opened_at', t - VOTE_DURATION);
     if (!due.length) return false;
     const threshold = await currentThreshold();
     for (const v of due) {
+      const final = v.opened_at <= t - VOTE_DURATION;
       const members = new Set(rows('SELECT account FROM group_members WHERE grp = ?', v.grp).map((m) => m.account));
       for (const b of rows('SELECT * FROM ballots WHERE vote = ? AND checked = 0', v.id)) {
         if (budget <= 0) return true;
@@ -334,7 +359,8 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
           try { held = await devikinsHeld(b.wallet, fetchKlever); } catch { return true; }
           budget -= 1;
         }
-        run('UPDATE ballots SET eligible = ?, checked = 1, wallet = NULL WHERE vote = ? AND account = ?',
+        // (Early, the address is kept until the vote is decided: it may have to be checked again at the end.)
+        run(`UPDATE ballots SET eligible = ?, checked = 1${final ? ', wallet = NULL' : ''} WHERE vote = ? AND account = ?`,
           b.eligible && held >= threshold && members.has(b.account) ? 1 : 0, v.id, b.account);
       }
       if (row('SELECT decided FROM votes WHERE id = ?', v.id).decided) continue;
@@ -343,9 +369,20 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
         accused: v.accused,
         votes: ballotsOf(v.id).map((b) => ({ voter: b.account, yes: !!b.yes, counts: !!b.eligible })),
       });
+      let outcome = result.passed;
+      if (!final) {
+        const early = earlyOutcome(v);
+        if (!early) {
+          // Not certain any more: stays open; every ballot is checked again at the end.
+          run('UPDATE ballots SET eligible = 1, checked = 0 WHERE vote = ? AND wallet IS NOT NULL', v.id);
+          run('UPDATE votes SET closing = 0 WHERE id = ?', v.id);
+          continue;
+        }
+        outcome = early === 'pass';
+      }
       const g = row('SELECT owner FROM groups WHERE id = ?', v.grp);
       // (If the accused has become the group's owner meanwhile, they stay.)
-      const passed = result.passed && !!g && g.owner !== v.accused;
+      const passed = outcome && !!g && g.owner !== v.accused;
       let removed = false;
       if (passed) {
         run('INSERT OR IGNORE INTO group_bans (grp, player, nickname, at) VALUES (?, ?, ?, ?)', v.grp, v.accused_fp, v.accused_nick, t);
@@ -357,15 +394,16 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
           if (!r.deleted) run('UPDATE groups SET needs_rekey = 1 WHERE id = ?', v.grp);
         }
       }
-      run('UPDATE votes SET decided = 1, passed = ?, valid = ?, removed = ?, decided_at = ? WHERE id = ?',
-        passed ? 1 : 0, result.valid ? 1 : 0, removed ? 1 : 0, t, v.id);
+      run('UPDATE votes SET decided = 1, passed = ?, valid = ?, removed = ?, decided_at = ?, closing = 0 WHERE id = ?',
+        passed ? 1 : 0, result.valid || outcome ? 1 : 0, removed ? 1 : 0, t, v.id);
       run('UPDATE ballots SET wallet = NULL WHERE vote = ?', v.id);
     }
     return false;
   }
 
-  /** When the next open vote ends (for the alarm), or null. */
+  /** When the next vote has to be counted (for the alarm), or null: when one ends, or right away if one is already certain. */
   function nextVoteEnd() {
+    if (row('SELECT 1 AS x FROM votes WHERE decided = 0 AND closing = 1')) return now() + 1000;
     const v = row('SELECT MIN(opened_at) AS o FROM votes WHERE decided = 0');
     return v?.o ? v.o + VOTE_DURATION : null;
   }
@@ -806,6 +844,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       run(`INSERT INTO votes (id, grp, accused, opener, accused_fp, accused_nick, opener_fp, reason, opened_at, members)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, group, accused.id, account.id, accused.wallet_fp, accused.nickname, account.wallet_fp, reason, t, members);
       run('INSERT INTO ballots (vote, account, yes, eligible, at, wallet) VALUES (?, ?, 1, 1, ?, ?)', id, account.id, t, wallet);
+      closeEarlyIfDecided(id);
       return { id, endsAt: t + VOTE_DURATION };
     },
 
@@ -828,6 +867,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       if (row('SELECT 1 AS x FROM ballots WHERE vote = ? AND account = ?', v.id, account.id)) refuse(409, 'You have voted already.');
       spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
       run('INSERT INTO ballots (vote, account, yes, eligible, at, wallet) VALUES (?, ?, ?, 1, ?, ?)', v.id, account.id, body.yes === true ? 1 : 0, t, wallet);
+      closeEarlyIfDecided(v.id);
       return { voted: true };
     },
 

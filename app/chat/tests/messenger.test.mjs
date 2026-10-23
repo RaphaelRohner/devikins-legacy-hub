@@ -686,6 +686,87 @@ test('removal votes: threshold from the game account, a paused accused, 48 h, re
   assert.equal((await max.listGroups()).find((g) => g.id === gid).member, true);
 });
 
+test('removal votes end early once the result can\'t change: removed, kept, or open again when a wallet emptied', async () => {
+  const { player, clock, decide } = world();
+  const owner = await player('Owner', 12);
+  const bea = await player('Bea', 12);
+  const cid = await player('Cid', 12);
+  const max = await player('Max', 5);
+  const gid = await owner.createGroup('Quick Votes');
+  for (const p of [bea, cid, max]) {
+    await p.joinGroup(gid);
+    await owner.checkMail();
+    await p.checkMail();
+  }
+  // 3 may vote (Max is the accused). Two yes isn't certain yet.
+  await bea.openVote(gid, 'Max', 'spam', bea.sign);
+  const id = (await bea.groupVotes(gid)).votes[0].id;
+  await cid.castVote(id, true, cid.sign);
+  await decide();
+  assert.equal((await owner.groupVotes(gid)).votes[0].decided, false);
+  // All three yes: decided straight away, no 48 h wait
+  clock.t += MINUTE;
+  await owner.castVote(id, true, owner.sign);
+  await decide();
+  let d = (await owner.groupVotes(gid)).votes[0];
+  assert.deepEqual([d.decided, d.valid, d.passed, d.removed], [true, true, true, true]);
+  assert.equal((await owner.listGroups())[0].members, 3);
+});
+
+test('removal votes end early: enough "no" keeps the member and lifts the pause; an emptied wallet keeps a vote open', async () => {
+  const { player, clock, decide } = world();
+  const owner = await player('Owner', 12);
+  const bea = await player('Bea', 12);
+  const cid = await player('Cid', 12);
+  const dee = await player('Dee', 12);
+  const eve = await player('Eve', 12);
+  const max = await player('Max', 12);
+  const gid = await owner.createGroup('Fair Club');
+  for (const p of [bea, cid, dee, eve, max]) {
+    await p.joinGroup(gid);
+    await owner.checkMail();
+    await p.checkMail();
+  }
+  // 5 may vote. Bea and Cid say yes (Max is paused), Dee, Eve and the owner say no.
+  await bea.openVote(gid, 'Max', 'rude', bea.sign);
+  const id = (await bea.groupVotes(gid)).votes[0].id;
+  await cid.castVote(id, true, cid.sign);
+  clock.t += 3 * 60 * MINUTE;
+  await assert.rejects(max.postToGroup(gid, 'hello?'), /paused/);
+  await dee.castVote(id, false, dee.sign);
+  await eve.castVote(id, false, eve.sign);
+  await decide();
+  assert.equal((await owner.groupVotes(gid)).votes[0].decided, false); // 2 no of 5: yes could still reach 60 %
+  await owner.castVote(id, false, owner.sign);
+  await decide();
+  const d = (await owner.groupVotes(gid)).votes[0];
+  assert.deepEqual([d.decided, d.passed], [true, false]);
+  clock.t += MINUTE;
+  await max.postToGroup(gid, 'Thanks, all'); // not paused any more
+
+  // A second vote in a group of 4 (3 may vote): all yes, but one voter's
+  // wallet is empty by the time it's counted - not certain any more, so it
+  // stays open, and that wallet is checked again at the end.
+  const gid2 = await owner.createGroup('Second Club');
+  for (const p of [bea, cid, max]) {
+    await p.joinGroup(gid2);
+    await owner.checkMail();
+    await p.checkMail();
+  }
+  // (Bea started a vote this week already, so Cid starts this one.)
+  await cid.openVote(gid2, 'Max', 'again', cid.sign);
+  const id2 = (await owner.groupVotes(gid2)).votes[0].id;
+  await bea.castVote(id2, true, bea.sign);
+  cid.holdings.set(cid.wallet, 0);
+  await owner.castVote(id2, true, owner.sign);
+  await decide();
+  assert.equal((await owner.groupVotes(gid2)).votes[0].decided, false);
+  clock.t += 49 * 60 * MINUTE;
+  await decide();
+  const d2 = (await owner.groupVotes(gid2)).votes[0];
+  assert.deepEqual([d2.decided, d2.valid, d2.passed], [true, false, false]); // Cid's vote doesn't count: 2 of 3 needed
+});
+
 test('removal votes: too few votes means no removal', async () => {
   const { player, clock, decide } = world();
   const owner = await player('Owner', 12);
