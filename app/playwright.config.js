@@ -21,7 +21,10 @@ module.exports = defineConfig({
   testDir: './tests/web',
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  fullyParallel: false,
+  // Each test stands on its own (fresh browser, its own pretend servers), so
+  // GitHub can split them evenly over several machines (--shard); on one
+  // machine they still run one at a time (workers: 1).
+  fullyParallel: true,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'test-report' }]],
