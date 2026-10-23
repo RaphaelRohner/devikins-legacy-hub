@@ -65,7 +65,11 @@ jobs:
       # The automatic website tests on that build - this machine runs its
       # quarter. They use pretend servers only, so they never contact
       # Klever or Moonlabs.
-      - run: npx playwright install --with-deps chromium
+      # (Usually ~20 s. On 23 Oct one machine hung here for 13 minutes while
+      # installing system packages - so it gives up after 4 minutes and
+      # tries once more.)
+      - run: timeout 240 npx playwright install --with-deps chromium || timeout 240 npx playwright install --with-deps chromium
+        timeout-minutes: 10
       - run: npx playwright test --shard=${{ matrix.shard }}/4
       - if: failure()
         uses: actions/upload-artifact@v4
