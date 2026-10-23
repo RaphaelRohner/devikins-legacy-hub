@@ -24,7 +24,7 @@ export default function ShortcutsHelp() {
       <View style={styles.backdrop}>
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="shortcuts-help">
           <Text style={[styles.title, { color: colors.text }]}>Keyboard shortcuts</Text>
-          <Text style={[styles.note, { color: colors.secondaryText }]}>Press G, then the letter. They don't work while you're typing in a text box.</Text>
+          <Text style={[styles.note, { color: colors.secondaryText }]}>Press G, then the letter - plain small letters, no Shift (keyboards print their keys in capitals, so the list does too). They don't work while you're typing in a text box.</Text>
           {SHORTCUTS.map((s) => (
             <View key={s.key} style={styles.row}>
               <View style={styles.keys}>
