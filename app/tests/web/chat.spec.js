@@ -240,6 +240,11 @@ test('the chat goes into "Export all sets" with a password and comes back in a n
   expect(zipText).toContain('chat-backup.json');
   expect(zipText).not.toContain('Before the backup'); // locked, not readable
 
+  // Alice moves to a new browser and closes the old one. (Two browsers with
+  // the same chat would share its mail: since 23 Oct 2026 the chat keeps
+  // checking in the background, so the old one would pick up Bob's message.)
+  await alice.context.close();
+
   // A new browser: import asks for the chat's password (a wrong one first)
   const moved = await openPlayer(browser, postman, null, { extension: false, openChat: false });
   await openMenuEntry(moved.page, 'Wallets');
@@ -264,7 +269,6 @@ test('the chat goes into "Export all sets" with a password and comes back in a n
   await bob.page.getByTestId('chat-send').click();
   await expect(moved.page.getByText('Welcome to your new browser')).toBeVisible();
 
-  await alice.context.close();
   await bob.context.close();
   await moved.context.close();
   postman.stop();
