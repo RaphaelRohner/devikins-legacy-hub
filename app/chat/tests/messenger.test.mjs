@@ -68,6 +68,24 @@ function world() {
     m.sign = async (t) => ({ address: wallet, signature: Buffer.from(signMessageSync(prepareKlvMessage(t), privateKey.bytes)).toString('hex') });
     m.wallet = wallet;
     m.holdings = holdings;
+    /** "Update my holdings": the wallet now holds `n`, and the player signs in again. */
+    m.setHoldings = async (n) => {
+      holdings.set(wallet, n);
+      const again = await m.startSignIn();
+      await m.finishSignIn({ code: again.code, wallet, signature: (await m.sign(again.text)).signature });
+    };
+    /**
+     * Starting a group takes the voting threshold (10 here): players below it
+     * hold 10 just long enough to start one (most tests are about other things).
+     */
+    m.startGroup = async (name, description) => {
+      const before = holdings.get(wallet);
+      if (before >= 10) return m.createGroup(name, description);
+      await m.setHoldings(10);
+      const id = await m.createGroup(name, description);
+      await m.setHoldings(before);
+      return id;
+    };
     if (sameWalletAs) return m; // a second browser of the same player
     assert.equal(signedIn.state, 'needs-nickname');
     assert.equal((await m.setNickname(nickname)).state, 'ready');
@@ -433,7 +451,12 @@ test('groups: create, ask to join, a member\'s Hub lets you in, posts from joini
   const { player, clock } = world();
   const alice = await player('Alice', 3); // 3 Devikins: 3 posts a day
   const bob = await player('Bob', 50); // 50: 50 posts a day
-  const gid = await alice.createGroup('Fire Breeders', 'Trading Fire Devikins');
+  // Starting a group takes the voting threshold (10 Devikins at the last sign-in).
+  assert.deepEqual(await alice.groupCreateInfo().then((i) => [i.threshold === null || i.threshold === 10, i.nfts]), [true, 3]);
+  await assert.rejects(alice.createGroup('Too Small'), /at least 10 Devikins \(your last sign-in counted 3\)/);
+  await alice.listGroups();
+  assert.deepEqual(await alice.groupCreateInfo(), { threshold: 10, nfts: 3, allowed: false });
+  const gid = await alice.startGroup('Fire Breeders', 'Trading Fire Devikins');
   await alice.postToGroup(gid, 'Welcome, Fire fans!');
   await assert.rejects(alice.postToGroup(gid, 'and again'), /Not yet/);
   const next = await alice.nextGroupPostAt(gid);
@@ -490,7 +513,7 @@ test('groups: posts that come too early are hidden by every Hub; blocked players
   const { player, clock } = world();
   const alice = await player('Alice', 1);
   const bob = await player('Bob', 50);
-  const gid = await bob.createGroup('Open Talk'); // Bob runs it; Alice is a member (limit: 1 post a day)
+  const gid = await bob.startGroup('Open Talk'); // Bob runs it; Alice is a member (limit: 1 post a day)
   await alice.joinGroup(gid);
   await bob.checkMail();
   await alice.checkMail();
@@ -521,7 +544,7 @@ test('groups travel in the chat backup', async () => {
   const { lockBackup, unlockBackup } = await import('../src/backup.js');
   const { player, blank, clock } = world();
   const alice = await player('Alice', 3);
-  const gid = await alice.createGroup('Backup Club');
+  const gid = await alice.startGroup('Backup Club');
   await alice.postToGroup(gid, 'kept');
   const moved = await blank();
   await moved.restoreBackupData(await unlockBackup(await lockBackup(await alice.backupData(), 'password1', { rounds: 100000 }), 'password1'));
@@ -538,7 +561,7 @@ test('groups (review fixes): a fake key is refused, an old post sent again is dr
   const { player, clock } = world();
   const alice = await player('Alice', 3);
   const mallory = await player('Mallory', 10);
-  const gid = await alice.createGroup('Safe Group');
+  const gid = await alice.startGroup('Safe Group');
   await mallory.joinGroup(gid);
   await alice.checkMail();
   await mallory.checkMail();
@@ -592,7 +615,7 @@ test('groups: the owner may always answer (once a minute); several pinned messag
   const { player, clock } = world();
   const owner = await player('Owner', 1); // 1 Devikin: a member would have to wait 24 h
   const member = await player('Member', 1);
-  const gid = await owner.createGroup('Owner Rules');
+  const gid = await owner.startGroup('Owner Rules');
   await member.joinGroup(gid);
   await owner.checkMail();
   await member.checkMail();
@@ -626,7 +649,7 @@ test('removal votes: threshold from the game account, a paused accused, 48 h, re
   const cid = await player('Cid', 12);
   const dot = await player('Dot', 3); // below the threshold of 10
   const max = await player('Max', 12); // the accused
-  const gid = await owner.createGroup('Vote Club');
+  const gid = await owner.startGroup('Vote Club');
   await owner.setPins(gid, ['Be nice']);
   for (const p of [bea, cid, dot, max]) {
     await p.joinGroup(gid);
@@ -705,7 +728,7 @@ test('removal votes end early once the result can\'t change: removed, kept, or o
   const bea = await player('Bea', 12);
   const cid = await player('Cid', 12);
   const max = await player('Max', 5);
-  const gid = await owner.createGroup('Quick Votes');
+  const gid = await owner.startGroup('Quick Votes');
   for (const p of [bea, cid, max]) {
     await p.joinGroup(gid);
     await owner.checkMail();
@@ -734,7 +757,7 @@ test('removal votes end early: enough "no" keeps the member and lifts the pause;
   const dee = await player('Dee', 12);
   const eve = await player('Eve', 12);
   const max = await player('Max', 12);
-  const gid = await owner.createGroup('Fair Club');
+  const gid = await owner.startGroup('Fair Club');
   for (const p of [bea, cid, dee, eve, max]) {
     await p.joinGroup(gid);
     await owner.checkMail();
@@ -760,7 +783,7 @@ test('removal votes end early: enough "no" keeps the member and lifts the pause;
   // A second vote in a group of 4 (3 may vote): all yes, but one voter's
   // wallet is empty by the time it's counted - not certain any more, so it
   // stays open, and that wallet is checked again at the end.
-  const gid2 = await owner.createGroup('Second Club');
+  const gid2 = await owner.startGroup('Second Club');
   for (const p of [bea, cid, max]) {
     await p.joinGroup(gid2);
     await owner.checkMail();
@@ -789,7 +812,7 @@ test('removal votes: the owner may start one whatever they hold; their own "yes"
   const cid = await player('Cid', 12);
   const dee = await player('Dee', 12);
   const max = await player('Max', 12);
-  const gid = await owner.createGroup('Small Owner');
+  const gid = await owner.startGroup('Small Owner');
   for (const p of [bea, cid, dee, max]) {
     await p.joinGroup(gid);
     await owner.checkMail();
@@ -819,7 +842,7 @@ test('removal votes: too few votes means no removal', async () => {
   const owner = await player('Owner', 12);
   const bea = await player('Bea', 12);
   const max = await player('Max', 12);
-  const gid = await owner.createGroup('Small Club');
+  const gid = await owner.startGroup('Small Club');
   for (const p of [bea, max]) {
     await p.joinGroup(gid);
     await owner.checkMail();
@@ -842,7 +865,7 @@ test('removal votes: moving Devikins to a second wallet doesn\'t give extra vote
   const sly = await player('Sly', 12);
   const sly2 = await player('SlyTwo', 1); // Sly's second wallet, almost empty for now
   const max = await player('Max', 12);
-  const gid = await owner.createGroup('Fair Votes');
+  const gid = await owner.startGroup('Fair Votes');
   for (const p of [bea, cid, sly, sly2, max]) {
     await p.joinGroup(gid);
     await owner.checkMail();
@@ -873,7 +896,7 @@ test('removal votes (review fixes): leaving early or starting over doesn\'t dodg
   const bea = await player('Bea', 12);
   const cid = await player('Cid', 12);
   const max = await player('Max', 12);
-  const gid = await owner.createGroup('Strict Club');
+  const gid = await owner.startGroup('Strict Club');
   for (const p of [bea, cid, max]) {
     await p.joinGroup(gid);
     await owner.checkMail();
@@ -912,7 +935,7 @@ test('removal votes: a member who missed the new key gets it again; nobody can b
   const bea = await player('Bea', 12);
   const cid = await player('Cid', 12);
   const max = await player('Max', 12);
-  const gid = await owner.createGroup('Key Club');
+  const gid = await owner.startGroup('Key Club');
   for (const p of [bea, cid, max]) {
     await p.joinGroup(gid);
     await owner.checkMail();

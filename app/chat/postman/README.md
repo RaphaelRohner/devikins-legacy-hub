@@ -33,8 +33,8 @@ Keeps:
   30 days), and sealed **group envelopes** once per group for 30 days;
 - **open groups** (stage 3): name, description, owner (account number),
   members (account numbers and from which post on they may read), players
-  asking to join with the drop code they gave for that, and the owner's
-  sealed pinned message. The postman never has a group key – as long as
+  asking to join with the drop code they gave for that, the owner's
+  sealed pinned message, and since when only the owner is in it. The postman never has a group key – as long as
   it runs this code: a postman changed to cheat could invent a member or a
   join request and be handed a key. That's one reason the code is public;
 - the times of each player's contact requests (24 h), last group post,
@@ -82,6 +82,11 @@ held the threshold at the end (accepted, 22 Oct 2026).
   post every 10 seconds (the daily allowance - posts per 24 h = Devikins - is
   checked by every member's Hub), group envelopes up to 24 KB (a 2,000-character post fits),
   64 KB per 1:1 envelope;
+- groups: starting one takes as many Devikins as voting (the threshold,
+  counted at the last sign-in: the badge, checked, not stored), at most 5 per
+  player; a group nobody but its owner has been in for 30 days is removed
+  (unless someone is waiting to be let in). The list shows the biggest
+  groups first, then those with the latest post;
 - nicknames: look-alikes count as taken (spaces, `_ . -` ignored; 0 = O;
   1 = l = I).
 
@@ -108,8 +113,8 @@ someone who intercepted it (no request today is harmful to repeat).
 | `POST /drop/devices` | anyone with a drop code | that player's current devices |
 | `GET /mail` | device | the envelopes waiting for this device |
 | `POST /mail/done` | device | `{ids}` – delete them (picked up) |
-| `GET /groups` | signed-in | all open groups (name, description, owner, members; for members also activity) |
-| `POST /groups/create` | signed-in | `{name, description}` – a new open group (at most 5 per player) |
+| `GET /groups` | signed-in | all open groups (name, description, owner, members; biggest first, then the latest post), what starting one takes; for the owner of a group nobody else is in: when it goes |
+| `POST /groups/create` | signed-in ≥ threshold | `{name, description, badge}` – a new open group (at most 5 per player) |
 | `POST /groups/join` | signed-in | `{group, code}` – ask to join; `code` is a drop code of your own |
 | `GET /groups/joins?group=` | member | who is asking (nickname, devices, their code) |
 | `POST /groups/admit` | member | `{group, account}` – let them in (after sealing the group key for them) |

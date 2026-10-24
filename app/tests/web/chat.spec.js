@@ -43,6 +43,20 @@ async function startPostman() {
   };
 }
 
+/**
+ * A group of someone else in the list, ready to join. Groups only their
+ * owner is in yet are folded away under "New groups (N)".
+ */
+async function findGroup(page, name) {
+  const row = page.getByTestId('chat-group-other').filter({ hasText: name });
+  await expect(async () => {
+    const toggle = page.getByTestId('chat-groups-new-toggle');
+    if ((await row.count()) === 0 && (await toggle.isVisible()) && !(await page.getByText(/Only their owner is in them yet/).isVisible())) await toggle.click();
+    await expect(row).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 30_000 });
+  return row;
+}
+
 /** One player: a browser context with the fake servers, the postman and a pretend Klever extension. */
 async function openPlayer(browser, postman, wallet, { extension = true, openChat = true, kleverApp = false } = {}) {
   const context = await browser.newContext();
@@ -278,10 +292,17 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   test.setTimeout(180_000);
   const postman = await startPostman();
   // (Alice signs like the Klever app's own browser: base64 of the hex signature)
-  const alice = await openPlayer(browser, postman, await postman.newWallet(3), { kleverApp: true });
+  const aliceWallet = await postman.newWallet(3);
+  const alice = await openPlayer(browser, postman, aliceWallet, { kleverApp: true });
   const bob = await openPlayer(browser, postman, await postman.newWallet(24));
   await signInAs(alice.page, 'Alice');
   await signInAs(bob.page, 'Bob');
+
+  // Starting a group takes as many Devikins as voting (10 here; 24 Oct 2026)
+  await expect(alice.page.getByTestId('chat-group-new-too-few')).toContainText('Starting a group takes at least 10 Devikins, the same as voting (your last sign-in counted 3).');
+  await expect(alice.page.getByTestId('chat-group-new')).toHaveCount(0);
+  await aliceWallet.setHoldings(12);
+  await alice.page.getByTestId('chat-group-new-update').click();
 
   // Alice starts a group, pins rules and posts
   await alice.page.getByTestId('chat-group-new').click();
@@ -308,7 +329,9 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   // The owner may always answer (every 10 seconds)
   await expect(alice.page.getByTestId('chat-group-limit')).toContainText("As the group's owner you can always answer (one post every 10 seconds).");
 
-  // Bob finds it and asks to join; Alice's open Hub lets him in
+  // Bob finds it under "New groups" (only Alice is in it) and asks to join; Alice's open Hub lets him in
+  await expect(bob.page.getByTestId('chat-groups-new-toggle')).toContainText('New groups (1)', { timeout: 30_000 });
+  await bob.page.getByTestId('chat-groups-new-toggle').click();
   await expect(bob.page.getByTestId('chat-group-other')).toContainText('Fire Breeders');
   await expect(bob.page.getByTestId('chat-group-other')).toContainText('Trading Fire Devikins');
   await bob.page.getByTestId('chat-group-join').click();
@@ -350,8 +373,7 @@ test('removal votes: a member starts a vote with a reason, another supports it, 
   await alice.page.getByTestId('chat-group-create').click();
   await expect(alice.page.getByText('you started it')).toBeVisible();
   for (const p of [bob, max]) {
-    await expect(p.page.getByTestId('chat-group-other')).toContainText('Vote Club', { timeout: 30_000 });
-    await p.page.getByTestId('chat-group-join').click();
+    await (await findGroup(p.page, 'Vote Club')).getByTestId('chat-group-join').click();
     await expect(p.page.getByTestId('chat-group')).toContainText('Vote Club', { timeout: 30_000 });
     await p.page.getByTestId('chat-group').click();
   }

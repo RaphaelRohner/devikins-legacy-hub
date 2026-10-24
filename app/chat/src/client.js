@@ -52,7 +52,7 @@ export function createPostmanClient({ baseUrl, identity, fetchFn = (...a) => fet
     mailDone: (ids) => call('POST', '/mail/done', { ids }),
     leave: () => call('POST', '/leave', {}),
     groups: () => call('GET', '/groups'),
-    createGroup: ({ id, name, description, keyCheck }) => call('POST', '/groups/create', { id, name, description, keyCheck }),
+    createGroup: ({ id, name, description, keyCheck, badge }) => call('POST', '/groups/create', { id, name, description, keyCheck, badge }),
     myGroups: () => call('GET', '/groups/mine'),
     joinGroup: (group, code) => call('POST', '/groups/join', { group, code }),
     groupJoins: (group) => call('GET', `/groups/joins?group=${group}`),

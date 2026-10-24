@@ -36,7 +36,7 @@
 
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { issueBadge, BADGE_DAYS } from '../../src/badge.js';
+import { issueBadge, checkBadge, BADGE_DAYS } from '../../src/badge.js';
 import { isPublicKey } from '../../src/identity.js';
 import {
   contactRequestWait, DAY, MINUTE, MIN_POST_INTERVAL, nicknameKey,
@@ -66,6 +66,11 @@ export const DAILY_ACTIONS_PER_PLAYER = 1500;
 export const DAILY_DROPS_PER_CODE = 300;
 export const MAX_GROUPS_CREATED_PER_PLAYER = 5;
 export const MAX_GROUPS = 1000;
+/**
+ * A group nobody but its owner has joined for this long goes (Raphael,
+ * 24 Oct 2026: against dozens of empty groups crowding the list).
+ */
+export const OWNER_ONLY_GROUP_DAYS = 30;
 export const GROUP_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9 _.,'&!?()-]{1,38}[A-Za-z0-9.!?)])$/;
 export const MAX_GROUP_DESCRIPTION = 200;
 export const MAX_PINNED_CHARS = 32 * 1024;
@@ -158,9 +163,14 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
   for (const statement of SCHEMA) sql.exec(statement);
   // Columns added after a table first went live (stage 4: group keys renewed after a removal;
   // 23 Oct 2026: votes.closing = the result is already certain, count it now).
-  for (const [table, name, type] of [['groups', 'epoch', 'INTEGER NOT NULL DEFAULT 1'], ['groups', 'needs_rekey', 'INTEGER NOT NULL DEFAULT 0'], ['votes', 'closing', 'INTEGER NOT NULL DEFAULT 0']]) {
+  for (const [table, name, type] of [['groups', 'epoch', 'INTEGER NOT NULL DEFAULT 1'], ['groups', 'needs_rekey', 'INTEGER NOT NULL DEFAULT 0'], ['votes', 'closing', 'INTEGER NOT NULL DEFAULT 0'], ['groups', 'alone_since', 'INTEGER']]) {
     if (!sql.exec(`PRAGMA table_info(${table})`).toArray().some((c) => c.name === name)) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
   }
+  // groups.alone_since (24 Oct 2026): since when only the owner is in it
+  // (NULL = others are in it too). Groups that were already alone count
+  // from the first start with this rule.
+  sql.exec(`UPDATE groups SET alone_since = ? WHERE alone_since IS NULL
+    AND (SELECT COUNT(*) FROM group_members m WHERE m.grp = groups.id) = 1`, now()).toArray();
   const rows = (query, ...params) => sql.exec(query, ...params).toArray();
   const row = (query, ...params) => rows(query, ...params)[0];
   const run = (query, ...params) => { sql.exec(query, ...params).toArray(); };
@@ -252,6 +262,9 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       // The pinned message was the old owner's: the new owner pins anew.
       const before = row('SELECT pinned_at FROM groups WHERE id = ?', group).pinned_at ?? 0;
       run('UPDATE groups SET owner = ?, pinned = NULL, pinned_at = ? WHERE id = ?', next.account, Math.max(now(), before + 1), group);
+    }
+    if (row('SELECT COUNT(*) AS n FROM group_members WHERE grp = ?', group).n === 1) {
+      run('UPDATE groups SET alone_since = ? WHERE id = ? AND alone_since IS NULL', now(), group);
     }
     return { deleted: false };
   }
@@ -620,16 +633,18 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     // postman never has the key. From then on the postman hands the new
     // member only posts from after joining.
 
-    'GET /groups': ({ device, t }) => {
+    'GET /groups': async ({ device, t }) => {
       const account = verifiedAccount(device, t);
       const mine = new Set(rows('SELECT grp FROM group_members WHERE account = ?', account.id).map((r) => r.grp));
       const asking = new Set(rows('SELECT grp FROM group_joins WHERE account = ?', account.id).map((r) => r.grp));
       const banned = new Set(rows('SELECT grp FROM group_bans WHERE player = ?', account.wallet_fp).map((r) => r.grp));
       return {
         groups: rows(
-          `SELECT g.id, g.name, g.description, g.owner, g.pinned_at, g.key_check, g.epoch, a.nickname AS owner_nickname,
-             (SELECT COUNT(*) FROM group_members m WHERE m.grp = g.id) AS members
-           FROM groups g LEFT JOIN accounts a ON a.id = g.owner ORDER BY members DESC, g.created`,
+          // Biggest first, then the ones with the latest post (24 Oct 2026).
+          `SELECT g.id, g.name, g.description, g.owner, g.pinned_at, g.key_check, g.epoch, g.alone_since, a.nickname AS owner_nickname,
+             (SELECT COUNT(*) FROM group_members m WHERE m.grp = g.id) AS members,
+             (SELECT MAX(at) FROM posts p WHERE p.grp = g.id) AS last_post
+           FROM groups g LEFT JOIN accounts a ON a.id = g.owner ORDER BY members DESC, last_post IS NULL, last_post DESC, g.created`,
         ).map((g) => ({
           id: g.id,
           name: g.name,
@@ -642,7 +657,11 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
           banned: banned.has(g.id),
           keyCheck: g.key_check,
           epoch: g.epoch,
+          // For the owner of a group nobody else is in: when it goes.
+          removeAt: g.owner === account.id && g.alone_since ? g.alone_since + OWNER_ONLY_GROUP_DAYS * DAY : null,
         })),
+        // What starting a group takes (the same as voting).
+        createThreshold: await currentThreshold(),
       };
     },
 
@@ -676,9 +695,11 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       };
     },
 
-    'POST /groups/create': ({ device, body, t }) => {
+    'POST /groups/create': async ({ device, body, t }) => {
       const account = verifiedAccount(device, t);
       if (!account.nickname) refuse(400, 'Please choose a nickname first.');
+      // (asked first, so nothing below waits in between)
+      const threshold = await currentThreshold();
       if (!isGroupId(body.id) || row('SELECT 1 AS x FROM groups WHERE id = ?', body.id)) refuse(400, 'Please try again.');
       if (!HEX64.test(body.keyCheck || '')) refuse(400, 'Damaged request.');
       const name = typeof body.name === 'string' ? body.name.trim().replace(/\s+/g, ' ') : '';
@@ -691,10 +712,17 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       if (row('SELECT COUNT(*) AS n FROM groups').n >= MAX_GROUPS) refuse(507, 'The postman has as many groups as it can hold.');
       const nameKey = nicknameKey(name);
       if (row('SELECT id FROM groups WHERE name_key = ?', nameKey)) refuse(409, 'A group with this name exists already.');
+      // Starting a group takes as many Devikins as voting (Raphael, 24 Oct
+      // 2026), counted at the last sign-in: the badge this device was given.
+      const badge = checkBadge(body.badge, { postmanPublicKey: postman.publicKey, holder: device, at: t });
+      if (!badge.ok || (badge.account !== null && badge.account !== account.id)) refuse(403, 'Please sign in with your wallet again (it is checked once a week).');
+      if (badge.nfts < threshold) {
+        refuse(403, `Starting a group takes at least ${threshold} Devikins (your last sign-in counted ${badge.nfts}). "Update my holdings" counts again.`);
+      }
       spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
       const id = body.id;
-      run('INSERT INTO groups (id, name, name_key, description, owner, created, key_check) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        id, name, nameKey, description, account.id, t, body.keyCheck);
+      run('INSERT INTO groups (id, name, name_key, description, owner, created, key_check, alone_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        id, name, nameKey, description, account.id, t, body.keyCheck, t);
       run('INSERT INTO group_members (grp, account, joined_seq, joined_at) VALUES (?, ?, 0, ?)', id, account.id, t);
       return { id, name };
     },
@@ -744,6 +772,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       const lastSeq = row('SELECT MAX(seq) AS s FROM posts WHERE grp = ?', group).s ?? 0;
       dropJoin(group, join.account);
       run('INSERT OR IGNORE INTO group_members (grp, account, joined_seq, joined_at) VALUES (?, ?, ?, ?)', group, join.account, lastSeq, t);
+      run('UPDATE groups SET alone_since = NULL WHERE id = ?', group);
       return { admitted: true };
     },
 
@@ -1014,6 +1043,9 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     run('DELETE FROM lastpost WHERE at < ?', t - DAY);
     run('DELETE FROM budget WHERE day < ?', Math.floor(t / DAY) - 1);
     for (const j of rows('SELECT grp, account FROM group_joins WHERE at < ?', t - JOIN_WAIT_DAYS * DAY)) dropJoin(j.grp, j.account);
+    // Groups only their owner has been in for 30 days (unless someone is waiting to be let in).
+    for (const g of rows(`SELECT id FROM groups WHERE alone_since IS NOT NULL AND alone_since < ?
+        AND NOT EXISTS (SELECT 1 FROM group_joins j WHERE j.grp = groups.id)`, t - OWNER_ONLY_GROUP_DAYS * DAY)) deleteGroup(g.id);
     // Players who haven't signed in for half a year: their account, nickname,
     // devices, drop codes and waiting mail go (they can simply sign in again).
     for (const gone of rows('SELECT id FROM accounts WHERE verified_until < ?', t - FORGET_AFTER)) {

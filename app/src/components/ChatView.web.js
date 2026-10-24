@@ -56,6 +56,8 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
   const [results, setResults] = useState(null);
   const [draft, setDraft] = useState('');
   const [groups, setGroups] = useState(null);
+  // What starting a group takes, and what this device's sign-in counted.
+  const [createInfo, setCreateInfo] = useState(null);
   const [openGroupId, setOpenGroupId] = useState(null);
   const [groupPosts, setGroupPosts] = useState([]);
   const [groupNext, setGroupNext] = useState(null);
@@ -81,6 +83,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
         // The full group list is asked for at most every 6th mail check - once a
         // minute - or right after an action (to keep the postman's requests low).
         setGroups(await m.listGroups({ maxAgeMs: freshGroups ? 0 : 6 * MAIL_CHECK_EVERY_MS }));
+        setCreateInfo(await m.groupCreateInfo());
       } catch {
         // (shown again with the next check)
       }
@@ -200,6 +203,8 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
   // the same wallet refreshes that count; nothing else changes.
   const updateHoldings = (groupId) => act(async () => {
     await signInSteps();
+    setCreateInfo(await messenger.groupCreateInfo());
+    if (!groupId) return;
     setGroupNext(await messenger.nextGroupPostAt(groupId));
     setGroupVotes(await messenger.groupVotes(groupId).catch(() => null));
   });
@@ -538,6 +543,8 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
 
         <GroupsCard
           groups={groups}
+          createInfo={createInfo}
+          onUpdateHoldings={() => updateHoldings(null)}
           busy={busy}
           onOpen={openGroupThread}
           onJoin={(id) => act(() => messenger.joinGroup(id))}

@@ -470,9 +470,9 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       if (!isNewEpoch && mine.status !== GROUP_STATUS.ASKING && mine.key) return 'ignored';
       // Only the group's real (current) key: it must match the fingerprint
       // the postman keeps for it (nobody can hand us a fake one).
-      const { groups } = await postman.groups();
+      const { groups, createThreshold } = await postman.groups();
       // (A fresh list: the screen shows us as a member straight away, not after the cache runs out.)
-      groupsCache = { at: now(), groups };
+      groupsCache = { at: now(), groups, createThreshold: createThreshold ?? null };
       const there = groups.find((x) => x.id === g.id);
       // The key AND its number must be the group's current ones.
       if (!there || g.epoch !== there.epoch || groupKeyCheck(g.id, g.key) !== there.keyCheck) return 'fake key';
@@ -626,7 +626,10 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
    */
   let groupsCache = null;
   async function listGroups({ maxAgeMs = 0 } = {}) {
-    if (!groupsCache || maxAgeMs <= 0 || now() - groupsCache.at > maxAgeMs) groupsCache = { at: now(), groups: (await postman.groups()).groups };
+    if (!groupsCache || maxAgeMs <= 0 || now() - groupsCache.at > maxAgeMs) {
+      const r = await postman.groups();
+      groupsCache = { at: now(), groups: r.groups, createThreshold: r.createThreshold ?? null };
+    }
     const { groups } = groupsCache;
     const local = new Map((await all('SELECT * FROM chat_groups')).map((r) => [r.id, groupRow(r)]));
     // Groups that are gone (or that we're no longer in) are forgotten here too.
@@ -652,6 +655,19 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     });
   }
 
+  /**
+   * May this device start a group? Starting one takes the voting threshold
+   * (24 Oct 2026), counted by the last sign-in (the badge).
+   * → { threshold, nfts, allowed }   (threshold null = not known yet)
+   */
+  async function groupCreateInfo() {
+    const threshold = groupsCache?.createThreshold ?? null;
+    const badge = await getMe('badge');
+    const check = badge ? checkBadge(badge, { postmanPublicKey: await postmanKey(), holder: identity.publicKey, at: now() }) : { ok: false };
+    const nfts = check.ok ? check.nfts : 0;
+    return { threshold, nfts, allowed: threshold === null || nfts >= threshold };
+  }
+
   async function forgetGroup(id) {
     for (const table of ['chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_names']) await run(`DELETE FROM ${table} WHERE grp = ?`, [id]);
     await run('DELETE FROM chat_groups WHERE id = ?', [id]);
@@ -667,7 +683,8 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
   async function createGroup(name, description = '') {
     const id = randomCode().slice(0, 32);
     const key = randomCode();
-    const { name: saved } = await postman.createGroup({ id, name, description, keyCheck: groupKeyCheck(id, key) });
+    // (The postman checks the holdings in this device's badge: starting a group takes the voting threshold.)
+    const { name: saved } = await postman.createGroup({ id, name, description, keyCheck: groupKeyCheck(id, key), badge: await getMe('badge') });
     groupsCache = null;
     await run('INSERT INTO chat_groups (id, name, description, owner, is_owner, status, key, epoch, joined_at) VALUES (?, ?, ?, ?, 1, ?, ?, 1, ?)',
       [id, saved, description, await getMe('nickname'), GROUP_STATUS.MEMBER, key, now()]);
@@ -1103,6 +1120,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
 
   return {
     listGroups,
+    groupCreateInfo,
     createGroup,
     joinGroup,
     leaveGroup,

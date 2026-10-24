@@ -2,8 +2,11 @@
  * ChatGroupView.web.js — open groups in the Chat screen (stage 3, website)
  *
  * GroupsCard: the list on the Chat overview – every open group, the ones
- * you're in first (with new posts counted), "Join" for the others, and
- * "Create a group".
+ * you're in first (with new posts counted), "Join" for the others (biggest
+ * first, then the latest post), and "Create a group". Groups only their
+ * owner is in yet are folded away under "New groups (N)", and go after 30
+ * days if nobody joins; starting one takes as many Devikins as voting
+ * (Raphael, 24 Oct 2026: against dozens of empty groups crowding the list).
  * ChatGroupView: one group – one line each (opens on a tap) for the owner's
  * pinned messages, open votes (red) and the members; then the posts,
  * and the box to write, which says openly when your next post is possible
@@ -53,14 +56,51 @@ function Button({ label, onPress, disabled, quiet, testID }) {
   );
 }
 
-export function GroupsCard({ groups, busy, onOpen, onJoin, onCreate }) {
+function dayLabel(ms) {
+  return new Date(ms).toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+
+export function GroupsCard({ groups, createInfo, busy, onOpen, onJoin, onCreate, onUpdateHoldings }) {
   const { colors } = useTheme();
   const [creating, setCreating] = useState(false);
+  const [showNew, setShowNew] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const list = groups || [];
   const mine = list.filter((g) => g.member);
+  // (the postman's order: biggest first, then the latest post)
   const others = list.filter((g) => !g.member);
+  // Only their owner in them yet - unless you've asked to join or are in it.
+  const isNew = (g) => g.members <= 1 && !g.asking && !g.needsKey && !g.banned;
+  const established = others.filter((g) => !isNew(g));
+  const newOnes = others.filter(isNew);
+  const tooFew = createInfo && !createInfo.allowed;
+
+  const otherRow = (g) => (
+    <View key={g.id} style={[styles.row, styles.groupRow, { borderColor: colors.border }]} testID="chat-group-other">
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.rowName, { color: colors.text }]}>{g.name}</Text>
+        {g.description ? <Text style={[styles.note, { color: colors.text }]}>{g.description}</Text> : null}
+        <Text style={[styles.note, { color: colors.secondaryText }]}>
+          {g.members} member{g.members === 1 ? '' : 's'} · by {g.owner ?? '?'}
+          {g.needsKey ? ' · you are in it, but this browser has no key yet' : ''}
+        </Text>
+      </View>
+      {g.banned ? (
+        <Text style={[styles.note, { color: colors.secondaryText, maxWidth: 220 }]}>
+          You were removed by a vote. Only its owner can let you back in (you can ask them in a 1:1 chat).
+        </Text>
+      ) : g.needsKey ? (
+        <Button label="Get the key" onPress={() => onJoin(g.id)} disabled={busy} testID="chat-group-getkey" />
+      ) : g.asking ? (
+        <Text style={[styles.note, { color: colors.secondaryText, maxWidth: 220 }]} testID="chat-group-waiting">
+          Waiting to be let in – happens as soon as a member's Hub is open.
+        </Text>
+      ) : (
+        <Button label="Join" onPress={() => onJoin(g.id)} disabled={busy} testID="chat-group-join" />
+      )}
+    </View>
+  );
 
   return (
     <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="chat-groups">
@@ -76,6 +116,11 @@ export function GroupsCard({ groups, busy, onOpen, onJoin, onCreate }) {
             <Text style={[styles.note, { color: colors.secondaryText }]}>
               {g.members} member{g.members === 1 ? '' : 's'}{g.isOwner ? ' · you started it' : ` · by ${g.owner ?? '?'}`}
             </Text>
+            {g.removeAt ? (
+              <Text style={[styles.note, { color: colors.secondaryText }]} testID="chat-group-remove-at">
+                Nobody else has joined yet: the group is removed on {dayLabel(g.removeAt)} unless someone does.
+              </Text>
+            ) : null}
           </View>
           {g.unread > 0 ? (
             <View style={[styles.badge, { backgroundColor: colors.primary }]}>
@@ -84,31 +129,22 @@ export function GroupsCard({ groups, busy, onOpen, onJoin, onCreate }) {
           ) : null}
         </TouchableOpacity>
       ))}
-      {others.map((g) => (
-        <View key={g.id} style={[styles.row, styles.groupRow, { borderColor: colors.border }]} testID="chat-group-other">
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.rowName, { color: colors.text }]}>{g.name}</Text>
-            {g.description ? <Text style={[styles.note, { color: colors.text }]}>{g.description}</Text> : null}
-            <Text style={[styles.note, { color: colors.secondaryText }]}>
-              {g.members} member{g.members === 1 ? '' : 's'} · by {g.owner ?? '?'}
-              {g.needsKey ? ' · you are in it, but this browser has no key yet' : ''}
-            </Text>
-          </View>
-          {g.banned ? (
-            <Text style={[styles.note, { color: colors.secondaryText, maxWidth: 220 }]}>
-              You were removed by a vote. Only its owner can let you back in (you can ask them in a 1:1 chat).
-            </Text>
-          ) : g.needsKey ? (
-            <Button label="Get the key" onPress={() => onJoin(g.id)} disabled={busy} testID="chat-group-getkey" />
-          ) : g.asking ? (
-            <Text style={[styles.note, { color: colors.secondaryText, maxWidth: 220 }]} testID="chat-group-waiting">
-              Waiting to be let in – happens as soon as a member's Hub is open.
-            </Text>
-          ) : (
-            <Button label="Join" onPress={() => onJoin(g.id)} disabled={busy} testID="chat-group-join" />
-          )}
-        </View>
-      ))}
+      {established.map((g) => otherRow(g))}
+      {newOnes.length > 0 ? (
+        <TouchableOpacity onPress={() => setShowNew(!showNew)} testID="chat-groups-new-toggle" accessibilityRole="button">
+          <Text style={[styles.link, { color: colors.primary }]}>
+            New groups ({newOnes.length}) {showNew ? '▴' : '▸'}
+          </Text>
+        </TouchableOpacity>
+      ) : null}
+      {showNew ? (
+        <>
+          <Text style={[styles.note, { color: colors.secondaryText }]}>
+            Only their owner is in them yet. A group nobody joins within 30 days is removed.
+          </Text>
+          {newOnes.map((g) => otherRow(g))}
+        </>
+      ) : null}
       {creating ? (
         <View style={styles.form}>
           <TextInput
@@ -146,6 +182,16 @@ export function GroupsCard({ groups, busy, onOpen, onJoin, onCreate }) {
             />
             <Button label="Cancel" quiet onPress={() => setCreating(false)} />
           </View>
+        </View>
+      ) : tooFew ? (
+        <View style={styles.form} testID="chat-group-new-too-few">
+          <Text style={[styles.note, { color: colors.secondaryText }]}>
+            Starting a group takes at least {createInfo.threshold} Devikins, the same as voting (your last sign-in counted{' '}
+            {createInfo.nfts}). You can join any group.
+          </Text>
+          <TouchableOpacity onPress={onUpdateHoldings} disabled={busy} testID="chat-group-new-update">
+            <Text style={[styles.link, { color: colors.primary }]}>Update my holdings</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <TouchableOpacity onPress={() => setCreating(true)} testID="chat-group-new">

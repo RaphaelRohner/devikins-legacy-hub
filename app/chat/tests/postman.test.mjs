@@ -16,8 +16,9 @@ import { MAX_GROUP_ENVELOPE_CHARS } from '../src/group.js';
 import { KEEP_FOR as FAKE_KEEP_FOR } from '../src/fakePostman.js';
 import {
   createPostOffice, KEEP_FOR, MAX_ENVELOPE_CHARS, MAX_GROUP_ENVELOPE_CHARS as POSTMAN_GROUP_MAX, MAX_DEVICES, MAX_WAITING_PER_DEVICE,
-  DAILY_DROPS_PER_CODE, DAILY_ACTIONS_PER_PLAYER, MAX_BODY_CHARS, nicknameKey,
+  DAILY_DROPS_PER_CODE, DAILY_ACTIONS_PER_PLAYER, MAX_BODY_CHARS, nicknameKey, OWNER_ONLY_GROUP_DAYS,
 } from '../postman/src/postOffice.js';
+import { GAME_ACCOUNT } from '../src/rules.js';
 import { makeAuthHeader } from '../src/httpAuth.js';
 import { devikinsHeld, signatureBytes, walletPublicKey } from '../postman/src/kleverProof.js';
 
@@ -42,7 +43,8 @@ const signAs = (wallet, text) => Buffer.from(signMessageSync(prepareKlvMessage(t
 
 function setUp({ sql = standInSql(), kleverDown = false } = {}) {
   const clock = { t: Date.UTC(2026, 9, 21, 12, 0, 0) };
-  const holdings = new Map();
+  // The game account's holdings set the voting threshold (and what starting a group takes): 10.
+  const holdings = new Map([[GAME_ACCOUNT, 1066763]]);
   const fetchKlever = async (url) => {
     if (kleverDown) return new Response('', { status: 503 });
     const address = url.split('/address/')[1];
@@ -64,7 +66,25 @@ function setUp({ sql = standInSql(), kleverDown = false } = {}) {
     assert.equal(start.status, 200, JSON.stringify(start.body));
     return call(device, 'POST', '/signin/finish', { code: start.body.code, wallet: wallet.address, signature: signAs(wallet, start.body.text) });
   };
-  return { office, call, signIn, clock, holdings, sql };
+  /** The wallet now holds `nfts`; the player signs in again ("Update my holdings"): a new badge. */
+  const setHoldings = async (p, nfts) => {
+    p.wallet.nfts = nfts;
+    const r = await signIn(p.device, p.wallet);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    p.badge = r.body.badge;
+  };
+  /**
+   * Starting a group takes the threshold (10) at the last sign-in: a player
+   * below it holds 10 just long enough (most tests are about other things).
+   */
+  const startGroup = async (p, body) => {
+    const before = p.wallet.nfts;
+    if (before < 10) await setHoldings(p, 10);
+    const r = await call(p.device, 'POST', '/groups/create', { ...body, badge: p.badge });
+    if (before < 10) await setHoldings(p, before);
+    return r;
+  };
+  return { office, call, signIn, clock, holdings, sql, setHoldings, startGroup };
 }
 
 /** Two signed-in players with nicknames. */
@@ -346,13 +366,19 @@ test('mail waits until collected – or 30 days; a device only sees and deletes 
 });
 
 test('groups: created at the postman, listed, joined with a member\'s help; new members get only newer posts', async () => {
-  const { office, call, clock, a, b } = await twoPlayers();
+  const { office, call, clock, a, b, startGroup, setHoldings } = await twoPlayers();
   const newGroup = (name, description) => {
     const g = createGroup();
     return { g, body: { id: g.id, name, description, keyCheck: groupKeyCheck(g.id, g.key) } };
   };
   const fire = newGroup('Fire Breeders', 'Trading Fire Devikins');
-  const created = await call(a.device, 'POST', '/groups/create', fire.body);
+  // Starting a group takes the voting threshold (10), as counted at the last sign-in.
+  const tooFew = await call(a.device, 'POST', '/groups/create', { ...fire.body, badge: a.badge });
+  assert.deepEqual([tooFew.status, tooFew.body.error], [403, 'Starting a group takes at least 10 Devikins (your last sign-in counted 3). "Update my holdings" counts again.']);
+  assert.equal((await call(b.device, 'POST', '/groups/create', fire.body)).status, 403); // no badge
+  assert.equal((await call(b.device, 'POST', '/groups/create', { ...fire.body, badge: a.badge })).status, 403); // someone else's
+  assert.equal((await call(b.device, 'GET', '/groups')).body.createThreshold, 10);
+  const created = await startGroup(a, fire.body);
   assert.equal(created.status, 200, JSON.stringify(created.body));
   const group = fire.g;
   assert.equal((await call(a.device, 'POST', '/groups/create', fire.body)).status, 400); // same id again
@@ -426,12 +452,70 @@ test('groups: created at the postman, listed, joined with a member\'s help; new 
 
   // Group posts are deleted after 30 days
   const second = newGroup('Second group');
-  const g2 = (await call(a.device, 'POST', '/groups/create', second.body)).body.id;
+  const g2 = (await startGroup(a, second.body)).body.id;
   clock.t += MINUTE;
   await call(a.device, 'POST', '/group/post', { envelope: sealGroupPost({ group: { id: g2, epoch: 1, key: group.key }, from: a.device, text: 'x', badge: a.badge, now: clock.t }) });
   clock.t += 30 * DAY + 1000;
   office.cleanUp();
+  // (Nobody but Alice joined in 30 days: the group went too.)
+  await setHoldings(a, 3); // (her weekly sign-in)
+  assert.equal((await call(a.device, 'GET', '/groups')).body.groups.length, 0);
   await call(a.device, 'POST', '/signin/start');
+});
+
+test('the group list: biggest first, then the latest post; a group only its owner is in goes after 30 days', async () => {
+  const { office, call, clock, a, b, startGroup, setHoldings } = await twoPlayers();
+  const make = async (who, name) => {
+    const g = createGroup();
+    const r = await startGroup(who, { id: g.id, name, keyCheck: groupKeyCheck(g.id, g.key) });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    return g;
+  };
+  const quiet = await make(b, 'Quiet');
+  clock.t += MINUTE;
+  const busy = await make(b, 'Busy');
+  clock.t += MINUTE;
+  const big = await make(a, 'Big');
+  // Bob joins Alice's "Big" (her Hub lets him in)
+  const code = randomCode();
+  await call(b.device, 'POST', '/codes', { add: [code] });
+  await call(b.device, 'POST', '/groups/join', { group: big.id, code });
+  const joins = (await call(a.device, 'GET', `/groups/joins?group=${big.id}`)).body.joins;
+  await call(a.device, 'POST', '/groups/admit', { group: big.id, account: joins[0].account });
+  clock.t += MINUTE;
+  await call(b.device, 'POST', '/group/post', { envelope: sealGroupPost({ group: busy, from: b.device, text: 'anyone?', badge: b.badge, now: clock.t }) });
+
+  let list = (await call(b.device, 'GET', '/groups')).body.groups;
+  assert.deepEqual(list.map((g) => [g.name, g.members]), [['Big', 2], ['Busy', 1], ['Quiet', 1]]);
+  // Only the owner sees when a group of their own nobody joined goes
+  assert.deepEqual(list.map((g) => g.removeAt), [null, clock.t - 2 * MINUTE + OWNER_ONLY_GROUP_DAYS * DAY, clock.t - 3 * MINUTE + OWNER_ONLY_GROUP_DAYS * DAY]);
+  assert.deepEqual((await call(a.device, 'GET', '/groups')).body.groups.map((g) => g.removeAt), [null, null, null]);
+
+  // (The weekly sign-in, while time passes)
+  const signInAgain = async () => { await setHoldings(a, a.wallet.nfts); await setHoldings(b, b.wallet.nfts); };
+  clock.t += 25 * DAY;
+  await signInAgain();
+  // Alice asks to join "Quiet": a group with someone waiting to be let in stays
+  const code2 = randomCode();
+  await call(a.device, 'POST', '/codes', { add: [code2] });
+  await call(a.device, 'POST', '/groups/join', { group: quiet.id, code: code2 });
+  clock.t += 5 * DAY - 5 * MINUTE;
+  office.cleanUp();
+  assert.equal((await call(b.device, 'GET', '/groups')).body.groups.length, 3); // not yet 30 days
+  clock.t += 10 * MINUTE;
+  office.cleanUp();
+  list = (await call(b.device, 'GET', '/groups')).body.groups;
+  assert.deepEqual(list.map((g) => g.name), ['Big', 'Quiet']); // "Busy" went
+
+  // Alone again: Bob leaves "Big", and Alice has 30 days from then
+  await call(b.device, 'POST', '/groups/leave', { group: big.id });
+  clock.t += 29 * DAY;
+  office.cleanUp();
+  await signInAgain();
+  assert.ok((await call(a.device, 'GET', '/groups')).body.groups.some((g) => g.name === 'Big'));
+  clock.t += 2 * DAY;
+  office.cleanUp();
+  assert.ok(!(await call(a.device, 'GET', '/groups')).body.groups.some((g) => g.name === 'Big'));
 });
 
 test('leaving: the device is forgotten; with the last device the account and nickname go too', async () => {
@@ -538,7 +622,7 @@ test('daily allowances: drops per code, actions per player; a code already used 
 });
 
 test('too-big or damaged requests are refused, not crashing the postman', async () => {
-  const { office, call, a, b } = await twoPlayers();
+  const { office, call, a, b, startGroup } = await twoPlayers();
   const url = `${BASE}/drop`;
   assert.equal((await office.handle({ method: 'POST', url, bodyText: 'x'.repeat(MAX_BODY_CHARS + 1) })).status, 413);
   let deep = 'null';
@@ -550,7 +634,7 @@ test('too-big or damaged requests are refused, not crashing the postman', async 
   assert.equal((await call(null, 'POST', '/drop', { code: [code], items: [] })).status, 403);
   // The longest possible group post fits the postman's group limit.
   const group = createGroup();
-  await call(a.device, 'POST', '/groups/create', { id: group.id, name: 'Longest posts', keyCheck: groupKeyCheck(group.id, group.key) });
+  await startGroup(a, { id: group.id, name: 'Longest posts', keyCheck: groupKeyCheck(group.id, group.key) });
   const longest = sealGroupPost({ group, from: a.device, text: '\u{FFFD}'.repeat(2000), badge: a.badge });
   assert.ok(JSON.stringify(longest).length <= POSTMAN_GROUP_MAX, String(JSON.stringify(longest).length));
   assert.equal((await call(a.device, 'POST', '/group/post', { envelope: longest })).status, 200);
