@@ -21,7 +21,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { getMessenger } from '../api/chatStore';
-import { isExtensionAvailable, signTextWithExtension } from '../api/kleverExtension';
+import { isExtensionAvailable, signTextWithExtension, lastSigningDetails } from '../api/kleverExtension';
 import { MAIL_CHECK_EVERY_MS } from '../constants/chat';
 import { CONTACT_STATUS } from '../../chat/src/index.js';
 import ChatGroupView, { GroupsCard } from './ChatGroupView.web';
@@ -273,7 +273,33 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
     </TouchableOpacity>
   );
 
-  const errorLine = error ? <Text style={[styles.note, { color: colors.cancelText }]} testID="chat-error">{error}</Text> : null;
+  // When a wallet's signature isn't accepted (e.g. the Klever app's own
+  // browser, 24 Oct 2026): what the wallet gave back, to copy and send.
+  const signatureRefused = /signature doesn't match/i.test(error);
+  const errorLine = error ? (
+    <View style={{ gap: 6 }}>
+      <Text style={[styles.note, { color: colors.cancelText }]} testID="chat-error">{error}</Text>
+      {signatureRefused ? (
+        <>
+          <Text style={[styles.note, { color: colors.secondaryText }]}>
+            Your wallet app signed in a way the Hub doesn't know yet. These details (only public things: the one-time text, your public address and that signature) help to fix it:
+          </Text>
+          <Text selectable style={[styles.note, { color: colors.text, fontFamily: 'monospace' }]} testID="chat-sign-details">{lastSigningDetails()}</Text>
+          <TouchableOpacity
+            onPress={() => {
+              try {
+                navigator.clipboard?.writeText(lastSigningDetails());
+              } catch (e) {
+                // (select the text above instead)
+              }
+            }}
+          >
+            <Text style={[styles.note, { color: colors.primary, fontWeight: '700' }]}>Copy the details</Text>
+          </TouchableOpacity>
+        </>
+      ) : null}
+    </View>
+  ) : null;
   const card = (children) => (
     <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>{children}</View>
   );

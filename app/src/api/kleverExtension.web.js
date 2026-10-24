@@ -126,7 +126,25 @@ export async function signTextWithExtension(text) {
     if (/reject|denied|cancel/i.test(msg)) throw new Error('Signing was cancelled in the extension.');
     throw new Error(`The extension could not sign: ${msg}`);
   }
+  const raw = signature;
+  lastSigning = { text, address, raw, at: new Date().toISOString() };
   if (signature && typeof signature === 'object') signature = signature.signature ?? signature.hex ?? '';
   if (typeof signature !== 'string' || !signature) throw new Error('The extension gave no signature. Please try again.');
   return { address, signature };
+}
+
+// The last signing, for "Copy the details" when a wallet's signature isn't
+// accepted (24 Oct 2026: the Klever app's own browser signs, but the
+// signature didn't match - this shows what it actually gave back). Only
+// public things: the one-time text, the public address and the signature
+// of that text (useless for anything else).
+let lastSigning = null;
+export function lastSigningDetails() {
+  let api = [];
+  try {
+    api = Object.keys(window.kleverWeb || {}).sort();
+  } catch (e) {
+    api = [];
+  }
+  return JSON.stringify({ ...lastSigning, api, agent: typeof navigator !== 'undefined' ? navigator.userAgent : '' }, null, 1);
 }

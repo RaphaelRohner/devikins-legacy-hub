@@ -21,3 +21,8 @@ export async function sendKlvWithExtension() {
 export async function signTextWithExtension() {
   throw new Error('The Klever browser extension is only available on the website.');
 }
+
+// (Website only - see kleverExtension.web.js.)
+export function lastSigningDetails() {
+  return '';
+}
