@@ -351,6 +351,9 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   // Alice sees Bob's post with his name
   await expect(alice.page.getByText('Hi everyone')).toBeVisible();
   await expect(alice.page.getByText('Bob', { exact: true })).toBeVisible();
+  // Laid out like Telegram / WhatsApp (24 Oct 2026): a date line, Bob's initial as his avatar
+  await expect(alice.page.getByTestId('chat-day').first()).toHaveText('Today');
+  await expect(alice.page.getByText('B', { exact: true })).toBeVisible();
 
   await alice.context.close();
   await bob.context.close();

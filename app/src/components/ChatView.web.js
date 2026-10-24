@@ -25,15 +25,9 @@ import { isExtensionAvailable, signTextWithExtension, lastSigningDetails } from 
 import { MAIL_CHECK_EVERY_MS } from '../constants/chat';
 import { CONTACT_STATUS } from '../../chat/src/index.js';
 import ChatGroupView, { GroupsCard } from './ChatGroupView.web';
+import ChatMessages from './ChatMessages';
 import { MAX_TEXT_LENGTH, nicknameKey } from '../../chat/src/rules.js';
 
-function timeLabel(ms) {
-  const d = new Date(ms);
-  const now = new Date();
-  const hhmm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (d.toDateString() === now.toDateString()) return hhmm;
-  return `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${hhmm}`;
-}
 
 function minutesUntil(ms) {
   const min = Math.ceil((ms - Date.now()) / 60000);
@@ -443,7 +437,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
         </View>
         <ScrollView
           ref={scrollRef}
-          style={styles.thread}
+          style={[styles.thread, { borderColor: colors.border }]}
           contentContainerStyle={styles.threadContent}
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
         >
@@ -452,20 +446,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
               {open.status === CONTACT_STATUS.OUTGOING ? `Waiting for ${open.nickname} to accept your request.` : 'No messages yet.'}
             </Text>
           ) : null}
-          {thread.map((m) => (
-            <View
-              key={m.id}
-              style={[
-                styles.bubble,
-                m.mine
-                  ? { alignSelf: 'flex-end', backgroundColor: colors.primary }
-                  : { alignSelf: 'flex-start', backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderWidth: 1 },
-              ]}
-            >
-              <Text selectable style={[styles.bubbleText, { color: m.mine ? colors.primaryText : colors.text }]}>{m.text}</Text>
-              <Text style={[styles.bubbleTime, { color: m.mine ? colors.primaryText : colors.secondaryText }]}>{timeLabel(m.mine ? m.sentAt : m.receivedAt)}</Text>
-            </View>
-          ))}
+          <ChatMessages items={thread.map((m) => ({ id: m.id, mine: m.mine, author: m.mine ? 'me' : 'them', text: m.text, at: m.mine ? m.sentAt : m.receivedAt }))} />
         </ScrollView>
         {open.ended ? (
           <Text style={[styles.note, styles.pad, { color: colors.secondaryText }]}>
@@ -638,8 +619,8 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 12, fontWeight: '700' },
   pad: { marginHorizontal: 12 },
   threadActions: { flexDirection: 'row', gap: 8, marginHorizontal: 12, marginBottom: 8 },
-  thread: { flex: 1 },
-  threadContent: { padding: 12, gap: 8, maxWidth: 720, width: '100%' },
+  thread: { flex: 1, marginTop: 6, borderTopWidth: 1 },
+  threadContent: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 12, maxWidth: 720, width: '100%' },
   bubble: { maxWidth: '80%', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, gap: 2 },
   bubbleText: { fontSize: 15, lineHeight: 20 },
   bubbleTime: { fontSize: 11, opacity: 0.8, alignSelf: 'flex-end' },

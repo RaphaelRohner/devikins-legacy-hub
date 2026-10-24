@@ -22,13 +22,8 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert 
 import { useTheme } from '../context/ThemeContext';
 import { MAX_TEXT_LENGTH } from '../../chat/src/rules.js';
 import { MAX_PINS } from '../../chat/src/group.js';
+import ChatMessages from './ChatMessages';
 
-function timeLabel(ms) {
-  const d = new Date(ms);
-  const hhmm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (d.toDateString() === new Date().toDateString()) return hhmm;
-  return `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${hhmm}`;
-}
 
 function waitLabel(ms) {
   const min = Math.ceil(ms / 60000);
@@ -561,28 +556,17 @@ export default function ChatGroupView({
 
       <ScrollView
         ref={scrollRef}
-        style={{ flex: 1 }}
+        style={[styles.threadArea, { borderColor: colors.border }]}
         contentContainerStyle={styles.thread}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
       >
         {posts.length === 0 ? (
           <Text style={[styles.note, { color: colors.secondaryText, textAlign: 'center' }]}>No posts yet since you joined.</Text>
         ) : null}
-        {posts.map((p) => (
-          <View
-            key={p.id}
-            style={[
-              styles.bubble,
-              p.mine
-                ? { alignSelf: 'flex-end', backgroundColor: colors.primary }
-                : { alignSelf: 'flex-start', backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderWidth: 1 },
-            ]}
-          >
-            {!p.mine ? <Text style={[styles.author, { color: colors.text }]}>{p.nickname || 'a former member'}</Text> : null}
-            <Text selectable style={[styles.text, { color: p.mine ? colors.primaryText : colors.text }]}>{p.text}</Text>
-            <Text style={[styles.time, { color: p.mine ? colors.primaryText : colors.secondaryText }]}>{timeLabel(p.receivedAt)}</Text>
-          </View>
-        ))}
+        <ChatMessages
+          showAuthors
+          items={posts.map((p) => ({ id: p.id, mine: p.mine, author: p.author, nickname: p.nickname, text: p.text, at: p.receivedAt }))}
+        />
       </ScrollView>
 
       {error ? <Text style={[styles.note, styles.pad, { color: colors.cancelText }]} testID="chat-error">{error}</Text> : null}
@@ -641,10 +625,9 @@ const styles = StyleSheet.create({
   foldHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   foldTitle: { flex: 1, fontWeight: '700' },
   foldBody: { maxHeight: 280 },
-  thread: { padding: 12, gap: 8, maxWidth: 720, width: '100%' },
-  bubble: { maxWidth: '80%', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, gap: 2 },
-  author: { fontSize: 12, fontWeight: '700' },
-  time: { fontSize: 11, opacity: 0.8, alignSelf: 'flex-end' },
+  // (a line and some room between the pinned / vote / members lines and the posts - Raphael, 24 Oct 2026)
+  threadArea: { flex: 1, marginTop: 6, borderTopWidth: 1 },
+  thread: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 12, maxWidth: 720, width: '100%' },
   pad: { marginHorizontal: 12 },
   composer: { padding: 12, borderTopWidth: 1, gap: 8, maxWidth: 744 },
 });
