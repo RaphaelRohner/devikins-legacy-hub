@@ -405,7 +405,7 @@ function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBa
 }
 
 export default function ChatGroupView({
-  group, me, posts, next, busy, error, onBack, onPost, onPins, onLeave, votes, loadMembers, onOpenVote, onCastVote, onLetBackIn, onUpdateHoldings,
+  group, me, posts, next, busy, error, onBack, onPost, onPins, onReact, onLeave, votes, loadMembers, onOpenVote, onCastVote, onLetBackIn, onUpdateHoldings,
 }) {
   const [showMembers, setShowMembers] = useState(false);
   const [showPins, setShowPins] = useState(false);
@@ -565,7 +565,9 @@ export default function ChatGroupView({
         ) : null}
         <ChatMessages
           showAuthors
-          items={posts.map((p) => ({ id: p.id, mine: p.mine, author: p.author, nickname: p.nickname, text: p.text, at: p.receivedAt }))}
+          busy={busy}
+          onReact={onReact}
+          items={posts.map((p) => ({ id: p.id, pid: p.pid, reactions: p.reactions, mine: p.mine, author: p.author, nickname: p.nickname, text: p.text, at: p.receivedAt }))}
         />
       </ScrollView>
 

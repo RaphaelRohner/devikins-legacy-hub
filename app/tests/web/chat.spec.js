@@ -354,6 +354,14 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   // Laid out like Telegram / WhatsApp (24 Oct 2026): a date line, Bob's initial as his avatar
   await expect(alice.page.getByTestId('chat-day').first()).toHaveText('Today');
   await expect(alice.page.getByText('B', { exact: true })).toBeVisible();
+  // Reactions (free): Alice gives Bob's post a 👍, then switches to 🔥; Bob sees it
+  await alice.page.getByTestId('chat-react').last().click();
+  await alice.page.getByTestId('chat-reaction-picker').getByText('👍').click();
+  await expect(alice.page.getByTestId('chat-reaction')).toHaveText('👍 1');
+  await alice.page.getByTestId('chat-react').last().click();
+  await alice.page.getByTestId('chat-reaction-picker').getByText('🔥').click();
+  await expect(alice.page.getByTestId('chat-reaction')).toHaveText('🔥 1');
+  await expect(bob.page.getByTestId('chat-reaction')).toHaveText('🔥 1', { timeout: 30_000 });
 
   await alice.context.close();
   await bob.context.close();

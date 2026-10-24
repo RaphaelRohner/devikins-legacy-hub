@@ -29,7 +29,7 @@ import { createIdentity, isPublicKey, secretBytes } from './identity.js';
 import { sealDirect, openDirect } from './direct.js';
 import { cleanText, nicknameKey, nextPostAllowedAt, MIN_POST_INTERVAL, POST_WINDOW, postsPerDay, postsLeft } from './rules.js';
 import {
-  sealGroupPost, openGroupPost, acceptPosts, readGroupKeyMessage, sealPinned, openPinned, groupKeyCheck, VOTE_REASON_KIND,
+  sealGroupPost, sealGroupReaction, openGroupPost, acceptPosts, acceptReactions, readGroupKeyMessage, sealPinned, openPinned, groupKeyCheck, VOTE_REASON_KIND,
 } from './group.js';
 import { checkBadge } from './badge.js';
 import { createPostmanClient } from './client.js';
@@ -92,6 +92,9 @@ CREATE INDEX IF NOT EXISTS chat_group_posts_by_group ON chat_group_posts (grp, s
 CREATE TABLE IF NOT EXISTS chat_group_last (grp TEXT NOT NULL, author TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (grp, author));
 -- Times of each player's accepted posts over the last 24 h (the daily allowance, 24 Oct 2026).
 CREATE TABLE IF NOT EXISTS chat_group_recent (grp TEXT NOT NULL, author TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (grp, author, at));
+-- 👍 / 👎 on posts (24 Oct 2026): each player's latest reaction per post ('' = taken back).
+CREATE TABLE IF NOT EXISTS chat_group_reactions (grp TEXT NOT NULL, pid TEXT NOT NULL, player TEXT NOT NULL, value TEXT NOT NULL,
+  at INTEGER NOT NULL, mine INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (grp, pid, player));
 CREATE TABLE IF NOT EXISTS chat_group_names (grp TEXT NOT NULL, device TEXT NOT NULL, nickname TEXT NOT NULL, PRIMARY KEY (grp, device));
 CREATE TABLE IF NOT EXISTS chat_group_keys (grp TEXT NOT NULL, epoch INTEGER NOT NULL, key TEXT NOT NULL, PRIMARY KEY (grp, epoch));
 `;
@@ -102,7 +105,7 @@ export const GROUP_STATUS = {
   MEMBER: 'member',
 };
 
-const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_names', 'chat_group_keys'];
+const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_reactions', 'chat_group_names', 'chat_group_keys'];
 
 /** Contact states. */
 export const STATUS = {
@@ -669,7 +672,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
   }
 
   async function forgetGroup(id) {
-    for (const table of ['chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_names']) await run(`DELETE FROM ${table} WHERE grp = ?`, [id]);
+    for (const table of ['chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_reactions', 'chat_group_names']) await run(`DELETE FROM ${table} WHERE grp = ?`, [id]);
     await run('DELETE FROM chat_groups WHERE id = ?', [id]);
   }
 
@@ -787,6 +790,17 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
         let post = null;
         try { post = openGroupPost(p.envelope, { groupId: g.id, keys }); } catch { post = null; }
         if (post) items.push({ post, receivedAt: p.receivedAt, seq: p.seq });
+      }
+      // 👍 / 👎: free, each player's latest one per post counts.
+      const myAccount = await getMe('account');
+      for (const { item, player } of acceptReactions(items, { postmanPublicKey: pk, seen })) {
+        const r = item.post;
+        const mine = r.from === identity.publicKey || (myAccount && player === myAccount) ? 1 : 0;
+        await run(
+          `INSERT INTO chat_group_reactions (grp, pid, player, value, at, mine) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (grp, pid, player) DO UPDATE SET value = excluded.value, at = excluded.at WHERE excluded.at >= chat_group_reactions.at`,
+          [g.id, r.target, player, r.value, r.writtenAt, mine],
+        );
       }
       const lastAccepted = await recentPosts(g.id);
       const { shown } = acceptPosts(items, { postmanPublicKey: pk, lastAccepted, blocked: blockedDevices, seen, owners: g.owner_account ? [g.owner_account] : [] });
@@ -950,8 +964,17 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
 
   async function groupPosts(id) {
     await run('UPDATE chat_groups SET unread = 0 WHERE id = ?', [id]);
+    const reactions = new Map();
+    for (const r of await all("SELECT pid, value, mine FROM chat_group_reactions WHERE grp = ? AND value != ''", [id])) {
+      const x = reactions.get(r.pid) || { counts: {}, mine: '' };
+      x.counts[r.value] = (x.counts[r.value] || 0) + 1;
+      if (r.mine) x.mine = r.value;
+      reactions.set(r.pid, x);
+    }
     return (await all('SELECT * FROM chat_group_posts WHERE grp = ? ORDER BY seq', [id])).map((p) => ({
-      id: p.id, mine: !!p.mine, author: p.author, nickname: p.nickname, text: p.text, writtenAt: p.written_at, receivedAt: p.received_at,
+      id: p.id, pid: p.pid ?? null, mine: !!p.mine, author: p.author, nickname: p.nickname, text: p.text, writtenAt: p.written_at, receivedAt: p.received_at,
+      // { counts: { '👍': 2, '👎': 1 }, mine: '👍' | '👎' | '' }
+      reactions: (p.pid && reactions.get(p.pid)) || { counts: {}, mine: '' },
     }));
   }
 
@@ -986,6 +1009,28 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     await collectGroup(g);
   }
 
+  /**
+   * 👍 / 👎 on a post (its pid); the same again takes it back. Free: no
+   * daily allowance, no 10-second gap (24 Oct 2026). Shown here at once.
+   */
+  async function reactToPost(id, pid, value) {
+    const g = await myGroup(id);
+    const badge = await getMe('badge');
+    const check = badge ? checkBadge(badge, { postmanPublicKey: await postmanKey(), holder: identity.publicKey, at: now() }) : { ok: false };
+    if (!check.ok) throw new Error('Please sign in again (your weekly check has run out).');
+    const player = check.account ?? identity.publicKey;
+    const current = await first('SELECT value FROM chat_group_reactions WHERE grp = ? AND pid = ? AND player = ?', [id, pid, player]);
+    const next = current?.value === value ? '' : value;
+    const envelope = sealGroupReaction({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, postId: pid, value: next, badge, now: now() });
+    await postman.groupPost(envelope, { reaction: true });
+    await run(
+      `INSERT INTO chat_group_reactions (grp, pid, player, value, at, mine) VALUES (?, ?, ?, ?, ?, 1)
+       ON CONFLICT (grp, pid, player) DO UPDATE SET value = excluded.value, at = excluded.at, mine = 1`,
+      [id, pid, player, next, now()],
+    );
+    return next;
+  }
+
   /** The owner sets the whole list of pinned messages (empty list: nothing pinned). */
   async function setPins(id, pins) {
     const g = await myGroup(id);
@@ -1016,6 +1061,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       messages: await all('SELECT * FROM chat_messages ORDER BY id'),
       groups: await all('SELECT * FROM chat_groups'),
       groupPosts: await all('SELECT * FROM chat_group_posts ORDER BY id'),
+      groupReactions: await all('SELECT * FROM chat_group_reactions'),
       groupLast: await all('SELECT * FROM chat_group_last'),
       groupKeys: await all('SELECT * FROM chat_group_keys'),
     };
@@ -1066,8 +1112,13 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     }
     for (const p of Array.isArray(data.groupPosts) ? data.groupPosts : []) {
       if (typeof p.grp !== 'string' || typeof p.text !== 'string') continue;
-      await run('INSERT INTO chat_group_posts (grp, seq, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [p.grp, Number(p.seq) || 0, String(p.author ?? ''), p.nickname ?? null, p.text, Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine ? 1 : 0]);
+      await run('INSERT INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [p.grp, Number(p.seq) || 0, typeof p.pid === 'string' ? p.pid : null, String(p.author ?? ''), p.nickname ?? null, p.text, Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine ? 1 : 0]);
+    }
+    for (const r of Array.isArray(data.groupReactions) ? data.groupReactions : []) {
+      if (typeof r.grp !== 'string' || typeof r.pid !== 'string' || typeof r.player !== 'string' || typeof r.value !== 'string') continue;
+      await run('INSERT OR REPLACE INTO chat_group_reactions (grp, pid, player, value, at, mine) VALUES (?, ?, ?, ?, ?, ?)',
+        [r.grp, r.pid, r.player, r.value, Number(r.at) || 0, r.mine ? 1 : 0]);
     }
     for (const k of Array.isArray(data.groupKeys) ? data.groupKeys : []) {
       if (typeof k.grp !== 'string' || !/^[0-9a-f]{64}$/.test(k.key || '')) continue;
@@ -1129,6 +1180,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     nextGroupPostAt,
     setPinned,
     setPins,
+    reactToPost,
     groupVotes,
     openVote,
     castVote,

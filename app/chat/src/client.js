@@ -61,7 +61,8 @@ export function createPostmanClient({ baseUrl, identity, fetchFn = (...a) => fet
     leaveGroup: (group) => call('POST', '/groups/leave', { group }),
     setPinned: (group, envelope) => call('POST', '/groups/pin', { group, envelope }),
     pinned: (group) => call('GET', `/groups/pin?group=${group}`),
-    groupPost: (envelope) => call('POST', '/group/post', { envelope }),
+    // (reaction: a 👍 / 👎 - the postman doesn't hold it to the 10-second gap)
+    groupPost: (envelope, { reaction = false } = {}) => call('POST', '/group/post', reaction ? { envelope, reaction: true } : { envelope }),
     votes: (group) => call('GET', `/groups/votes?group=${group}`),
     proofStart: () => call('POST', '/proof/start'),
     openVote: ({ group, accused, reason, proof }) => call('POST', '/groups/vote/open', { group, accused, reason, proof }),

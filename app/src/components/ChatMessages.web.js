@@ -12,10 +12,18 @@
  *   - your own messages on the right in the Hub's blue, the others on the
  *     left in a grey bubble, text in the normal text colour.
  *
- * items: [{ id, mine, author (who - for grouping and colour), nickname, text, at }]
+ *   - reactions (groups, 24 Oct 2026): the ☺ next to someone else's post
+ *     opens 👍 👎 ❤️ 😂 😮 🔥; the counts show under the bubble, yours
+ *     highlighted - tap it again to take it back, another one to switch.
+ *
+ * items: [{ id, mine, author (who - for grouping and colour), nickname, text, at,
+ *           pid, reactions: { counts: { emoji: n }, mine: emoji | '' } }]
+ * onReact(pid, emoji) - reactions on (groups); left out: none (1:1 chats)
  */
-import { View, Text, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { REACTIONS } from '../../chat/src/group.js';
 
 // Name colours: light ones on the dark theme, deeper ones on the light theme
 // (both readable on the bubble). Avatars use the deeper ones with white text.
@@ -63,8 +71,9 @@ export function Avatar({ name, size = 32 }) {
   );
 }
 
-export default function ChatMessages({ items, showAuthors = false }) {
+export default function ChatMessages({ items, showAuthors = false, onReact = null, busy = false }) {
   const { colors, isDark } = useTheme();
+  const [pickerFor, setPickerFor] = useState(null);
   const nameColors = isDark ? NAME_COLORS_DARK : NAME_COLORS_LIGHT;
   const otherBubble = isDark ? '#26262c' : '#eceef3';
   const out = [];
@@ -106,6 +115,12 @@ export default function ChatMessages({ items, showAuthors = false }) {
         <Text style={[styles.time, { color: textColor }]}>{time}</Text>
       </View>
     );
+    const counts = Object.entries(m.reactions?.counts || {}).filter(([, n]) => n > 0);
+    const canReact = !!onReact && !m.mine && !!m.pid;
+    const react = (emoji) => {
+      setPickerFor(null);
+      onReact(m.pid, emoji);
+    };
     out.push(
       <View
         key={m.id}
@@ -114,7 +129,47 @@ export default function ChatMessages({ items, showAuthors = false }) {
         {showAuthors && !m.mine ? (
           together ? <View style={styles.avatarRoom} /> : <Avatar name={name} />
         ) : null}
-        {bubble}
+        <View style={[styles.column, { alignItems: m.mine ? 'flex-end' : 'flex-start' }]}>
+          {bubble}
+          {counts.length > 0 ? (
+            <View style={styles.chips} testID="chat-reactions">
+              {counts.map(([emoji, n]) => {
+                const own = m.reactions.mine === emoji;
+                return (
+                  <TouchableOpacity
+                    key={emoji}
+                    disabled={!canReact || busy}
+                    onPress={() => react(emoji)}
+                    style={[styles.chip, { backgroundColor: own ? colors.primary : otherBubble, borderColor: own ? colors.primary : colors.border }]}
+                    accessibilityLabel={`${emoji} ${n}${own ? ', yours' : ''}`}
+                    testID="chat-reaction"
+                  >
+                    <Text style={[styles.chipText, { color: own ? colors.primaryText : colors.text }]}>{`${emoji} ${n}`}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : null}
+          {pickerFor === m.id ? (
+            <View style={[styles.picker, { backgroundColor: otherBubble, borderColor: colors.border }]} testID="chat-reaction-picker">
+              {REACTIONS.map((emoji) => (
+                <TouchableOpacity key={emoji} onPress={() => react(emoji)} disabled={busy} style={styles.pickerItem} accessibilityLabel={`React with ${emoji}`} testID="chat-reaction-pick">
+                  <Text style={styles.pickerEmoji}>{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+        </View>
+        {canReact ? (
+          <TouchableOpacity
+            onPress={() => setPickerFor(pickerFor === m.id ? null : m.id)}
+            style={styles.reactButton}
+            accessibilityLabel="React"
+            testID="chat-react"
+          >
+            <Text style={[styles.reactIcon, { color: colors.secondaryText }]}>☺</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>,
     );
     prev = m;
@@ -129,7 +184,16 @@ const styles = StyleSheet.create({
   avatar: { alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#ffffff', fontWeight: '700' },
   avatarRoom: { width: 32 },
-  bubble: { maxWidth: '78%', borderRadius: 14, paddingTop: 6, paddingBottom: 6, paddingHorizontal: 11 },
+  column: { maxWidth: '78%', flexShrink: 1 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 3 },
+  chip: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 1 },
+  chipText: { fontSize: 13 },
+  picker: { flexDirection: 'row', gap: 2, marginTop: 4, borderRadius: 18, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2 },
+  pickerItem: { paddingHorizontal: 4, paddingVertical: 2 },
+  pickerEmoji: { fontSize: 22 },
+  reactButton: { alignSelf: 'center', paddingHorizontal: 4, opacity: 0.6 },
+  reactIcon: { fontSize: 18 },
+  bubble: { maxWidth: '100%', borderRadius: 14, paddingTop: 6, paddingBottom: 6, paddingHorizontal: 11 },
   author: { fontSize: 13, fontWeight: '700', marginBottom: 1 },
   text: { fontSize: 15, lineHeight: 21 },
   timeRoom: { fontSize: 11, color: 'transparent', userSelect: 'none' },

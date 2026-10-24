@@ -32,6 +32,17 @@ import { cleanText, nextPostAllowedAt, MIN_POST_INTERVAL, POST_WINDOW } from './
 
 export const GROUP_POST_KIND = 9; // Nostr's kind for a chat message in a group
 export const MAX_GROUP_ENVELOPE_CHARS = 64 * 1024;
+/**
+ * Reactions (24 Oct 2026, Raphael: free and unlimited): one of REACTIONS on a post,
+ * '' takes it back (more emojis can be added to the list later; older Hubs
+ * then simply ignore the ones they don't know). They travel like posts (sealed with the group
+ * key, signed, with the badge), but under Nostr's kind for a reaction, so
+ * they never count as posts and don't use the daily allowance. Each
+ * player's latest reaction on a post counts.
+ */
+export const GROUP_REACTION_KIND = 7;
+export const REACTIONS = ['👍', '👎', '❤️', '😂', '😮', '🔥'];
+export const REACTION_VALUES = [...REACTIONS, ''];
 const HEX32 = /^[0-9a-f]{64}$/;
 const GROUP_ID = /^[0-9a-f]{32}$/;
 
@@ -94,11 +105,29 @@ export function sealGroupPost({ group, from, text, badge, now = Date.now() }) {
   return { v: 1, group: group.id, epoch: group.epoch, payload: nip44.encrypt(JSON.stringify(post), hexToBytes(group.key)) };
 }
 
+/** sealGroupReaction — 👍 / 👎 / taken back ('') on post `postId`. */
+export function sealGroupReaction({ group, from, postId, value, badge, now = Date.now() }) {
+  if (!/^[0-9a-f]{64}$/.test(postId || '')) throw new Error('Unknown post.');
+  if (!REACTION_VALUES.includes(value)) throw new Error('Unknown reaction.');
+  const reaction = finalizeEvent(
+    {
+      kind: GROUP_REACTION_KIND,
+      created_at: Math.floor(now / 1000),
+      content: value,
+      tags: [['h', group.id], ['epoch', String(group.epoch)], ['e', postId], ['badge', JSON.stringify(badge)]],
+    },
+    secretBytes(from),
+  );
+  return { v: 1, group: group.id, epoch: group.epoch, payload: nip44.encrypt(JSON.stringify(reaction), hexToBytes(group.key)) };
+}
+
 /**
  * openGroupPost — opens a post with the keys this member has
  * (keys: { [epoch]: keyHex }). Posts from epochs the member has no key for
  * (from before they joined) can't be opened: → null.
- * → { from, text, badge, writtenAt } ; throws if the envelope isn't genuine.
+ * → { kind: 'post', id, from, text, badge, writtenAt }, or for a reaction
+ *   { kind: 'reaction', id, from, target (post id), value, badge, writtenAt };
+ * throws if the envelope isn't genuine.
  */
 export function openGroupPost(envelope, { groupId, keys }) {
   if (!envelope || envelope.v !== 1 || envelope.group !== groupId || typeof envelope.payload !== 'string'
@@ -108,11 +137,16 @@ export function openGroupPost(envelope, { groupId, keys }) {
   const key = keys && keys[envelope.epoch];
   if (!key) return null;
   const post = JSON.parse(nip44.decrypt(envelope.payload, hexToBytes(key)));
-  if (post.kind !== GROUP_POST_KIND || !verifyEvent(post)) throw new Error('The post was changed.');
+  if ((post.kind !== GROUP_POST_KIND && post.kind !== GROUP_REACTION_KIND) || !verifyEvent(post)) throw new Error('The post was changed.');
   if (tag(post, 'h') !== groupId || Number(tag(post, 'epoch')) !== envelope.epoch) throw new Error('The post was moved from elsewhere.');
   let badge = null;
   try { badge = JSON.parse(tag(post, 'badge')); } catch { badge = null; }
-  return { id: post.id, from: post.pubkey, text: cleanText(post.content), badge, writtenAt: post.created_at * 1000 };
+  if (post.kind === GROUP_REACTION_KIND) {
+    const target = tag(post, 'e');
+    if (!/^[0-9a-f]{64}$/.test(target || '') || !REACTION_VALUES.includes(post.content)) throw new Error('Not a reaction.');
+    return { kind: 'reaction', id: post.id, from: post.pubkey, target, value: post.content, badge, writtenAt: post.created_at * 1000 };
+  }
+  return { kind: 'post', id: post.id, from: post.pubkey, text: cleanText(post.content), badge, writtenAt: post.created_at * 1000 };
 }
 
 /**
@@ -138,7 +172,7 @@ export function openGroupPost(envelope, { groupId, keys }) {
 export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocked = [], paused = [], seen = new Set(), owners = [] }) {
   const shown = [];
   const dropped = [];
-  const sorted = [...(items || [])].filter((i) => i && i.post).sort((a, b) => a.receivedAt - b.receivedAt);
+  const sorted = [...(items || [])].filter((i) => i && i.post && i.post.kind !== 'reaction').sort((a, b) => a.receivedAt - b.receivedAt);
   for (const item of sorted) {
     const { post, receivedAt } = item;
     if (post.id && seen.has(post.id)) { dropped.push({ item, reason: 'sent again' }); continue; }
@@ -158,6 +192,26 @@ export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocke
     shown.push(item);
   }
   return { shown, dropped };
+}
+
+/**
+ * acceptReactions — which opened reactions count: a valid badge at the time
+ * the postman got it (only holders react), not sent again, not an old one
+ * copied. No allowance (free). → [{ item, player }] (player = the badge's
+ * account number: one reaction per player and post, the latest counts).
+ */
+export function acceptReactions(items, { postmanPublicKey, seen = new Set(), paused = [] }) {
+  const accepted = [];
+  for (const item of items || []) {
+    const { post, receivedAt } = item || {};
+    if (!post || post.kind !== 'reaction' || (post.id && seen.has(post.id))) continue;
+    if (Math.abs(receivedAt - post.writtenAt) > MAX_POST_DELAY || paused.includes(post.from)) continue;
+    const badge = checkBadge(post.badge, { postmanPublicKey, holder: post.from, at: receivedAt });
+    if (!badge.ok) continue;
+    if (post.id) seen.add(post.id);
+    accepted.push({ item, player: badge.account ?? post.from });
+  }
+  return accepted;
 }
 
 // --- Pinned messages (the owner's rules / important info) ---------------------

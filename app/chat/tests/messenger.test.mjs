@@ -540,6 +540,44 @@ test('groups: posts that come too early are hidden by every Hub; blocked players
   assert.ok((await alice.groupPosts(gid)).some((p) => p.text === 'after the block'));
 });
 
+test('reactions: free (no allowance, no 10-second gap), one per player and post, switched or taken back; not counted as new posts; kept in the backup', async () => {
+  const { lockBackup, unlockBackup } = await import('../src/backup.js');
+  const { player, blank, clock } = world();
+  const alice = await player('Alice', 12);
+  const bob = await player('Bob', 1); // 1 Devikin: one post a day
+  const gid = await alice.startGroup('React Club');
+  await bob.joinGroup(gid);
+  await alice.checkMail();
+  await bob.checkMail();
+  await alice.postToGroup(gid, 'Who likes Fire Devikins?');
+  await bob.checkMail();
+  const [post] = await bob.groupPosts(gid);
+  await bob.postToGroup(gid, 'Me!'); // his one post for the day
+  // …and still reacts, straight after posting, as often as he likes
+  assert.equal(await bob.reactToPost(gid, post.pid, '👍'), '👍');
+  assert.equal(await bob.reactToPost(gid, post.pid, '❤️'), '❤️'); // switched
+  await assert.rejects(bob.reactToPost(gid, post.pid, '🍕'), /Unknown reaction/);
+  assert.deepEqual((await bob.groupPosts(gid))[0].reactions, { counts: { '❤️': 1 }, mine: '❤️' });
+  clock.t += MINUTE;
+  const unreadBefore = (await alice.listGroups()).find((g) => g.id === gid).unread;
+  await alice.checkMail();
+  const seen = await alice.groupPosts(gid);
+  assert.deepEqual(seen.map((p) => p.text), ['Who likes Fire Devikins?', 'Me!']);
+  assert.deepEqual(seen[0].reactions, { counts: { '❤️': 1 }, mine: '' }); // Bob's latest counts, once
+  await alice.reactToPost(gid, seen[1].pid, '😂');
+  await bob.checkMail();
+  assert.deepEqual((await bob.groupPosts(gid))[1].reactions, { counts: { '😂': 1 }, mine: '' });
+  // The same again takes it back
+  assert.equal(await bob.reactToPost(gid, post.pid, '❤️'), '');
+  await alice.checkMail();
+  assert.deepEqual((await alice.groupPosts(gid))[0].reactions, { counts: {}, mine: '' });
+  assert.ok(unreadBefore <= 1);
+  // In the backup
+  const moved = await blank();
+  await moved.restoreBackupData(await unlockBackup(await lockBackup(await alice.backupData(), 'password1', { rounds: 100000 }), 'password1'));
+  assert.deepEqual((await moved.groupPosts(gid))[1].reactions, { counts: { '😂': 1 }, mine: '😂' });
+});
+
 test('groups travel in the chat backup', async () => {
   const { lockBackup, unlockBackup } = await import('../src/backup.js');
   const { player, blank, clock } = world();

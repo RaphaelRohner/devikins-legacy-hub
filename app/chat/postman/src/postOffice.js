@@ -957,10 +957,13 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       if (pause) refuse(403, `Your posting in this group is paused while a vote about you is open (until ${new Date(pause).toISOString().slice(0, 16).replace('T', ' ')} UTC). You can contact the group owner.`);
       const text = stringify(envelope);
       if (text.length > MAX_GROUP_ENVELOPE_CHARS) refuse(413, 'This envelope is too big.');
-      const last = row('SELECT at FROM lastpost WHERE player = ?', account.wallet_fp);
+      // A reaction (👍 ❤️ …, sealed like a post - the postman can't tell, the Hubs can) is free:
+      // no 10-second gap; it only counts towards the daily actions (24 Oct 2026).
+      const reaction = body.reaction === true;
+      const last = reaction ? null : row('SELECT at FROM lastpost WHERE player = ?', account.wallet_fp);
       if (last && t - last.at < MIN_POST_INTERVAL) refuse(429, 'At most one group post every 10 seconds.');
       spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
-      run('INSERT INTO lastpost (player, at) VALUES (?, ?) ON CONFLICT (player) DO UPDATE SET at = excluded.at', account.wallet_fp, t);
+      if (!reaction) run('INSERT INTO lastpost (player, at) VALUES (?, ?) ON CONFLICT (player) DO UPDATE SET at = excluded.at', account.wallet_fp, t);
       const seq = row('INSERT INTO posts (grp, envelope, at) VALUES (?, ?, ?) RETURNING seq', envelope.group, text, t).seq;
       return { seq, receivedAt: t };
     },

@@ -404,6 +404,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
         onBack={() => setOpenGroupId(null)}
         onPost={(text) => act(() => messenger.postToGroup(openGroup.id, text))}
         onPins={(pins) => act(() => messenger.setPins(openGroup.id, pins))}
+        onReact={(pid, emoji) => act(() => messenger.reactToPost(openGroup.id, pid, emoji))}
         votes={groupVotes}
         loadMembers={() => messenger.groupMemberNames(openGroup.id)}
         onOpenVote={(nickname, reason) => act(() => messenger.openVote(openGroup.id, nickname, reason, signTextWithExtension))}

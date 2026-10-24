@@ -127,7 +127,7 @@ someone who intercepted it (no request today is harmful to repeat).
 | `POST /groups/vote/cast` | member ≥ threshold | `{vote, yes, proof}` – vote once |
 | `POST /groups/unban` | owner | let a removed member back in |
 | `POST /groups/rekey` | member | after a removal: the new group key, sealed for every member's devices (the first one counts) |
-| `POST /group/post` | member | one sealed group post (at most 1 every 10 seconds) |
+| `POST /group/post` | member | one sealed group post (at most 1 every 10 seconds); `reaction: true` for a reaction (👍 ❤️ …: no 10-second gap, counts as an action) |
 | `GET /group/posts?group=&after=` | member | a group's posts after number N – only those from after you joined |
 | `POST /leave` | device | forget this device (and the account with its last device) |
 
