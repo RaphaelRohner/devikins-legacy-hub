@@ -44,7 +44,7 @@ async function startPostman() {
 }
 
 /** One player: a browser context with the fake servers, the postman and a pretend Klever extension. */
-async function openPlayer(browser, postman, wallet, { extension = true, openChat = true } = {}) {
+async function openPlayer(browser, postman, wallet, { extension = true, openChat = true, kleverApp = false } = {}) {
   const context = await browser.newContext();
   await installFakeServers(context);
   const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'Content-Type, Authorization', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
@@ -65,11 +65,13 @@ async function openPlayer(browser, postman, wallet, { extension = true, openChat
       window.kleverWeb = {
         getWalletAddress: () => address,
         getProvider: () => ({ api: 'https://api.mainnet.klever.org' }),
-        signMessage: (text) => window.__testSign(text),
+        // (kleverApp: like the Klever app's own browser - base64 of the hex signature)
+        signMessage: async (text) => (window.__kleverApp ? btoa(await window.__testSign(text)) : window.__testSign(text)),
       };
       window.kleverHub = { initialize: async () => {} };
     }, wallet.address);
   }
+  if (kleverApp) await page.addInitScript(() => { window.__kleverApp = true; });
   const dialogs = await openHub(page);
   if (openChat) await openMenuEntry(page, 'Chat');
   return { context, page, dialogs };
@@ -271,7 +273,8 @@ test('the chat goes into "Export all sets" with a password and comes back in a n
 test('groups: create with pinned rules, another player joins (let in by the owner\'s Hub), posts with the holding limit shown', async ({ browser }) => {
   test.setTimeout(180_000);
   const postman = await startPostman();
-  const alice = await openPlayer(browser, postman, await postman.newWallet(3));
+  // (Alice signs like the Klever app's own browser: base64 of the hex signature)
+  const alice = await openPlayer(browser, postman, await postman.newWallet(3), { kleverApp: true });
   const bob = await openPlayer(browser, postman, await postman.newWallet(24));
   await signInAs(alice.page, 'Alice');
   await signInAs(bob.page, 'Bob');

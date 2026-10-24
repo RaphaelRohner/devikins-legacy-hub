@@ -130,7 +130,24 @@ export async function signTextWithExtension(text) {
   lastSigning = { text, address, raw, at: new Date().toISOString() };
   if (signature && typeof signature === 'object') signature = signature.signature ?? signature.hex ?? '';
   if (typeof signature !== 'string' || !signature) throw new Error('The extension gave no signature. Please try again.');
-  return { address, signature };
+  return { address, signature: plainSignature(signature) };
+}
+
+/**
+ * The Klever app's own browser (Android; tested 24 Oct 2026) gives the same
+ * signature as the extension, but as base64 of the hex text. Unwrapped
+ * here, so the postman sees the usual hex.
+ */
+export function plainSignature(signature) {
+  const s = signature.trim();
+  if (/^[0-9a-fA-F]{128}$/.test(s)) return s;
+  try {
+    const inner = atob(s);
+    if (/^[0-9a-fA-F]{128}$/.test(inner)) return inner;
+  } catch (e) {
+    // not base64: leave it as it is
+  }
+  return s;
 }
 
 // The last signing, for "Copy the details" when a wallet's signature isn't
