@@ -627,6 +627,7 @@ test('removal votes: threshold from the game account, a paused accused, 48 h, re
   const dot = await player('Dot', 3); // below the threshold of 10
   const max = await player('Max', 12); // the accused
   const gid = await owner.createGroup('Vote Club');
+  await owner.setPins(gid, ['Be nice']);
   for (const p of [bea, cid, dot, max]) {
     await p.joinGroup(gid);
     await owner.checkMail();
@@ -687,6 +688,15 @@ test('removal votes: threshold from the game account, a paused accused, 48 h, re
   // Let in: shown as a member at once, even from the cached list
   assert.equal((await max.listGroups({ maxAgeMs: 60 * MINUTE })).find((g) => g.id === gid).member, true);
   assert.equal((await max.listGroups()).find((g) => g.id === gid).member, true);
+  // A newcomer after the new key only gets that key: the owner's Hub sealed
+  // the pinned messages again with it, so she can read them (Raphael's test,
+  // 24 Oct 2026: they were missing for a new member)
+  const eve = await player('Eve', 12);
+  assert.equal(await eve.joinGroup(gid), 'asking');
+  await owner.checkMail();
+  await eve.checkMail();
+  await eve.checkMail();
+  assert.deepEqual((await eve.listGroups()).find((g) => g.id === gid).pinned?.pins, ['Be nice']);
 });
 
 test('removal votes end early once the result can\'t change: removed, kept, or open again when a wallet emptied', async () => {

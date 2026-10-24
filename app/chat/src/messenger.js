@@ -800,6 +800,9 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     await run('UPDATE chat_groups SET pinned_text = ?, pinned_at = ? WHERE id = ?', [text, at, g.id]);
   }
 
+  // Groups (and key numbers) whose pinned messages the owner's Hub checked this session.
+  const repinChecked = new Set();
+
   /** Everything for the groups we're in: new posts, the pinned message, letting people in. */
   async function syncGroups() {
     const { groups } = await postman.myGroups();
@@ -818,6 +821,15 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       else if (!there.needsRekey && there.epoch > g.epoch && !g.code) await joinGroup(g.id, { force: true }).catch(() => {});
       if (there.lastSeq > g.last_seq) await collectGroup(g);
       if ((there.pinnedAt ?? null) !== (g.pinned_at ?? null)) await collectPinned(g, there.owner);
+      // The owner's Hub seals the pinned messages again with the group's
+      // current key after a new key (a removal by vote): members who join
+      // later only get that key and couldn't read them otherwise (24 Oct 2026).
+      if (g.is_owner && g.pinned_text && !repinChecked.has(`${g.id}:${g.epoch}`)) {
+        repinChecked.add(`${g.id}:${g.epoch}`);
+        const { envelope } = await postman.pinned(g.id).catch(() => ({ envelope: null }));
+        const pins = readPins(g.pinned_text)?.pins;
+        if (envelope && envelope.epoch !== g.epoch && pins?.length) await setPins(g.id, pins).catch(() => {});
+      }
       // (Only a Hub with the group's current key lets people in.)
       if (there.waiting > 0 && there.epoch === g.epoch && !there.needsRekey) await admitWaiting(g);
     }

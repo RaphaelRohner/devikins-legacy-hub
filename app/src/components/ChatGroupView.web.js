@@ -283,7 +283,7 @@ function HoldingsNote({ votes, busy, onUpdateHoldings }) {
   );
 }
 
-function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBackIn, onUpdateHoldings }) {
+function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBackIn, onUpdateHoldings, onLeave }) {
   const { colors } = useTheme();
   const [members, setMembers] = useState(null);
   const [voting, setVoting] = useState(null);
@@ -302,6 +302,13 @@ function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBa
       {(members || []).map((name) => (
         <View key={name} style={[styles.row, styles.pinItem]} testID="chat-group-member">
           <Text style={[styles.text, { color: colors.text, flex: 1 }]}>{name}{name === group.owner ? ' (owner)' : ''}</Text>
+          {/* Leaving sits next to your own name (Raphael, 24 Oct 2026: at the
+              top of the group, next to "‹", it was too easy to hit). */}
+          {name === me ? (
+            <TouchableOpacity onPress={onLeave} disabled={busy} testID="chat-group-leave">
+              <Text style={[styles.link, { color: colors.cancelText }]}>Leave this group</Text>
+            </TouchableOpacity>
+          ) : null}
           {name !== group.owner && name !== me && !open.has(name) && votes?.canVote && votes?.canOpen && voting !== name ? (
             <TouchableOpacity onPress={() => { setVoting(name); setReason(''); }} testID="chat-vote-start">
               <Text style={[styles.link, { color: colors.cancelText }]}>Start a vote to remove</Text>
@@ -444,7 +451,6 @@ export default function ChatGroupView({
             {group.members} member{group.members === 1 ? '' : 's'} · {group.isOwner ? 'you started it' : `by ${group.owner ?? '?'}`}
           </Text>
         </View>
-        <Button label="Leave" quiet onPress={leave} disabled={busy} testID="chat-group-leave" />
       </View>
 
       {group.pinned || group.isOwner ? (
@@ -500,6 +506,7 @@ export default function ChatGroupView({
           onOpenVote={onOpenVote}
           onLetBackIn={onLetBackIn}
           onUpdateHoldings={onUpdateHoldings}
+          onLeave={leave}
         />
       </Fold>
 

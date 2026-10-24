@@ -186,6 +186,16 @@ function AppContent() {
   const chatUnread = useChatUnread();
   const { width: windowWidth } = useWindowDimensions();
   const chatOnMenuButton = Platform.OS === 'web' && windowWidth < 640 && chatUnread > 0;
+  // Website: if the start-up takes unusually long, it's usually another page
+  // of the Hub still holding the storage (Raphael, 24 Oct 2026: reopening the
+  // Hub in the Klever app's browser stuck on the splash screen) - say so.
+  const [slowStart, setSlowStart] = useState(false);
+  useEffect(() => {
+    if (isDatabaseReady) return undefined;
+    const timer = setTimeout(() => setSlowStart(true), 10000);
+    return () => clearTimeout(timer);
+  }, [isDatabaseReady]);
+
   // The chat window (ChatDock.web.js) may start once the Hub's database is ready.
   useEffect(() => {
     if (isDatabaseReady) setHubReady();
@@ -1290,6 +1300,11 @@ Continue anyway?`
         <Text style={[styles.splashTitleLine, { color: colors.primary }]}>Legacy</Text>
         <Text style={[styles.splashTagline, { color: colors.primary }]}>Hub</Text>
         <Text style={[styles.splashSubtitle, { color: colors.secondaryText }]}>Setting up local database...</Text>
+        {slowStart && Platform.OS === 'web' ? (
+          <Text style={[styles.splashSubtitle, { color: colors.secondaryText, maxWidth: 340, textAlign: 'center' }]} testID="slow-start">
+            This is taking unusually long. The Hub's storage can only be used by one page at a time: close other tabs with the Hub open, or restart the browser or app, then open the Hub again.
+          </Text>
+        ) : null}
         <View style={[styles.splashVersionWrap, { bottom: insets.bottom + 16 }]}>
           <Text style={[styles.splashVersion, { color: colors.secondaryText }]}>v{APP_VERSION}</Text>
         </View>
