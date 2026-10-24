@@ -6,6 +6,12 @@
  *     doesn't cover buttons - a bubble at the bottom right covered Ask
  *     Devi's button and the Danger zone switch); it shows how many
  *     messages and group posts are unread.
+ *   - On a narrow screen (a phone) there's no tab - it covered buttons like
+ *     the "My wallets" switch. The chat opens from ☰ > Chat (or G C), and
+ *     the ☰ button and the menu's "Chat" show the unread count (24 Oct 2026).
+ *   - On a narrow screen (a phone) there's no tab: it covered buttons like
+ *     the "My wallets" switch. The chat opens from the ☰ menu's "Chat" (or
+ *     G C), and ☰ and "Chat" show the unread count (24 Oct 2026).
  *   - The window stays open while you switch sections of the Hub. "—"
  *     makes it the bubble again, "⤢" fills the screen (and back). On a
  *     narrow screen (a phone) it always fills the screen.
@@ -22,7 +28,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import ChatView from './ChatView';
-import { setChatDockOpener, whenHubReady } from '../web/chatDock';
+import { setChatDockOpener, whenHubReady, setChatUnread } from '../web/chatDock';
 
 // Remembered in this browser once the chat is set up here (signed in), so
 // it can start in the background with the Hub next time.
@@ -103,7 +109,10 @@ export default function ChatDock() {
           <View style={styles.body}>
             <ChatView
               onClose={() => setMode('closed')}
-              onUnreadChange={setUnread}
+              onUnreadChange={(n) => {
+                setUnread(n);
+                setChatUnread(n);
+              }}
               onSetUpChange={(ready) => writeFlag(ready)}
               visible={isOpen}
             />
@@ -111,7 +120,7 @@ export default function ChatDock() {
         </View>
       ) : null}
 
-      {!isOpen ? (
+      {!isOpen && !narrow ? (
         <TouchableOpacity
           testID="chat-bubble"
           onPress={open}

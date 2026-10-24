@@ -56,6 +56,7 @@ import {
   AppState,
   Alert,
   Modal,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -104,7 +105,7 @@ import WithdrawalTrackerView from './src/components/WithdrawalTrackerView';
 import WalletOverviewView from './src/components/WalletOverviewView';
 import ShortcutsHelp from './src/components/ShortcutsHelp';
 import ChatDock from './src/components/ChatDock';
-import { openChatDock, setHubReady } from './src/web/chatDock';
+import { openChatDock, setHubReady, useChatUnread } from './src/web/chatDock';
 import { useKeyboardShortcuts, showShortcutsHelp } from './src/web/shortcuts';
 import GettingStartedCard, { loadGuideState, setGuideHidden, GUIDE_KEYS } from './src/components/GettingStartedCard';
 import { countVisit } from './src/api/usage';
@@ -180,6 +181,11 @@ function AppContent() {
   // show the rest of the app until this is true, so nothing tries to
   // query a database that doesn't have its tables yet.
   const [isDatabaseReady, setIsDatabaseReady] = useState(false);
+  // Unread chat messages (website): shown on ☰ on narrow screens, where the
+  // chat window has no tab of its own, and on the menu's "Chat" entry.
+  const chatUnread = useChatUnread();
+  const { width: windowWidth } = useWindowDimensions();
+  const chatOnMenuButton = Platform.OS === 'web' && windowWidth < 640 && chatUnread > 0;
   // The chat window (ChatDock.web.js) may start once the Hub's database is ready.
   useEffect(() => {
     if (isDatabaseReady) setHubReady();
@@ -1488,8 +1494,14 @@ Continue anyway?`
         <TouchableOpacity
           style={[styles.hamburgerButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={() => setIsMenuOpen(true)}
+          accessibilityLabel={chatOnMenuButton ? `Menu, ${chatUnread} new in the chat` : 'Menu'}
         >
           <Text style={[styles.hamburgerIcon, { color: colors.text }]}>☰</Text>
+          {chatOnMenuButton ? (
+            <View style={[styles.menuBadge, { backgroundColor: colors.cancelText }]} testID="menu-chat-count">
+              <Text style={styles.menuBadgeText}>{chatUnread > 99 ? '99+' : chatUnread}</Text>
+            </View>
+          ) : null}
         </TouchableOpacity>
 
         {/* Trying this here per feedback, in place of its own full-width
@@ -1729,6 +1741,7 @@ Continue anyway?`
         onSelectFetch={handleMenuSelectFetch}
         onSelectScreen={handleMenuSelectScreen}
         onShowGettingStarted={handleShowGuide}
+        chatUnread={chatUnread}
       />
 
       {ownerAddresses.length > 0 ? null : guideCard}
@@ -2059,6 +2072,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  menuBadge: { position: 'absolute', top: -6, right: -6, minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' },
+  menuBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   hamburgerIcon: {
     fontSize: 20,
     fontWeight: '600',

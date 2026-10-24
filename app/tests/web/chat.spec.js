@@ -172,6 +172,18 @@ test('two players: sign in, find each other, request, accept, write, block', asy
   await expect(alice.page.getByText('Hi Bob! Want to trade?')).toBeVisible();
   await expect(alice.page.getByText('Sure, which one?')).toBeVisible();
 
+  // On a phone-sized screen there's no chat tab (it covered buttons); the ☰
+  // button and the menu's "Chat" show what's new instead
+  await alice.page.setViewportSize({ width: 390, height: 844 });
+  await alice.page.getByTestId('chat-dock-minimise').click();
+  await expect(alice.page.getByTestId('chat-bubble')).toHaveCount(0);
+  await bob.page.getByTestId('chat-draft').fill('On your phone?');
+  await bob.page.getByTestId('chat-send').click();
+  await expect(alice.page.getByTestId('menu-chat-count')).toHaveText('1', { timeout: 30_000 });
+  await openMenuEntry(alice.page, 'Chat');
+  await expect(alice.page.getByText('On your phone?')).toBeVisible();
+  await expect(alice.page.getByTestId('menu-chat-count')).toHaveCount(0);
+
   await alice.context.close();
   await bob.context.close();
   postman.stop();

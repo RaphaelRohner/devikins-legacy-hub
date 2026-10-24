@@ -59,6 +59,7 @@ export default function HamburgerMenu({
   onSelectFetch,
   onSelectScreen,
   onShowGettingStarted,
+  chatUnread = 0,
 }) {
   const { colors } = useTheme();
   // This is a plain full-screen Modal (see file comment above), not a
@@ -123,7 +124,8 @@ export default function HamburgerMenu({
     },
     {
       key: 'chat',
-      label: 'Chat',
+      label: chatUnread > 0 ? `Chat (${chatUnread})` : 'Chat',
+      shortLabel: 'Chat',
       hint: 'Talk to other players (new)',
       screen: 'chat',
       onPress: () => onSelectScreen('chat'),
