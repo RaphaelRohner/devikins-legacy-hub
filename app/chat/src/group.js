@@ -28,7 +28,7 @@ import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { secretBytes } from './identity.js';
 import { checkBadge } from './badge.js';
-import { cleanText, nextPostAllowedAt, MIN_POST_INTERVAL } from './rules.js';
+import { cleanText, nextPostAllowedAt, MIN_POST_INTERVAL, POST_WINDOW } from './rules.js';
 
 export const GROUP_POST_KIND = 9; // Nostr's kind for a chat message in a group
 export const MAX_GROUP_ENVELOPE_CHARS = 64 * 1024;
@@ -122,7 +122,8 @@ export function openGroupPost(envelope, { groupId, keys }) {
  * that came before the author was allowed to post again, are dropped – the
  * same way on every member's Hub, so an author with a modified Hub gains
  * nothing. `lastAccepted` carries each author's last accepted time over from
- * earlier calls ({ [author]: time }, updated in place).
+ * earlier calls ({ [player]: [times of accepted posts] }, updated in place;
+ * only the last 24 h are kept).
  * `blocked` = authors this member blocked (hidden for them only).
  * `paused` = authors whose posting is paused by a supported removal vote.
  * `seen` = ids of posts already shown (a Set, updated): a post sent again
@@ -130,7 +131,7 @@ export function openGroupPost(envelope, { groupId, keys }) {
  * got it (an old post copied and sent again to use up its author's limit).
  * The limit counts per PLAYER (the badge's account number), not per device.
  * `owners` = account numbers of the group's owner: they may post as often as
- * the postman allows (once a minute), whatever they hold – so the person who
+ * the postman allows (every 10 seconds), whatever they hold – so the person who
  * runs a group can always answer (Raphael, 22 Oct 2026).
  * → { shown: [...], dropped: [{ item, reason }] }
  */
@@ -146,11 +147,12 @@ export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocke
     if (!badge.ok) { dropped.push({ item, reason: `badge ${badge.problem}` }); continue; }
     if (paused.includes(post.from)) { dropped.push({ item, reason: 'posting paused by a vote' }); continue; }
     const player = badge.account ?? post.from;
+    const times = Array.isArray(lastAccepted[player]) ? lastAccepted[player] : lastAccepted[player] ? [lastAccepted[player]] : [];
     const allowedAt = owners.includes(badge.account)
-      ? (lastAccepted[player] ?? -Infinity) + MIN_POST_INTERVAL
-      : nextPostAllowedAt(lastAccepted[player] ?? null, badge.nfts);
+      ? (times.length ? Math.max(...times) : -Infinity) + MIN_POST_INTERVAL
+      : nextPostAllowedAt(times, badge.nfts, receivedAt);
     if (receivedAt < allowedAt) { dropped.push({ item, reason: 'too early' }); continue; }
-    lastAccepted[player] = receivedAt;
+    lastAccepted[player] = [...times.filter((t) => t > receivedAt - POST_WINDOW), receivedAt];
     if (post.id) seen.add(post.id);
     if (blocked.includes(post.from)) { dropped.push({ item, reason: 'blocked by you' }); continue; }
     shown.push(item);

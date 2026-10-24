@@ -27,7 +27,7 @@
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { createIdentity, isPublicKey, secretBytes } from './identity.js';
 import { sealDirect, openDirect } from './direct.js';
-import { cleanText, nicknameKey, nextPostAllowedAt, MIN_POST_INTERVAL } from './rules.js';
+import { cleanText, nicknameKey, nextPostAllowedAt, MIN_POST_INTERVAL, POST_WINDOW, postsPerDay, postsLeft } from './rules.js';
 import {
   sealGroupPost, openGroupPost, acceptPosts, readGroupKeyMessage, sealPinned, openPinned, groupKeyCheck, VOTE_REASON_KIND,
 } from './group.js';
@@ -90,6 +90,8 @@ CREATE TABLE IF NOT EXISTS chat_group_posts (
 );
 CREATE INDEX IF NOT EXISTS chat_group_posts_by_group ON chat_group_posts (grp, seq);
 CREATE TABLE IF NOT EXISTS chat_group_last (grp TEXT NOT NULL, author TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (grp, author));
+-- Times of each player's accepted posts over the last 24 h (the daily allowance, 24 Oct 2026).
+CREATE TABLE IF NOT EXISTS chat_group_recent (grp TEXT NOT NULL, author TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (grp, author, at));
 CREATE TABLE IF NOT EXISTS chat_group_names (grp TEXT NOT NULL, device TEXT NOT NULL, nickname TEXT NOT NULL, PRIMARY KEY (grp, device));
 CREATE TABLE IF NOT EXISTS chat_group_keys (grp TEXT NOT NULL, epoch INTEGER NOT NULL, key TEXT NOT NULL, PRIMARY KEY (grp, epoch));
 `;
@@ -100,7 +102,7 @@ export const GROUP_STATUS = {
   MEMBER: 'member',
 };
 
-const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_names', 'chat_group_keys'];
+const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_names', 'chat_group_keys'];
 
 /** Contact states. */
 export const STATUS = {
@@ -651,7 +653,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
   }
 
   async function forgetGroup(id) {
-    for (const table of ['chat_group_posts', 'chat_group_last', 'chat_group_names']) await run(`DELETE FROM ${table} WHERE grp = ?`, [id]);
+    for (const table of ['chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_names']) await run(`DELETE FROM ${table} WHERE grp = ?`, [id]);
     await run('DELETE FROM chat_groups WHERE id = ?', [id]);
   }
 
@@ -741,6 +743,15 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     return keys;
   }
 
+  /** { [player]: [times of accepted posts] } for a group - the daily allowance's memory. */
+  async function recentPosts(grp) {
+    const out = {};
+    for (const r of await all('SELECT author, at FROM chat_group_recent WHERE grp = ? ORDER BY at', [grp])) (out[r.author] ||= []).push(r.at);
+    // Players known only from before the allowance (24 Oct 2026): their last post.
+    for (const r of await all('SELECT author, at FROM chat_group_last WHERE grp = ?', [grp])) if (!out[r.author]) out[r.author] = [r.at];
+    return out;
+  }
+
   /** Collects a group's new posts, applies the posting limits, files them. → number of new posts from others */
   async function collectGroup(g) {
     const pk = await postmanKey();
@@ -760,12 +771,15 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
         try { post = openGroupPost(p.envelope, { groupId: g.id, keys }); } catch { post = null; }
         if (post) items.push({ post, receivedAt: p.receivedAt, seq: p.seq });
       }
-      const lastAccepted = {};
-      for (const r of await all('SELECT author, at FROM chat_group_last WHERE grp = ?', [g.id])) lastAccepted[r.author] = r.at;
+      const lastAccepted = await recentPosts(g.id);
       const { shown } = acceptPosts(items, { postmanPublicKey: pk, lastAccepted, blocked: blockedDevices, seen, owners: g.owner_account ? [g.owner_account] : [] });
-      for (const [author, at] of Object.entries(lastAccepted)) {
-        await run('INSERT OR REPLACE INTO chat_group_last (grp, author, at) VALUES (?, ?, ?)', [g.id, author, at]);
+      for (const [author, times] of Object.entries(lastAccepted)) {
+        if (!times.length) continue;
+        await run('INSERT OR REPLACE INTO chat_group_last (grp, author, at) VALUES (?, ?, ?)', [g.id, author, Math.max(...times)]);
+        for (const at of times) await run('INSERT OR IGNORE INTO chat_group_recent (grp, author, at) VALUES (?, ?, ?)', [g.id, author, at]);
       }
+      // (Older than two days can't count any more.)
+      await run('DELETE FROM chat_group_recent WHERE grp = ? AND at < ?', [g.id, now() - 2 * POST_WINDOW]);
       for (const item of shown) {
         const mine = item.post.from === identity.publicKey;
         await run(
@@ -930,13 +944,19 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     const pk = await postmanKey();
     const check = badge ? checkBadge(badge, { postmanPublicKey: pk, holder: identity.publicKey, at: now() }) : { ok: false };
     if (!check.ok) return { allowedAt: null, nfts: 0 };
-    const last = await first('SELECT at FROM chat_group_last WHERE grp = ? AND author = ?', [id, check.account ?? identity.publicKey]);
+    const times = (await recentPosts(id))[check.account ?? identity.publicKey] || [];
     const g = await first('SELECT is_owner FROM chat_groups WHERE id = ?', [id]);
     if (g?.is_owner) {
-      // The owner may always answer: once a minute (the postman's limit).
-      return { allowedAt: last ? last.at + MIN_POST_INTERVAL : 0, nfts: check.nfts, owner: true };
+      // The owner may always answer: every 10 seconds (the postman's limit).
+      return { allowedAt: times.length ? Math.max(...times) + MIN_POST_INTERVAL : 0, nfts: check.nfts, owner: true };
     }
-    return { allowedAt: nextPostAllowedAt(last?.at ?? null, check.nfts), nfts: check.nfts, owner: false };
+    return {
+      allowedAt: nextPostAllowedAt(times, check.nfts, now()),
+      nfts: check.nfts,
+      perDay: postsPerDay(check.nfts),
+      left: postsLeft(times, check.nfts, now()),
+      owner: false,
+    };
   }
 
   async function postToGroup(id, text) {

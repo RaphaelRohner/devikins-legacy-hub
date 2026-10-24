@@ -431,15 +431,15 @@ test('"only this browser" removes the chat here and leaves it working in the oth
 
 test('groups: create, ask to join, a member\'s Hub lets you in, posts from joining on, limits by holdings, pinned rules', async () => {
   const { player, clock } = world();
-  const alice = await player('Alice', 3); // 3 Devikins: one post per 8 h
-  const bob = await player('Bob', 50); // 50: one post per ~29 min
+  const alice = await player('Alice', 3); // 3 Devikins: 3 posts a day
+  const bob = await player('Bob', 50); // 50: 50 posts a day
   const gid = await alice.createGroup('Fire Breeders', 'Trading Fire Devikins');
   await alice.postToGroup(gid, 'Welcome, Fire fans!');
   await assert.rejects(alice.postToGroup(gid, 'and again'), /Not yet/);
   const next = await alice.nextGroupPostAt(gid);
   assert.equal(next.nfts, 3);
-  // The owner may answer once a minute, whatever she holds
-  assert.deepEqual([next.owner, next.allowedAt - clock.t], [true, MINUTE]);
+  // The owner may answer every 10 seconds, whatever she holds
+  assert.deepEqual([next.owner, next.allowedAt - clock.t], [true, 10 * 1000]);
 
   let list = await bob.listGroups();
   assert.deepEqual(list.map((g) => [g.name, g.owner, g.members, g.member, g.asking]), [['Fire Breeders', 'Alice', 1, false, false]]);
@@ -488,13 +488,13 @@ test('groups: create, ask to join, a member\'s Hub lets you in, posts from joini
 
 test('groups: posts that come too early are hidden by every Hub; blocked players\' posts are hidden for you', async () => {
   const { player, clock } = world();
-  const alice = await player('Alice', 3);
+  const alice = await player('Alice', 1);
   const bob = await player('Bob', 50);
-  const gid = await bob.createGroup('Open Talk'); // Bob runs it; Alice is a member (limit: 1 post / 8 h)
+  const gid = await bob.createGroup('Open Talk'); // Bob runs it; Alice is a member (limit: 1 post a day)
   await alice.joinGroup(gid);
   await bob.checkMail();
   await alice.checkMail();
-  // A modified Hub posts twice within 8 h for Alice: the postman takes it (1/min), every reader drops the 2nd
+  // A modified Hub posts twice within a day for Alice: the postman takes it, every reader drops the 2nd
   clock.t += MINUTE;
   await alice.postToGroup(gid, 'first');
   clock.t += 2 * MINUTE;
@@ -510,7 +510,7 @@ test('groups: posts that come too early are hidden by every Hub; blocked players
   await connect(alice, bob, clock);
   const aliceOnBob = (await bob.listContacts())[0];
   await bob.blockContact(aliceOnBob.id);
-  clock.t += 9 * 60 * MINUTE;
+  clock.t += 25 * 60 * MINUTE;
   await alice.postToGroup(gid, 'after the block');
   await bob.checkMail();
   assert.deepEqual((await bob.groupPosts(gid)).map((p) => p.text), ['first']);
@@ -563,7 +563,7 @@ test('groups (review fixes): a fake key is refused, an old post sent again is dr
   await bob.checkMail();
   assert.deepEqual((await bob.groupPosts(gid)).map((p) => p.text), ['real post']);
   // ... and Alice's (the owner's) own next post isn't blocked by it
-  assert.equal((await alice.nextGroupPostAt(gid)).allowedAt, clock.t - 10 * MINUTE + MINUTE);
+  assert.equal((await alice.nextGroupPostAt(gid)).allowedAt, clock.t - 10 * MINUTE + 10 * 1000);
 
   // A second browser of Bob's (same wallet): in the group, but no key → "Get the key"
   const bob2 = await player('Bob', 50, bob);

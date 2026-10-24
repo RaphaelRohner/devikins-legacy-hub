@@ -65,20 +65,24 @@ test('posting limits by holdings are applied by every member\'s Hub, using the p
   const group = createGroup();
   const keys = { 1: group.key };
   const one = issueBadge(postman, { holder: alice.publicKey, nfts: 1, now: T0 });
-  const many = issueBadge(postman, { holder: bob.publicKey, nfts: 1440, now: T0 }); // → 1 per minute
+  const three = issueBadge(postman, { holder: bob.publicKey, nfts: 3, now: T0 }); // → 3 posts a day
   const item = (from, badge, at, text = 'hi') => ({ post: openGroupPost(sealGroupPost({ group, from, text, badge, now: at }), { groupId: group.id, keys }), receivedAt: at });
   const items = [
     item(alice, one, T0, 'For sale: #4821'),
-    item(alice, one, T0 + HOUR, 'spam'), // too early: 1 NFT = once a day
+    item(alice, one, T0 + HOUR, 'spam'), // too early: 1 NFT = one post a day
     item(alice, one, T0 + DAY, 'still for sale'),
-    item(bob, many, T0),
-    item(bob, many, T0 + 30 * 1000), // under a minute: too early
-    item(bob, many, T0 + MINUTE),
+    item(bob, three, T0, 'b1'),
+    item(bob, three, T0 + 5 * 1000, 'too quick'), // under 10 seconds: too early
+    item(bob, three, T0 + 10 * 1000, 'b2'),
+    item(bob, three, T0 + 20 * 1000, 'b3'), // a burst is fine...
+    item(bob, three, T0 + 30 * 1000, 'b4'), // ...but 3 a day are used up
+    item(bob, three, T0 + DAY + 1, 'b5'), // the first one is 24 h old: one more
   ];
   const lastAccepted = {};
   const { shown, dropped } = acceptPosts(items, { postmanPublicKey: postman.publicKey, lastAccepted });
-  assert.deepEqual(shown.map((s) => s.post.text), ['For sale: #4821', 'hi', 'hi', 'still for sale']);
-  assert.deepEqual(dropped.map((d) => d.reason), ['too early', 'too early']);
+  assert.deepEqual(shown.map((s) => s.post.text), ['For sale: #4821', 'b1', 'b2', 'b3', 'still for sale', 'b5']);
+  assert.deepEqual(dropped.map((d) => d.post?.text ?? d.item.post.text), ['too quick', 'b4', 'spam']);
+  assert.ok(dropped.every((d) => d.reason === 'too early'));
   // a post without a genuine badge is dropped; so is one from a paused author
   const fake = issueBadge(eve, { holder: eve.publicKey, nfts: 99, now: T0 });
   const r = acceptPosts([item(eve, fake, T0)], { postmanPublicKey: postman.publicKey });

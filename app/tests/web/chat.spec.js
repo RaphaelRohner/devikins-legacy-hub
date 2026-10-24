@@ -305,8 +305,8 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await alice.page.getByTestId('chat-group-draft').fill('Welcome, Fire fans!');
   await alice.page.getByTestId('chat-group-post').click();
   await expect(alice.page.getByText('Welcome, Fire fans!')).toBeVisible();
-  // The owner may always answer (once a minute)
-  await expect(alice.page.getByTestId('chat-group-limit')).toContainText("As the group's owner you can always answer: once a minute.");
+  // The owner may always answer (every 10 seconds)
+  await expect(alice.page.getByTestId('chat-group-limit')).toContainText("As the group's owner you can always answer (one post every 10 seconds).");
 
   // Bob finds it and asks to join; Alice's open Hub lets him in
   await expect(bob.page.getByTestId('chat-group-other')).toContainText('Fire Breeders');
@@ -318,10 +318,12 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await expect(bob.page.getByTestId('chat-group-pinned')).toContainText('Rules: be nice, no spam.');
   await expect(bob.page.getByText('No posts yet since you joined.')).toBeVisible();
   await expect(bob.page.getByText('Welcome, Fire fans!')).toHaveCount(0);
-  await expect(bob.page.getByTestId('chat-group-limit')).toContainText('With 24 Devikins you can post once every 1 h');
+  await expect(bob.page.getByTestId('chat-group-limit')).toContainText('24 of 24 posts left for today');
   await bob.page.getByTestId('chat-group-draft').fill('Hi everyone');
   await bob.page.getByTestId('chat-group-draft').press('Enter');
   await expect(bob.page.getByText('Hi everyone')).toBeVisible();
+  // One of his 24 posts for the day is used
+  await expect(bob.page.getByTestId('chat-group-limit')).toContainText('23 of 24 posts left for today', { timeout: 30_000 });
 
   // Alice sees Bob's post with his name
   await expect(alice.page.getByText('Hi everyone')).toBeVisible();

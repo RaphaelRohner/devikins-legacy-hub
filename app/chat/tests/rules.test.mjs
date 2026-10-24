@@ -4,22 +4,30 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  postInterval, nextPostAllowedAt, contactRequestWait, votingThreshold, voteResult, voteDecidedEarly, canOpenVote, isPostingPaused,
+  postsPerDay, postsLeft, nextPostAllowedAt, MIN_POST_INTERVAL, contactRequestWait, votingThreshold, voteResult, voteDecidedEarly, canOpenVote, isPostingPaused,
   MINUTE, HOUR, DAY,
 } from '../src/rules.js';
 
-test('posting in open groups: 24 h ÷ NFTs, at most once a minute, nothing without NFTs', () => {
-  assert.equal(postInterval(1), DAY);
-  assert.equal(postInterval(2), 12 * HOUR);
-  assert.equal(postInterval(3), 8 * HOUR);
-  assert.equal(postInterval(24), HOUR);
-  assert.equal(postInterval(50), Math.round(DAY / 50)); // ~29 min
-  assert.equal(postInterval(100), Math.round(DAY / 100)); // ~14 min
-  assert.equal(postInterval(5000), MINUTE);
-  assert.equal(postInterval(0), Infinity);
-  assert.equal(postInterval(undefined), Infinity);
-  assert.equal(nextPostAllowedAt(null, 1), 0);
-  assert.equal(nextPostAllowedAt(1000, 2), 1000 + 12 * HOUR);
+test('posting in open groups: as many posts per 24 h as NFTs, in bursts, 10 seconds apart, nothing without NFTs', () => {
+  assert.equal(MIN_POST_INTERVAL, 10 * 1000);
+  assert.equal(postsPerDay(1), 1);
+  assert.equal(postsPerDay(65), 65);
+  assert.equal(postsPerDay(0), 0);
+  assert.equal(postsPerDay(undefined), 0);
+  const t = 1_000_000_000_000;
+  assert.equal(nextPostAllowedAt([], 1, t), 0);
+  assert.equal(nextPostAllowedAt([], 0, t), Infinity);
+  // 1 NFT: one post, then the next 24 h after it (as before)
+  assert.equal(nextPostAllowedAt([t], 1, t), t + DAY);
+  // 3 NFTs: three posts in a row, 10 seconds apart; the 4th when the 1st is 24 h old
+  assert.equal(nextPostAllowedAt([t], 3, t), t + 10_000);
+  assert.equal(nextPostAllowedAt([t, t + 10_000], 3, t + 10_000), t + 20_000);
+  assert.equal(nextPostAllowedAt([t, t + 10_000, t + 20_000], 3, t + 20_000), t + DAY);
+  // posts older than 24 h don't count any more
+  assert.equal(nextPostAllowedAt([t - 2 * DAY, t - DAY - 1, t], 2, t), t + 10_000);
+  assert.equal(postsLeft([t - DAY - 1, t - HOUR, t], 65, t), 63);
+  // (a single time, as stored before 24 Oct 2026, still works)
+  assert.equal(nextPostAllowedAt(t, 1, t), t + DAY);
 });
 
 test('contact requests: 5, 10, 20, 40 … minutes apart, about 9 in the first day, then a fresh start', () => {

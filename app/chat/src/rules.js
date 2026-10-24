@@ -30,31 +30,52 @@ export function cleanText(text) {
   return cleaned.length > MAX_TEXT_LENGTH ? cleaned.slice(0, MAX_TEXT_LENGTH) : cleaned;
 }
 
-// --- Group posts: how often, by holdings -----------------------------------
+// --- Group posts: how many, by holdings ------------------------------------
+// (Raphael, 24 Oct 2026: "that's not how people chat" - instead of one post
+// every 24 h ÷ NFTs, a daily allowance that can be used in bursts.)
 
-/** Nobody posts in a group more often than this (against accidental flooding). */
-export const MIN_POST_INTERVAL = MINUTE;
+/** At least this long between two posts of the same player (against flooding). */
+export const MIN_POST_INTERVAL = 10 * 1000;
+
+/** The allowance counts posts over the last 24 hours (rolling, not per calendar day). */
+export const POST_WINDOW = DAY;
 
 /**
- * postInterval — the time between two posts in an open group for someone
- * holding `nfts` NFTs: 24 h ÷ NFTs, but never less than one minute.
- * 1 → 24 h, 2 → 12 h, 24 → 1 h, 100 → 14.4 min, 2000 → 1 min.
- * No NFTs (or not a number) → Infinity: can't post.
+ * postsPerDay — how many group posts someone holding `nfts` NFTs may write
+ * in any 24 hours: one per NFT. 1 → 1, 65 → 65. No NFTs → 0.
  */
-export function postInterval(nfts) {
+export function postsPerDay(nfts) {
   const n = Math.floor(Number(nfts));
-  if (!Number.isFinite(n) || n < 1) return Infinity;
-  return Math.max(MIN_POST_INTERVAL, Math.round(DAY / n));
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 /**
- * nextPostAllowedAt — when someone may post again, given when their last
- * post was accepted (null = never). Used both to show "Next post possible
- * in …" and, by every member's Hub, to drop posts that came too early.
+ * nextPostAllowedAt — when someone may post again, given the times of their
+ * accepted posts (any order; only the last 24 h count) and their NFTs.
+ * 0 = right away; Infinity = never (no NFTs). Used both to show "posts
+ * left / next post possible" and, by every member's Hub, to drop posts that
+ * came too early.
  */
-export function nextPostAllowedAt(lastAcceptedAt, nfts) {
-  if (lastAcceptedAt === null || lastAcceptedAt === undefined) return 0;
-  return lastAcceptedAt + postInterval(nfts);
+export function nextPostAllowedAt(times, nfts, now = 0) {
+  const allowance = postsPerDay(nfts);
+  if (allowance < 1) return Infinity;
+  const list = (Array.isArray(times) ? times : times === null || times === undefined ? [] : [times])
+    .filter((t) => Number.isFinite(t))
+    .sort((a, b) => a - b);
+  if (!list.length) return 0;
+  const last = list[list.length - 1];
+  const reference = Math.max(now, last);
+  const recent = list.filter((t) => t > reference - POST_WINDOW);
+  let at = last + MIN_POST_INTERVAL;
+  // Used up: the oldest of the last `allowance` posts has to leave the 24 h first.
+  if (recent.length >= allowance) at = Math.max(at, recent[recent.length - allowance] + POST_WINDOW);
+  return at;
+}
+
+/** How many posts are left right now (for "58 of 65 left"). */
+export function postsLeft(times, nfts, now) {
+  const recent = (times || []).filter((t) => Number.isFinite(t) && t > now - POST_WINDOW);
+  return Math.max(0, postsPerDay(nfts) - recent.length);
 }
 
 // --- Contact requests: an exponential pause --------------------------------

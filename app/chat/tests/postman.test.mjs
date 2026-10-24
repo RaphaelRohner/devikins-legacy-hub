@@ -362,7 +362,7 @@ test('groups: created at the postman, listed, joined with a member\'s help; new 
 
   const p1 = await post(a, 'Welcome!');
   assert.equal(p1.status, 200);
-  assert.equal((await post(a, 'Again!')).status, 429); // flood limit: 1 per minute
+  assert.equal((await post(a, 'Again!')).status, 429); // flood limit: 1 every 10 seconds
   assert.equal((await post(b, 'Me!')).status, 403); // not a member yet
   assert.equal((await call(b.device, 'GET', `/group/posts?group=${group.id}`)).status, 403);
 
@@ -397,11 +397,16 @@ test('groups: created at the postman, listed, joined with a member\'s help; new 
   assert.equal(aliceSees.length, 3);
   const newer = (await call(a.device, 'GET', `/group/posts?group=${group.id}&after=${p1.body.seq}`)).body.posts;
   assert.equal(newer.length, 2);
-  const items = aliceSees.map((p) => ({ post: openGroupPost(p.envelope, { groupId: group.id, keys: { 1: group.key } }), receivedAt: p.receivedAt }));
+  // Alice holds 3 Devikins: 3 posts a day - a 4th within 24 h is dropped by every reader.
+  clock.t += MINUTE;
+  assert.equal((await post(a, 'Third')).status, 200);
+  clock.t += MINUTE;
+  assert.equal((await post(a, 'One too many')).status, 200);
+  const all = (await call(a.device, 'GET', `/group/posts?group=${group.id}`)).body.posts;
+  const items = all.map((p) => ({ post: openGroupPost(p.envelope, { groupId: group.id, keys: { 1: group.key } }), receivedAt: p.receivedAt }));
   const { shown, dropped } = acceptPosts(items, { postmanPublicKey: office.postmanPublicKey });
-  // Alice holds 3 Devikins: one post per 8 hours, so her second post is dropped by every reader.
-  assert.deepEqual(shown.map((x) => x.post.text), ['Welcome!', 'Hi all']);
-  assert.deepEqual(dropped.map((d) => [d.item.post.text, d.reason]), [['Hi Bob', 'too early']]);
+  assert.deepEqual(shown.map((x) => x.post.text), ['Welcome!', 'Hi all', 'Hi Bob', 'Third']);
+  assert.deepEqual(dropped.map((d) => [d.item.post.text, d.reason]), [['One too many', 'too early']]);
   const members = (await call(b.device, 'GET', `/groups/members?group=${group.id}`)).body.members;
   assert.deepEqual(members.map((m) => m.nickname), ['Alice', 'Bob']);
 

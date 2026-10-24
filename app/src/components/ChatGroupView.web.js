@@ -7,7 +7,7 @@
  * ChatGroupView: one group – one line each (opens on a tap) for the owner's
  * pinned messages, open votes (red) and the members; then the posts,
  * and the box to write, which says openly when your next post is possible
- * (one post per 24 h ÷ your Devikins, at most one a minute).
+ * (as many posts per 24 hours as you hold Devikins, 10 seconds apart).
  *
  * The logic is in app/chat/src/messenger.js; joining works like this: you
  * ask, and the Hub of the first member that's open hands you the group's
@@ -17,7 +17,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { MAX_TEXT_LENGTH, postInterval } from '../../chat/src/rules.js';
+import { MAX_TEXT_LENGTH } from '../../chat/src/rules.js';
 import { MAX_PINS } from '../../chat/src/group.js';
 
 function timeLabel(ms) {
@@ -34,13 +34,6 @@ function waitLabel(ms) {
   return `${h} h${min % 60 ? ` ${min % 60} min` : ''}`;
 }
 
-function intervalLabel(nfts) {
-  const ms = postInterval(nfts);
-  const min = Math.round(ms / 60000);
-  if (min < 60) return `${min} min`;
-  const h = min / 60;
-  return Number.isInteger(h) ? `${h} h` : `${h.toFixed(1)} h`;
-}
 
 function Button({ label, onPress, disabled, quiet, testID }) {
   const { colors } = useTheme();
@@ -381,7 +374,7 @@ export default function ChatGroupView({
 
   // Keep "next post possible in …" fresh.
   useEffect(() => {
-    const timer = setInterval(() => setTick((n) => n + 1), 30000);
+    const timer = setInterval(() => setTick((n) => n + 1), 5000); // (the 10-second pause between posts)
     return () => clearInterval(timer);
   }, []);
 
@@ -548,10 +541,10 @@ export default function ChatGroupView({
           {next?.allowedAt === null || next?.allowedAt === undefined
             ? 'Please sign in again to post (your weekly check has run out).'
             : next.owner
-              ? `As the group's owner you can always answer: once a minute.${waitMs > 0 ? ` Next post possible in ${waitLabel(waitMs)}.` : ''}`
-              : waitMs > 0
-                ? `Next post possible in ${waitLabel(waitMs)}. With ${next.nfts} Devikin${next.nfts === 1 ? '' : 's'} you can post once every ${intervalLabel(next.nfts)}.`
-                : `With ${next.nfts} Devikin${next.nfts === 1 ? '' : 's'} you can post once every ${intervalLabel(next.nfts)}.`}
+              ? "As the group's owner you can always answer (one post every 10 seconds)."
+              : next.left === 0
+                ? `You've used your ${next.perDay} post${next.perDay === 1 ? '' : 's'} for the last 24 hours (one per Devikin). Next post possible in ${waitLabel(waitMs)}.`
+                : `${next.left} of ${next.perDay} post${next.perDay === 1 ? '' : 's'} left for today (one per Devikin, over 24 hours).${waitMs > 0 ? ' One moment…' : ''}`}
         </Text>
         <View style={styles.row}>
           <TextInput

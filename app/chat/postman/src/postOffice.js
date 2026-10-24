@@ -925,7 +925,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       const text = stringify(envelope);
       if (text.length > MAX_GROUP_ENVELOPE_CHARS) refuse(413, 'This envelope is too big.');
       const last = row('SELECT at FROM lastpost WHERE player = ?', account.wallet_fp);
-      if (last && t - last.at < MIN_POST_INTERVAL) refuse(429, 'At most one group post per minute.');
+      if (last && t - last.at < MIN_POST_INTERVAL) refuse(429, 'At most one group post every 10 seconds.');
       spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
       run('INSERT INTO lastpost (player, at) VALUES (?, ?) ON CONFLICT (player) DO UPDATE SET at = excluded.at', account.wallet_fp, t);
       const seq = row('INSERT INTO posts (grp, envelope, at) VALUES (?, ?, ?) RETURNING seq', envelope.group, text, t).seq;

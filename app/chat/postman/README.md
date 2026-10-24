@@ -79,7 +79,8 @@ held the threshold at the end (accepted, 22 Oct 2026).
 - 300 envelopes per drop code (one contact can't flood a mailbox; blocking
   = removing that code);
 - at most 500 envelopes waiting per device, 5 devices per player, 1 group
-  post per minute, group envelopes up to 24 KB (a 2,000-character post fits),
+  post every 10 seconds (the daily allowance - posts per 24 h = Devikins - is
+  checked by every member's Hub), group envelopes up to 24 KB (a 2,000-character post fits),
   64 KB per 1:1 envelope;
 - nicknames: look-alikes count as taken (spaces, `_ . -` ignored; 0 = O;
   1 = l = I).
@@ -121,7 +122,7 @@ someone who intercepted it (no request today is harmful to repeat).
 | `POST /groups/vote/cast` | member ≥ threshold | `{vote, yes, proof}` – vote once |
 | `POST /groups/unban` | owner | let a removed member back in |
 | `POST /groups/rekey` | member | after a removal: the new group key, sealed for every member's devices (the first one counts) |
-| `POST /group/post` | member | one sealed group post (at most 1 per minute) |
+| `POST /group/post` | member | one sealed group post (at most 1 every 10 seconds) |
 | `GET /group/posts?group=&after=` | member | a group's posts after number N – only those from after you joined |
 | `POST /leave` | device | forget this device (and the account with its last device) |
 
