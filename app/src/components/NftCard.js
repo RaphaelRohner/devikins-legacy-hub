@@ -79,7 +79,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, Image, TextInput, StyleSheet, Modal, TouchableOpacity, Linking, Pressable, useWindowDimensions } from 'react-native';
 import { TRAIT_COLUMNS, kleverscanNftUrl } from '../constants/schema';
-import { setNftDeletedState, setNftCustomName, setNftStarRating, getWithdrawalItem, getGlobalSetting, WITHDRAW_SETTING_KEYS } from '../db/database';
+import { setNftDeletedState, setNftCustomName, setNftStarRating, getWithdrawalItem, getGlobalSetting, getWallets, WITHDRAW_SETTING_KEYS } from '../db/database';
 import { ID_LIST_OWNER } from '../constants/idList';
 import { placeInWords } from '../api/withdrawalTracker';
 import { useTheme } from '../context/ThemeContext';
@@ -171,7 +171,8 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
         getGlobalSetting(WITHDRAW_SETTING_KEYS.from),
         getGlobalSetting(WITHDRAW_SETTING_KEYS.to),
       ]);
-      if (alive) setWhereText(placeInWords(item, { fromAddress, toAddress }));
+      const ownWallets = await getWallets().catch(() => []);
+      if (alive) setWhereText(placeInWords(item, { fromAddress, toAddress, ownWallets }));
     })();
     return () => {
       alive = false;

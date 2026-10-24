@@ -4,7 +4,7 @@
  */
 const { test, expect } = require('@playwright/test');
 const { installFakeServers, fakeAddress, GAME_MAIN_WALLET, TEST_WALLET } = require('./fakeServers');
-const { openHub, openMenuEntry, goBack, addWalletAndFetch } = require('./helpers');
+const { openHub, openMenuEntry, goBack, addWalletAndFetch, nameNewWallet } = require('./helpers');
 
 let fake;
 test.beforeEach(async ({ context }) => {
@@ -113,4 +113,35 @@ test('exporting the "My wallets" set on its own also takes the IDs along', async
   await openMenuEntry(page2, 'Weapons');
   await expect(page2.getByText('3 Weapons')).toBeVisible();
   await context2.close();
+});
+
+test('a list NFT sitting in one of your own wallets is tagged with that wallet, not "In another wallet"', async ({ page }) => {
+  const second = fakeAddress('s');
+  fake.chain.holders.set('weapon:3265', second);
+  fake.extraNfts.set('weapon:3265', { name: 'Rusty Test Wand #3265', attributes: { Rarity: 'Common', Type: 'Wand', Quality: 'Rusty' } });
+
+  await openHub(page);
+  await addWalletAndFetch(page, fake);
+  // A second wallet of your own in the same set
+  await openMenuEntry(page, 'Wallets');
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(second);
+  await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
+  await expect(page.getByText(second).first()).toBeVisible();
+  await switchNear(page, 'My wallets').click();
+  await goBack(page);
+  await openMenuEntry(page, 'Withdrawals');
+  await page.getByPlaceholder('klv1… (in-game wallet)').fill(fakeAddress('g'));
+  await page.getByPlaceholder('klv1… (receiving wallet)').fill(TEST_WALLET);
+  await page.getByText('Save', { exact: true }).click();
+  await page.locator('textarea').fill('W3265');
+  await page.getByText('Add to the list', { exact: true }).click();
+  await page.getByText('Check', { exact: true }).click();
+  await expect(page.getByText(/Last check:/)).toBeVisible();
+  await goBack(page);
+  await openMenuEntry(page, 'Weapons');
+  await openMenuEntry(page, 'Fetch/Update');
+  await expect(page.getByText('3 Weapons')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(new RegExp(`^#3265\\s*·\\s*In ${second.slice(0, 8)}`))).toBeVisible();
+  await expect(page.getByText(/In another wallet/)).toHaveCount(0);
 });

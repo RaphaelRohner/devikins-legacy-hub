@@ -76,7 +76,7 @@ import WeaponSummaryRow from './WeaponSummaryRow';
 import EquipmentSummaryRow from './EquipmentSummaryRow';
 import CompareView from './CompareView';
 import NftHistoryModal from './NftHistoryModal';
-import { queryNfts, countNfts, getNftPlaces, getDistinctColumnValues, getColumnRange, getNftHistory, getGlobalSetting, setGlobalSetting, getWithdrawalItems, WITHDRAW_SETTING_KEYS } from '../db/database';
+import { queryNfts, countNfts, getNftPlaces, getWallets, getDistinctColumnValues, getColumnRange, getNftHistory, getGlobalSetting, setGlobalSetting, getWithdrawalItems, WITHDRAW_SETTING_KEYS } from '../db/database';
 import { ID_LIST_OWNER } from '../constants/idList';
 import { GAME_MAIN_WALLET } from '../api/withdrawalTracker';
 import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER } from '../constants/schema';
@@ -327,11 +327,15 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
     // saying where they are (Raphael, 15 Oct 2026).
     if (ownerAddresses.includes(ID_LIST_OWNER) && result.some((r) => r.owner_address === ID_LIST_OWNER)) {
       try {
-        const [items, from, to] = await Promise.all([
+        const [items, from, to, ownWallets] = await Promise.all([
           getWithdrawalItems(),
           getGlobalSetting(WITHDRAW_SETTING_KEYS.from),
           getGlobalSetting(WITHDRAW_SETTING_KEYS.to),
+          getWallets().catch(() => []),
         ]);
+        // NFTs in one of the set's own wallets are tagged with its name, not
+        // "In another wallet" (Raphael, 24 Oct 2026: his test wallets).
+        const ownByAddress = new Map(ownWallets.map((w) => [w.address, w]));
         const tags = {};
         for (const item of items) {
           if (item.kind !== kind) continue;
@@ -340,6 +344,10 @@ export default function CollectionView({ kind, ownerAddresses, refreshKey, searc
           else if (!item.holder) tag = { text: 'Not found on the chain', tone: 'warn' };
           else if (to && item.holder === to) tag = { text: 'Arrived', tone: 'good' };
           else if ((from && item.holder === from) || item.holder === GAME_MAIN_WALLET) tag = { text: 'In the game', tone: 'muted' };
+          else if (ownByAddress.has(item.holder)) {
+            const w = ownByAddress.get(item.holder);
+            tag = { text: `In ${w.alias || `${item.holder.slice(0, 8)}…`}`, tone: 'good' };
+          }
           else tag = { text: 'In another wallet', tone: 'warn' };
           tags[item.nonce] = tag;
         }

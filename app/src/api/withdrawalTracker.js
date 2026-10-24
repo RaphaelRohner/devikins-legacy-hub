@@ -367,12 +367,14 @@ export async function runWithdrawalCheck({ items, fromAddress, toAddress, full, 
 
 /** Where an NFT is, in words, from the tracker's last check - used in
  *  the NFT details for NFTs that come from the Withdrawals list. */
-export function placeInWords(item, { fromAddress, toAddress }) {
+export function placeInWords(item, { fromAddress, toAddress, ownWallets = [] }) {
   if (!item || !item.checked_at) return 'Not checked yet - run a check on the Withdrawals screen';
   const when = new Date(item.checked_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const own = ownWallets.find((w) => w.address === item.holder);
   let where;
   if (!item.holder) where = 'Not found on the chain';
   else if (item.holder === toAddress) where = 'In your receiving wallet';
+  else if (own && item.holder !== fromAddress) where = `In your wallet "${own.alias || `${item.holder.slice(0, 8)}…${item.holder.slice(-6)}`}"`;
   else if (item.holder === fromAddress) where = 'In your in-game wallet';
   else if (item.holder === GAME_MAIN_WALLET) where = "In the game's main wallet";
   else where = `In another wallet (${item.holder.slice(0, 8)}…${item.holder.slice(-6)})`;
