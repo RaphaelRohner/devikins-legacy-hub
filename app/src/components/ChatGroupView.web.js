@@ -302,7 +302,7 @@ function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBa
               <Text style={[styles.link, { color: colors.cancelText }]}>Leave this group</Text>
             </TouchableOpacity>
           ) : null}
-          {name !== group.owner && name !== me && !open.has(name) && votes?.canVote && votes?.canOpen && voting !== name ? (
+          {name !== group.owner && name !== me && !open.has(name) && (votes?.canVote || group.isOwner) && votes?.canOpen && voting !== name ? (
             <TouchableOpacity onPress={() => { setVoting(name); setReason(''); }} testID="chat-vote-start">
               <Text style={[styles.link, { color: colors.cancelText }]}>Start a vote to remove</Text>
             </TouchableOpacity>
@@ -337,7 +337,11 @@ function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBa
       ))}
       {votes && !votes.canVote ? (
         <>
-          <Text style={[styles.note, { color: colors.secondaryText }]}>Members holding at least {votes.threshold} Devikins can start and cast votes.</Text>
+          <Text style={[styles.note, { color: colors.secondaryText }]}>
+            {group.isOwner
+              ? `As the owner you can start a vote; your own "yes" counts once you hold at least ${votes.threshold} Devikins. The members holding that many decide.`
+              : `Members holding at least ${votes.threshold} Devikins can start and cast votes.`}
+          </Text>
           <HoldingsNote votes={votes} busy={busy} onUpdateHoldings={onUpdateHoldings} />
         </>
       ) : null}

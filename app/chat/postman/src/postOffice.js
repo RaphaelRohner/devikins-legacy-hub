@@ -288,10 +288,12 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
   /**
    * A vote needs a fresh wallet signature (POST /proof/start gives the text):
    * it must be this player's own wallet (its fingerprint), holding at least
-   * the threshold right now. → the wallet address (kept with the ballot only
-   * until the vote is counted, to check it again then).
+   * the threshold right now. → { wallet, held } (the address is kept with the
+   * ballot only until the vote is counted, to check it again then).
+   * `anyHoldings`: a group's owner may start a vote whatever they hold (their
+   * own "yes" then counts only with the threshold; Raphael, 24 Oct 2026).
    */
-  async function checkVoteProof({ device, account, body, threshold, host }) {
+  async function checkVoteProof({ device, account, body, threshold, host, anyHoldings = false }) {
     const { code, wallet, signature } = body.proof || {};
     const p = typeof code === 'string' ? row('SELECT * FROM proofs WHERE code = ?', code) : null;
     if (p) run('DELETE FROM proofs WHERE code = ?', code);
@@ -302,8 +304,8 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     if ((await hmacHex(walletSalt, wallet)) !== account.wallet_fp) refuse(403, 'Please use the wallet you signed in to the chat with.');
     let held;
     try { held = await devikinsHeld(wallet, fetchKlever); } catch { refuse(502, "Klever's server didn't answer; please try again in a minute."); }
-    if (held < threshold) refuse(403, `Only members holding at least ${threshold} Devikins can vote (this wallet holds ${held} right now).`);
-    return wallet;
+    if (held < threshold && !anyHoldings) refuse(403, `Only members holding at least ${threshold} Devikins can vote (this wallet holds ${held} right now).`);
+    return { wallet, held };
   }
 
   const ballotsOf = (vote) => rows('SELECT * FROM ballots WHERE vote = ? ORDER BY at, rowid', vote);
@@ -833,7 +835,8 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       let account = verifiedAccount(device, t);
       let group = memberGroup(body.group, account);
       const threshold = await currentThreshold();
-      const wallet = await checkVoteProof({ device, account, body, threshold, host });
+      const isOwner = row('SELECT owner FROM groups WHERE id = ?', group).owner === account.id;
+      const { wallet, held } = await checkVoteProof({ device, account, body, threshold, host, anyHoldings: isOwner });
       account = verifiedAccount(device, now());
       group = memberGroup(body.group, account);
       const accused = typeof body.accused === 'string' ? row('SELECT id, wallet_fp, nickname FROM accounts WHERE nick_key = ?', nicknameKey(body.accused)) : null;
@@ -851,7 +854,8 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       const members = row('SELECT COUNT(*) AS n FROM group_members WHERE grp = ?', group).n;
       run(`INSERT INTO votes (id, grp, accused, opener, accused_fp, accused_nick, opener_fp, reason, opened_at, members)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, group, accused.id, account.id, accused.wallet_fp, accused.nickname, account.wallet_fp, reason, t, members);
-      run('INSERT INTO ballots (vote, account, yes, eligible, at, wallet) VALUES (?, ?, 1, 1, ?, ?)', id, account.id, t, wallet);
+      // (The opener's "yes" counts only with the threshold - an owner below it can start the vote, not decide it.)
+      run('INSERT INTO ballots (vote, account, yes, eligible, at, wallet) VALUES (?, ?, 1, ?, ?, ?)', id, account.id, held >= threshold ? 1 : 0, t, wallet);
       closeEarlyIfDecided(id, { afterBallot: true });
       return { id, endsAt: t + VOTE_DURATION };
     },
@@ -868,7 +872,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
         refuse(403, 'Only members who were in the group when the vote started can vote.');
       }
       const threshold = await currentThreshold();
-      const wallet = await checkVoteProof({ device, account, body, threshold, host });
+      const { wallet } = await checkVoteProof({ device, account, body, threshold, host });
       account = verifiedAccount(device, now());
       memberGroup(v.grp, account);
       if (row('SELECT decided FROM votes WHERE id = ?', v.id).decided || now() >= v.opened_at + VOTE_DURATION) refuse(409, 'This vote has ended.');

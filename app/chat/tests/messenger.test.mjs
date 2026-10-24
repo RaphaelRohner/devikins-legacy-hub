@@ -782,6 +782,38 @@ test('removal votes end early: enough "no" keeps the member and lifts the pause;
   assert.deepEqual([d2.decided, d2.valid, d2.passed], [true, false, false]); // Cid's vote doesn't count: 2 of 3 needed
 });
 
+test('removal votes: the owner may start one whatever they hold; their own "yes" counts only with the threshold', async () => {
+  const { player, decide } = world();
+  const owner = await player('Owner', 3); // below the threshold of 10
+  const bea = await player('Bea', 12);
+  const cid = await player('Cid', 12);
+  const dee = await player('Dee', 12);
+  const max = await player('Max', 12);
+  const gid = await owner.createGroup('Small Owner');
+  for (const p of [bea, cid, dee, max]) {
+    await p.joinGroup(gid);
+    await owner.checkMail();
+    await p.checkMail();
+  }
+  // (a member below the threshold still can't)
+  const low = await player('Low', 3);
+  await low.joinGroup(gid);
+  await owner.checkMail();
+  await low.checkMail();
+  await assert.rejects(low.openVote(gid, 'Cid', 'z', low.sign), /at least 10 Devikins/);
+  // The owner (3 Devikins) starts one about Dee
+  await owner.openVote(gid, 'Dee', 'spams', owner.sign);
+  const v2 = (await owner.groupVotes(gid)).votes.find((v) => v.accused === 'Dee');
+  assert.deepEqual(v2.ballots.map((b) => [b.voter, b.yes, b.counts]), [['Owner', true, false]]);
+  await bea.castVote(v2.id, true, bea.sign);
+  await cid.castVote(v2.id, true, cid.sign);
+  await max.castVote(v2.id, true, max.sign);
+  await decide();
+  const d = (await owner.groupVotes(gid)).votes.find((v) => v.accused === 'Dee');
+  assert.deepEqual([d.decided, d.passed], [true, true]);
+  assert.deepEqual(d.ballots.filter((b) => b.counts).map((b) => b.voter).sort(), ['Bea', 'Cid', 'Max']);
+});
+
 test('removal votes: too few votes means no removal', async () => {
   const { player, clock, decide } = world();
   const owner = await player('Owner', 12);
