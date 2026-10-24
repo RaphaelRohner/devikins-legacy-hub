@@ -105,6 +105,14 @@ export const GROUP_STATUS = {
   MEMBER: 'member',
 };
 
+/**
+ * What this Hub understands in a group's mailbox. When a new version learns
+ * something new (2 = reactions, 24 Oct 2026), it reads its groups' mailboxes
+ * once more from the start (the last 30 days), so what an older page skipped
+ * isn't lost - posts it already has aren't added or counted again.
+ */
+const GROUP_FORMAT = 2;
+
 const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_reactions', 'chat_group_names', 'chat_group_keys'];
 
 /** Contact states. */
@@ -802,8 +810,18 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
           [g.id, r.target, player, r.value, r.writtenAt, mine],
         );
       }
+      // Posts this Hub already has (when reading a mailbox again): not again.
+      const have = new Map((await all('SELECT seq, pid FROM chat_group_posts WHERE grp = ?', [g.id])).map((r) => [r.seq, r.pid]));
+      for (const item of items) {
+        if (item.post.kind === 'post' && have.has(item.seq) && !have.get(item.seq) && item.post.id) {
+          // (posts from a backup made before 24 Oct 2026 had no id yet)
+          await run('UPDATE chat_group_posts SET pid = ? WHERE grp = ? AND seq = ?', [item.post.id, g.id, item.seq]);
+          seen.add(item.post.id);
+        }
+      }
+      const newItems = items.filter((i) => !have.has(i.seq));
       const lastAccepted = await recentPosts(g.id);
-      const { shown } = acceptPosts(items, { postmanPublicKey: pk, lastAccepted, blocked: blockedDevices, seen, owners: g.owner_account ? [g.owner_account] : [] });
+      const { shown } = acceptPosts(newItems, { postmanPublicKey: pk, lastAccepted, blocked: blockedDevices, seen, owners: g.owner_account ? [g.owner_account] : [] });
       for (const [author, times] of Object.entries(lastAccepted)) {
         if (!times.length) continue;
         await run('INSERT OR REPLACE INTO chat_group_last (grp, author, at) VALUES (?, ?, ?)', [g.id, author, Math.max(...times)]);
@@ -851,9 +869,11 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
   /** Everything for the groups we're in: new posts, the pinned message, letting people in. */
   async function syncGroups() {
     const { groups } = await postman.myGroups();
+    const readAgain = (Number(await getMe('group_format')) || 1) < GROUP_FORMAT;
     for (const there of groups) {
       const g = await first('SELECT * FROM chat_groups WHERE id = ?', [there.id]);
       if (!g) continue;
+      if (readAgain && g.status === GROUP_STATUS.MEMBER && g.key) g.last_seq = 0;
       if (there.owner !== g.owner || there.isOwner !== !!g.is_owner || there.ownerAccount !== g.owner_account) {
         await run('UPDATE chat_groups SET owner = ?, is_owner = ?, owner_account = ? WHERE id = ?', [there.owner, there.isOwner ? 1 : 0, there.ownerAccount ?? null, g.id]);
         g.owner_account = there.ownerAccount ?? null;
@@ -882,6 +902,8 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     for (const g of await all('SELECT id FROM chat_groups WHERE status = ?', [GROUP_STATUS.MEMBER])) {
       if (!groups.some((x) => x.id === g.id)) await forgetGroup(g.id);
     }
+    // (only once everything went through - otherwise again next time)
+    if (readAgain) await setMe('group_format', GROUP_FORMAT);
   }
 
   /** After a removal: a new key for the group, sealed for every remaining member's devices. */

@@ -572,6 +572,17 @@ test('reactions: free (no allowance, no 10-second gap), one per player and post,
   await alice.checkMail();
   assert.deepEqual((await alice.groupPosts(gid))[0].reactions, { counts: {}, mine: '' });
   assert.ok(unreadBefore <= 1);
+  // A Hub page from before reactions skipped them (couldn't read them) and moved on: the
+  // new version reads the mailbox once more - reactions come back, posts aren't doubled.
+  await alice.reactToPost(gid, post.pid, '👍'); // (Alice can't react to her own post in the screen - here it's fine)
+  await bob.checkMail();
+  await bob.db.runAsync('DELETE FROM chat_group_reactions');
+  await bob.db.runAsync("DELETE FROM chat_me WHERE k = 'group_format'");
+  await bob.db.runAsync('UPDATE chat_groups SET unread = 0');
+  await bob.checkMail();
+  const again = await bob.groupPosts(gid);
+  assert.deepEqual(again.map((p) => [p.text, p.reactions.counts]), [['Who likes Fire Devikins?', { '👍': 1 }], ['Me!', { '😂': 1 }]]);
+  assert.equal((await bob.listGroups()).find((g) => g.id === gid).unread, 0);
   // In the backup
   const moved = await blank();
   await moved.restoreBackupData(await unlockBackup(await lockBackup(await alice.backupData(), 'password1', { rounds: 100000 }), 'password1'));
