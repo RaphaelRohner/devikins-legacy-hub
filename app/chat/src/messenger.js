@@ -169,6 +169,12 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       if (!columns.has(name)) await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
     }
   }
+  // One copy of each group post (25 Oct 2026): two mail checks at the same
+  // moment could both store the same post. Copies from before go, then the
+  // database itself refuses a second one.
+  await db.execAsync(`DELETE FROM chat_group_posts WHERE id NOT IN (SELECT MIN(id) FROM chat_group_posts GROUP BY grp, seq);
+    CREATE UNIQUE INDEX IF NOT EXISTS chat_group_posts_once ON chat_group_posts (grp, seq);`);
+
   // Every key a group ever had (older posts stay readable after a new key).
   await db.execAsync('INSERT OR IGNORE INTO chat_group_keys (grp, epoch, key) SELECT id, epoch, key FROM chat_groups WHERE key IS NOT NULL');
 
@@ -846,20 +852,20 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
         if (item.post.kind === 'poll') {
           const p = item.post;
           const badge = checkBadge(p.badge, { postmanPublicKey: pk, holder: p.from, at: item.receivedAt });
-          await run(
+          const r = await run(
             `INSERT OR IGNORE INTO chat_group_polls (grp, pid, seq, creator, author, nickname, question, options, opened_at, ends_at, mine)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [g.id, p.id, item.seq, badge.account ?? p.from, p.from, await authorName(g.id, p.from, runState), p.question,
               JSON.stringify(p.options), item.receivedAt, item.receivedAt + p.durationMs, mine ? 1 : 0],
           );
-          if (!mine) added += 1;
+          if (!mine && r?.changes) added += 1;
           continue;
         }
-        await run(
-          'INSERT INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        const r = await run(
+          'INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [g.id, item.seq, item.post.id ?? null, item.post.from, await authorName(g.id, item.post.from, runState), item.post.text, item.post.writtenAt, item.receivedAt, mine ? 1 : 0],
         );
-        if (!mine) added += 1;
+        if (!mine && r?.changes) added += 1;
       }
       // Poll answers and "closed" (free; in the order the postman got them, after the polls above).
       for (const { item, player } of acceptReactions(items, { postmanPublicKey: pk, seen, kinds: ['poll-vote', 'poll-close'] })) {
@@ -1253,7 +1259,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     }
     for (const p of Array.isArray(data.groupPosts) ? data.groupPosts : []) {
       if (typeof p.grp !== 'string' || typeof p.text !== 'string') continue;
-      await run('INSERT INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      await run('INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [p.grp, Number(p.seq) || 0, typeof p.pid === 'string' ? p.pid : null, String(p.author ?? ''), p.nickname ?? null, p.text, Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine ? 1 : 0]);
     }
     for (const p of Array.isArray(data.groupPolls) ? data.groupPolls : []) {

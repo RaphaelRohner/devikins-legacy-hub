@@ -555,6 +555,8 @@ test('reactions: free (no allowance, no 10-second gap), one per player and post,
   await bob.postToGroup(gid, 'Me!'); // his one post for the day
   // …and still reacts, straight after posting, as often as he likes
   assert.equal(await bob.reactToPost(gid, post.pid, '👍'), '👍');
+  assert.equal(await bob.reactToPost(gid, post.pid, 'dvk:laugh:ochran'), 'dvk:laugh:ochran'); // the Hub's own emojis (25 Oct 2026)
+  await assert.rejects(bob.reactToPost(gid, post.pid, 'dvk:<b>:x'), /Unknown reaction/);
   assert.equal(await bob.reactToPost(gid, post.pid, '❤️'), '❤️'); // switched
   await assert.rejects(bob.reactToPost(gid, post.pid, '🍕'), /Unknown reaction/);
   assert.deepEqual((await bob.groupPosts(gid))[0].reactions, { counts: { '❤️': 1 }, mine: '❤️' });
@@ -583,6 +585,10 @@ test('reactions: free (no allowance, no 10-second gap), one per player and post,
   const again = await bob.groupPosts(gid);
   assert.deepEqual(again.map((p) => [p.text, p.reactions.counts]), [['Who likes Fire Devikins?', { '👍': 1 }], ['Me!', { '😂': 1 }]]);
   assert.equal((await bob.listGroups()).find((g) => g.id === gid).unread, 0);
+  // Two mail checks at the same moment don't store a post twice (25 Oct 2026)
+  await alice.postToGroup(gid, 'Once only');
+  await Promise.all([bob.checkMail(), bob.checkMail(), bob.checkMail()]);
+  assert.equal((await bob.groupPosts(gid)).filter((p) => p.text === 'Once only').length, 1);
   // In the backup
   const moved = await blank();
   await moved.restoreBackupData(await unlockBackup(await lockBackup(await alice.backupData(), 'password1', { rounds: 100000 }), 'password1'));

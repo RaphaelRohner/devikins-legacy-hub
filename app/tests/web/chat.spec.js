@@ -362,6 +362,12 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await alice.page.getByTestId('chat-reaction-picker').getByText('🔥').click();
   await expect(alice.page.getByTestId('chat-reaction')).toHaveText('🔥 1');
   await expect(bob.page.getByTestId('chat-reaction')).toHaveText('🔥 1', { timeout: 30_000 });
+  // The Hub's own emojis: an Ancestry colour, then a face (25 Oct 2026)
+  await alice.page.getByTestId('chat-react').last().click();
+  await alice.page.getByTestId('chat-emoji-ancestry').filter({ hasText: 'Ochran' }).click();
+  await alice.page.getByLabel('React with Laughing (Ochran)').click();
+  await expect(alice.page.getByTestId('chat-reaction')).toHaveAccessibleName('Laughing (Ochran) 1, yours');
+  await expect(bob.page.getByTestId('chat-reaction')).toHaveAccessibleName('Laughing (Ochran) 1', { timeout: 30_000 });
 
   await alice.context.close();
   await bob.context.close();

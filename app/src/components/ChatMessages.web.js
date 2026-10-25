@@ -21,9 +21,29 @@
  * onReact(pid, emoji) - reactions on (groups); left out: none (1:1 chats)
  */
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { REACTIONS } from '../../chat/src/group.js';
+import { ANCESTRIES, HUB_FACES, isHubEmoji, hubEmojiUri, hubEmojiLabel } from '../constants/hubEmojis';
+
+// The Ancestry colour last picked for the Hub's own emojis (this browser only).
+const ANCESTRY_KEY = 'devi-hub-emoji-ancestry';
+function readAncestry() {
+  try {
+    const v = window.localStorage.getItem(ANCESTRY_KEY);
+    return ANCESTRIES.some((a) => a.key === v) ? v : ANCESTRIES[0].key;
+  } catch (e) {
+    return ANCESTRIES[0].key;
+  }
+}
+
+/** A reaction as shown: the Hub's own emojis as their drawing, others as text. */
+function ReactionGlyph({ value, size }) {
+  if (isHubEmoji(value)) {
+    return <Image source={{ uri: hubEmojiUri(value) }} style={{ width: size, height: size }} accessibilityLabel={hubEmojiLabel(value)} />;
+  }
+  return <Text style={{ fontSize: size * 0.85 }}>{value}</Text>;
+}
 
 // Name colours: light ones on the dark theme, deeper ones on the light theme
 // (both readable on the bubble). Avatars use the deeper ones with white text.
@@ -74,6 +94,15 @@ export function Avatar({ name, size = 32 }) {
 export default function ChatMessages({ items, showAuthors = false, onReact = null, busy = false }) {
   const { colors, isDark } = useTheme();
   const [pickerFor, setPickerFor] = useState(null);
+  const [ancestry, setAncestryState] = useState(readAncestry);
+  const setAncestry = (key) => {
+    setAncestryState(key);
+    try {
+      window.localStorage.setItem(ANCESTRY_KEY, key);
+    } catch (e) {
+      // (private window: just not remembered)
+    }
+  };
   const nameColors = isDark ? NAME_COLORS_DARK : NAME_COLORS_LIGHT;
   const otherBubble = isDark ? '#26262c' : '#eceef3';
   const out = [];
@@ -131,7 +160,8 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
         <Text style={[styles.time, { color: textColor }]}>{time}</Text>
       </View>
     );
-    const counts = Object.entries(m.reactions?.counts || {}).filter(([, n]) => n > 0);
+    // (codes of Hub emojis this version doesn't know yet are left out)
+    const counts = Object.entries(m.reactions?.counts || {}).filter(([v, n]) => n > 0 && (REACTIONS.includes(v) || isHubEmoji(v)));
     const canReact = !!onReact && !m.mine && !!m.pid;
     const react = (emoji) => {
       setPickerFor(null);
@@ -157,10 +187,11 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
                     disabled={!canReact || busy}
                     onPress={() => react(emoji)}
                     style={[styles.chip, { backgroundColor: own ? colors.primary : otherBubble, borderColor: own ? colors.primary : colors.border }]}
-                    accessibilityLabel={`${emoji} ${n}${own ? ', yours' : ''}`}
+                    accessibilityLabel={`${isHubEmoji(emoji) ? hubEmojiLabel(emoji) : emoji} ${n}${own ? ', yours' : ''}`}
                     testID="chat-reaction"
                   >
-                    <Text style={[styles.chipText, { color: own ? colors.primaryText : colors.text }]}>{`${emoji} ${n}`}</Text>
+                    <ReactionGlyph value={emoji} size={17} />
+                    <Text style={[styles.chipText, { color: own ? colors.primaryText : colors.text }]}>{` ${n}`}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -168,11 +199,38 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
           ) : null}
           {pickerFor === m.id ? (
             <View style={[styles.picker, { backgroundColor: otherBubble, borderColor: colors.border }]} testID="chat-reaction-picker">
-              {REACTIONS.map((emoji) => (
-                <TouchableOpacity key={emoji} onPress={() => react(emoji)} disabled={busy} style={styles.pickerItem} accessibilityLabel={`React with ${emoji}`} testID="chat-reaction-pick">
-                  <Text style={styles.pickerEmoji}>{emoji}</Text>
-                </TouchableOpacity>
-              ))}
+              <View style={styles.pickerRow}>
+                {REACTIONS.map((emoji) => (
+                  <TouchableOpacity key={emoji} onPress={() => react(emoji)} disabled={busy} style={styles.pickerItem} accessibilityLabel={`React with ${emoji}`} testID="chat-reaction-pick">
+                    <Text style={styles.pickerEmoji}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {/* The Hub's own emojis: pick an Ancestry colour, then a face (25 Oct 2026) */}
+              <View style={[styles.pickerRow, styles.ancestryRow, { borderColor: colors.border }]}>
+                {ANCESTRIES.map((a) => (
+                  <TouchableOpacity
+                    key={a.key}
+                    onPress={() => setAncestry(a.key)}
+                    style={[styles.ancestryChip, { borderColor: ancestry === a.key ? colors.primary : 'transparent' }]}
+                    accessibilityLabel={`${a.label} colour`}
+                    testID="chat-emoji-ancestry"
+                  >
+                    <View style={[styles.ancestryDot, { backgroundColor: a.body, borderColor: a.dark }]} />
+                    <Text style={[styles.ancestryText, { color: colors.text }]}>{a.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.pickerRow}>
+                {HUB_FACES.map((f) => {
+                  const code = `dvk:${f.key}:${ancestry}`;
+                  return (
+                    <TouchableOpacity key={code} onPress={() => react(code)} disabled={busy} style={styles.pickerItem} accessibilityLabel={`React with ${hubEmojiLabel(code)}`} testID="chat-hub-emoji">
+                      <ReactionGlyph value={code} size={28} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
           ) : null}
         </View>
@@ -205,7 +263,12 @@ const styles = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 3 },
   chip: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 1 },
   chipText: { fontSize: 13 },
-  picker: { flexDirection: 'row', gap: 2, marginTop: 4, borderRadius: 18, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2 },
+  picker: { marginTop: 4, borderRadius: 14, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 4, maxWidth: 330, gap: 4 },
+  pickerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
+  ancestryRow: { borderTopWidth: 1, paddingTop: 4, gap: 4 },
+  ancestryChip: { flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1.5, borderRadius: 10, paddingHorizontal: 4, paddingVertical: 1 },
+  ancestryDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1 },
+  ancestryText: { fontSize: 11 },
   pickerItem: { paddingHorizontal: 4, paddingVertical: 2 },
   pickerEmoji: { fontSize: 22 },
   reactButton: { alignSelf: 'center', paddingHorizontal: 4, opacity: 0.6 },

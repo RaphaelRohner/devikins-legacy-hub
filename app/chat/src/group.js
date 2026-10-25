@@ -43,6 +43,14 @@ export const MAX_GROUP_ENVELOPE_CHARS = 64 * 1024;
 export const GROUP_REACTION_KIND = 7;
 export const REACTIONS = ['👍', '👎', '❤️', '😂', '😮', '🔥'];
 export const REACTION_VALUES = [...REACTIONS, ''];
+/**
+ * The Hub's own emojis (25 Oct 2026): short codes like "dvk:laugh:ochran"
+ * (face and Ancestry colour; the drawings are in the website's
+ * src/constants/hubEmojis.js). Any such code travels; a Hub draws the ones
+ * it knows and leaves out the others (newer ones it doesn't know yet).
+ */
+export const HUB_EMOJI_CODE = /^dvk:[a-z]{2,12}:[a-z]{2,12}$/;
+export const isReactionValue = (v) => REACTION_VALUES.includes(v) || (typeof v === 'string' && HUB_EMOJI_CODE.test(v));
 
 /**
  * Polls (25 Oct 2026, Raphael): any member asks a question with 2–6 answers
@@ -177,7 +185,7 @@ export function sealGroupPost({ group, from, text, badge, now = Date.now() }) {
 /** sealGroupReaction — 👍 / 👎 / taken back ('') on post `postId`. */
 export function sealGroupReaction({ group, from, postId, value, badge, now = Date.now() }) {
   if (!/^[0-9a-f]{64}$/.test(postId || '')) throw new Error('Unknown post.');
-  if (!REACTION_VALUES.includes(value)) throw new Error('Unknown reaction.');
+  if (!isReactionValue(value)) throw new Error('Unknown reaction.');
   const reaction = finalizeEvent(
     {
       kind: GROUP_REACTION_KIND,
@@ -230,7 +238,7 @@ export function openGroupPost(envelope, { groupId, keys }) {
   }
   if (post.kind === GROUP_REACTION_KIND) {
     const target = tag(post, 'e');
-    if (!/^[0-9a-f]{64}$/.test(target || '') || !REACTION_VALUES.includes(post.content)) throw new Error('Not a reaction.');
+    if (!/^[0-9a-f]{64}$/.test(target || '') || !isReactionValue(post.content)) throw new Error('Not a reaction.');
     return { kind: 'reaction', id: post.id, from: post.pubkey, target, value: post.content, badge, writtenAt: post.created_at * 1000 };
   }
   return { kind: 'post', id: post.id, from: post.pubkey, text: cleanText(post.content), badge, writtenAt: post.created_at * 1000 };
