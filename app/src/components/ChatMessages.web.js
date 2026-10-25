@@ -78,14 +78,30 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
   const otherBubble = isDark ? '#26262c' : '#eceef3';
   const out = [];
   let prev = null;
+  let lastDay = null;
   for (const m of items) {
-    const newDay = !prev || dayKey(prev.at) !== dayKey(m.at);
+    const newDay = lastDay === null || dayKey(lastDay) !== dayKey(m.at);
+    lastDay = m.at;
     if (newDay) {
       out.push(
         <View key={`day-${m.id}`} style={styles.dayRow} testID="chat-day">
           <Text style={[styles.day, { color: colors.secondaryText, backgroundColor: otherBubble }]}>{dayLine(m.at)}</Text>
         </View>,
       );
+    }
+    if (m.system) {
+      // A line about something that happened (e.g. "📊 Bob started a poll: …"), tap to open it.
+      out.push(
+        <View key={m.id} style={styles.dayRow}>
+          <TouchableOpacity onPress={m.onPress} disabled={!m.onPress} testID="chat-system-line">
+            <Text style={[styles.systemLine, { color: colors.text, backgroundColor: otherBubble, borderColor: colors.border }]}>
+              {m.system} <Text style={{ color: colors.secondaryText }}>{clock(m.at)}</Text>
+            </Text>
+          </TouchableOpacity>
+        </View>,
+      );
+      prev = null;
+      continue;
     }
     const together = !newDay && prev && prev.mine === m.mine && prev.author === m.author && m.at - prev.at < KEEP_TOGETHER_MS;
     const name = m.nickname || 'a former member';
@@ -179,6 +195,7 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
 
 const styles = StyleSheet.create({
   dayRow: { alignItems: 'center', marginTop: 14, marginBottom: 6 },
+  systemLine: { fontSize: 13, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12, borderWidth: 1, overflow: 'hidden', textAlign: 'center' },
   day: { fontSize: 12, fontWeight: '600', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, overflow: 'hidden' },
   line: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   avatar: { alignItems: 'center', justifyContent: 'center' },

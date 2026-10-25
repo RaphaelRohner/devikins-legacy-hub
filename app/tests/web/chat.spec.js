@@ -401,6 +401,9 @@ test('removal votes: a member starts a vote with a reason, another supports it, 
   await bob.page.getByTestId('chat-group-member').filter({ hasText: 'Max' }).getByTestId('chat-vote-start').click();
   await bob.page.getByTestId('chat-vote-reason').fill('Posts scam links');
   await bob.page.getByTestId('chat-vote-open').click();
+  // Votes and polls share one line (25 Oct 2026)
+  await expect(bob.page.getByTestId('chat-group-votes')).toContainText('🗳 Votes & polls · 1 open');
+  await bob.page.getByTestId('chat-group-votes-toggle').click();
   await expect(bob.page.getByTestId('chat-group-vote')).toContainText('Vote: remove Max?');
   await expect(bob.page.getByTestId('chat-group-vote')).not.toContainText('Reason:'); // one line until opened
   await bob.page.getByTestId('chat-group-vote-toggle').click();
@@ -410,17 +413,40 @@ test('removal votes: a member starts a vote with a reason, another supports it, 
   await expect(bob.page.getByTestId('chat-group-member').filter({ hasText: 'Alice' }).getByTestId('chat-vote-start')).toHaveCount(0);
 
   // Max sees it's about him and can't vote
-  await expect(max.page.getByTestId('chat-group-vote')).toContainText('Vote: remove Max?', { timeout: 30_000 });
+  await expect(max.page.getByTestId('chat-group-votes')).toContainText('1 open', { timeout: 30_000 });
+  await max.page.getByTestId('chat-group-votes-toggle').click();
+  await expect(max.page.getByTestId('chat-group-vote')).toContainText('Vote: remove Max?');
   await max.page.getByTestId('chat-group-vote-toggle').click();
   await expect(max.page.getByTestId('chat-group-vote')).toContainText('This vote is about you');
   await expect(max.page.getByTestId('chat-vote-yes')).toHaveCount(0);
 
   // Alice supports it: now Max's posting is paused
-  await expect(alice.page.getByTestId('chat-group-vote')).toContainText('your vote?', { timeout: 30_000 });
+  await expect(alice.page.getByTestId('chat-group-votes')).toContainText('your vote?', { timeout: 30_000 });
+  await alice.page.getByTestId('chat-group-votes-toggle').click();
   await alice.page.getByTestId('chat-group-vote-toggle').click();
   await alice.page.getByTestId('chat-vote-yes').click();
   await expect(alice.page.getByTestId('chat-group-vote')).toContainText('2 yes / 0 no');
   await expect(max.page.getByTestId('chat-group-paused')).toBeVisible({ timeout: 30_000 });
+
+  // A poll (25 Oct 2026): Bob asks, Alice answers, Bob closes it; it moves to "Past"
+  await bob.page.getByTestId('chat-poll-new').click();
+  await bob.page.getByTestId('chat-poll-question').fill('Next meetup?');
+  await bob.page.getByTestId('chat-poll-answer').nth(0).fill('Saturday');
+  await bob.page.getByTestId('chat-poll-answer').nth(1).fill('Sunday');
+  await bob.page.getByTestId('chat-poll-start').click();
+  await expect(bob.page.getByTestId('chat-group-poll')).toContainText('📊 Next meetup? · 0 votes');
+  // Alice sees it as a line in the chat; a tap opens it
+  await expect(alice.page.getByTestId('chat-system-line')).toContainText('📊 Bob started a poll: Next meetup?', { timeout: 30_000 });
+  await alice.page.getByTestId('chat-system-line').click();
+  await alice.page.getByTestId('chat-poll-option').filter({ hasText: 'Sunday' }).click();
+  await expect(alice.page.getByTestId('chat-poll-option').filter({ hasText: 'Sunday' })).toContainText('✓ Sunday');
+  await expect(bob.page.getByTestId('chat-group-poll')).toContainText('1 vote', { timeout: 30_000 });
+  await bob.page.getByTestId('chat-group-poll-toggle').click();
+  await expect(bob.page.getByTestId('chat-poll-option').filter({ hasText: 'Sunday' })).toContainText('Alice');
+  await bob.page.getByTestId('chat-poll-close').click();
+  await expect(bob.page.getByTestId('chat-votes-past-toggle')).toContainText('Past (1)');
+  await bob.page.getByTestId('chat-votes-past-toggle').click();
+  await expect(bob.page.getByTestId('chat-group-poll')).toContainText(/Next meetup\? · 1 vote · closed/);
 
   for (const p of [alice, bob, max]) await p.context.close();
   postman.stop();

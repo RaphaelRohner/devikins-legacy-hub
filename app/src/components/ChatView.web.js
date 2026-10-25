@@ -56,6 +56,8 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
   const [groupPosts, setGroupPosts] = useState([]);
   const [groupNext, setGroupNext] = useState(null);
   const [groupVotes, setGroupVotes] = useState(null);
+  // Polls of the open group (25 Oct 2026; kept in this browser)
+  const [groupPolls, setGroupPolls] = useState([]);
   const openIdRef = useRef(null);
   openIdRef.current = openId;
   const openGroupRef = useRef(null);
@@ -83,6 +85,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
       }
       if (openGroupRef.current && visibleRef.current) {
         setGroupPosts(await m.groupPosts(openGroupRef.current));
+        setGroupPolls(await m.groupPolls(openGroupRef.current));
         setGroupNext(await m.nextGroupPostAt(openGroupRef.current));
         try {
           setGroupVotes(await m.groupVotes(openGroupRef.current));
@@ -219,6 +222,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
 
   const openGroupThread = (id) => act(async () => {
     setGroupPosts(await messenger.groupPosts(id));
+    setGroupPolls(await messenger.groupPolls(id));
     setGroupNext(await messenger.nextGroupPostAt(id));
     setGroupVotes(null);
     setError('');
@@ -406,6 +410,10 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
         onPins={(pins) => act(() => messenger.setPins(openGroup.id, pins))}
         onReact={(pid, emoji) => act(() => messenger.reactToPost(openGroup.id, pid, emoji))}
         votes={groupVotes}
+        polls={groupPolls}
+        onStartPoll={(question, options, durationMs) => act(() => messenger.startPoll(openGroup.id, question, options, durationMs))}
+        onVotePoll={(pollId, option) => act(() => messenger.votePoll(openGroup.id, pollId, option))}
+        onClosePoll={(pollId) => act(() => messenger.closePoll(openGroup.id, pollId))}
         loadMembers={() => messenger.groupMemberNames(openGroup.id)}
         onOpenVote={(nickname, reason) => act(() => messenger.openVote(openGroup.id, nickname, reason, signTextWithExtension))}
         onCastVote={(voteId, yes) => act(() => messenger.castVote(voteId, yes, signTextWithExtension))}

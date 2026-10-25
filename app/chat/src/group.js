@@ -43,6 +43,75 @@ export const MAX_GROUP_ENVELOPE_CHARS = 64 * 1024;
 export const GROUP_REACTION_KIND = 7;
 export const REACTIONS = ['👍', '👎', '❤️', '😂', '😮', '🔥'];
 export const REACTION_VALUES = [...REACTIONS, ''];
+
+/**
+ * Polls (25 Oct 2026, Raphael): any member asks a question with 2–6 answers
+ * and an end time; every member has one vote (whatever they hold), can change
+ * it until the end, and sees who voted what. The creator can close it early.
+ * All sealed in the group mailbox and counted by every member's Hub (the
+ * postman sees nothing new). Starting a poll counts as a post (the daily
+ * allowance); voting is free like reactions. Nostr's kinds for a poll and a
+ * poll answer (NIP-88), and our own number for "closed".
+ */
+export const GROUP_POLL_KIND = 1068;
+export const GROUP_POLL_VOTE_KIND = 1018;
+export const GROUP_POLL_CLOSE_KIND = 21068;
+export const POLL_MIN_OPTIONS = 2;
+export const POLL_MAX_OPTIONS = 6;
+export const POLL_MAX_OPTION_CHARS = 80;
+export const POLL_MAX_QUESTION_CHARS = 300;
+export const POLL_MIN_DURATION = 60 * 60 * 1000;
+export const POLL_MAX_DURATION = 7 * 24 * 60 * 60 * 1000;
+const HEX64 = /^[0-9a-f]{64}$/;
+
+function sealEvent({ group, from, kind, content, tags, badge, now }) {
+  const event = finalizeEvent(
+    {
+      kind,
+      created_at: Math.floor(now / 1000),
+      content,
+      tags: [['h', group.id], ['epoch', String(group.epoch)], ...tags, ['badge', JSON.stringify(badge)]],
+    },
+    secretBytes(from),
+  );
+  return { v: 1, group: group.id, epoch: group.epoch, payload: nip44.encrypt(JSON.stringify(event), hexToBytes(group.key)) };
+}
+
+/** The answers of a poll, cleaned: 2–6, each 1–80 characters, no repeats. */
+export function cleanPollOptions(options) {
+  const list = (options || []).map((o) => cleanText(o).slice(0, POLL_MAX_OPTION_CHARS)).filter(Boolean);
+  const unique = [...new Set(list)];
+  if (unique.length < POLL_MIN_OPTIONS) throw new Error(`A poll needs at least ${POLL_MIN_OPTIONS} different answers.`);
+  if (unique.length > POLL_MAX_OPTIONS) throw new Error(`A poll can have at most ${POLL_MAX_OPTIONS} answers.`);
+  return unique;
+}
+
+/** sealGroupPoll — a new poll: question, answers, how long it runs (ms, 1 hour – 7 days). */
+export function sealGroupPoll({ group, from, question, options, durationMs, badge, now = Date.now() }) {
+  const q = cleanText(question).slice(0, POLL_MAX_QUESTION_CHARS);
+  if (!q) throw new Error('Please write a question.');
+  const answers = cleanPollOptions(options);
+  const d = Math.round(Number(durationMs));
+  if (!(d >= POLL_MIN_DURATION && d <= POLL_MAX_DURATION)) throw new Error('A poll runs between 1 hour and 7 days.');
+  return sealEvent({
+    group, from, badge, now, kind: GROUP_POLL_KIND, content: q,
+    tags: [...answers.map((a, i) => ['option', String(i), a]), ['duration', String(d)]],
+  });
+}
+
+/** sealGroupPollVote — my answer (its number) to poll `pollId`; '' takes my vote back. */
+export function sealGroupPollVote({ group, from, pollId, option, badge, now = Date.now() }) {
+  if (!HEX64.test(pollId || '')) throw new Error('Unknown poll.');
+  const choice = option === '' ? '' : String(option);
+  if (choice !== '' && !/^[0-5]$/.test(choice)) throw new Error('Unknown answer.');
+  return sealEvent({ group, from, badge, now, kind: GROUP_POLL_VOTE_KIND, content: '', tags: [['e', pollId], ['response', choice]] });
+}
+
+/** sealGroupPollClose — the creator ends poll `pollId` now. */
+export function sealGroupPollClose({ group, from, pollId, badge, now = Date.now() }) {
+  if (!HEX64.test(pollId || '')) throw new Error('Unknown poll.');
+  return sealEvent({ group, from, badge, now, kind: GROUP_POLL_CLOSE_KIND, content: '', tags: [['e', pollId]] });
+}
 const HEX32 = /^[0-9a-f]{64}$/;
 const GROUP_ID = /^[0-9a-f]{32}$/;
 
@@ -137,10 +206,28 @@ export function openGroupPost(envelope, { groupId, keys }) {
   const key = keys && keys[envelope.epoch];
   if (!key) return null;
   const post = JSON.parse(nip44.decrypt(envelope.payload, hexToBytes(key)));
-  if ((post.kind !== GROUP_POST_KIND && post.kind !== GROUP_REACTION_KIND) || !verifyEvent(post)) throw new Error('The post was changed.');
+  const KINDS = [GROUP_POST_KIND, GROUP_REACTION_KIND, GROUP_POLL_KIND, GROUP_POLL_VOTE_KIND, GROUP_POLL_CLOSE_KIND];
+  if (!KINDS.includes(post.kind) || !verifyEvent(post)) throw new Error('The post was changed.');
   if (tag(post, 'h') !== groupId || Number(tag(post, 'epoch')) !== envelope.epoch) throw new Error('The post was moved from elsewhere.');
   let badge = null;
   try { badge = JSON.parse(tag(post, 'badge')); } catch { badge = null; }
+  const base = { id: post.id, from: post.pubkey, badge, writtenAt: post.created_at * 1000 };
+  if (post.kind === GROUP_POLL_KIND) {
+    const options = (post.tags || []).filter((t) => Array.isArray(t) && t[0] === 'option').map((t) => cleanText(t[2]).slice(0, POLL_MAX_OPTION_CHARS));
+    const durationMs = Number(tag(post, 'duration'));
+    const question = cleanText(post.content).slice(0, POLL_MAX_QUESTION_CHARS);
+    if (!question || options.length < POLL_MIN_OPTIONS || options.length > POLL_MAX_OPTIONS || options.some((o) => !o)
+        || !(durationMs >= POLL_MIN_DURATION && durationMs <= POLL_MAX_DURATION)) throw new Error('Not a poll.');
+    return { kind: 'poll', ...base, question, options, durationMs };
+  }
+  if (post.kind === GROUP_POLL_VOTE_KIND || post.kind === GROUP_POLL_CLOSE_KIND) {
+    const target = tag(post, 'e');
+    if (!HEX64.test(target || '')) throw new Error('Not about a poll.');
+    if (post.kind === GROUP_POLL_CLOSE_KIND) return { kind: 'poll-close', ...base, target };
+    const option = tag(post, 'response') ?? '';
+    if (option !== '' && !/^[0-5]$/.test(option)) throw new Error('Not a poll answer.');
+    return { kind: 'poll-vote', ...base, target, option: option === '' ? null : Number(option) };
+  }
   if (post.kind === GROUP_REACTION_KIND) {
     const target = tag(post, 'e');
     if (!/^[0-9a-f]{64}$/.test(target || '') || !REACTION_VALUES.includes(post.content)) throw new Error('Not a reaction.');
@@ -172,7 +259,7 @@ export function openGroupPost(envelope, { groupId, keys }) {
 export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocked = [], paused = [], seen = new Set(), owners = [] }) {
   const shown = [];
   const dropped = [];
-  const sorted = [...(items || [])].filter((i) => i && i.post && i.post.kind !== 'reaction').sort((a, b) => a.receivedAt - b.receivedAt);
+  const sorted = [...(items || [])].filter((i) => i && i.post && !FREE_KINDS.includes(i.post.kind)).sort((a, b) => a.receivedAt - b.receivedAt);
   for (const item of sorted) {
     const { post, receivedAt } = item;
     if (post.id && seen.has(post.id)) { dropped.push({ item, reason: 'sent again' }); continue; }
@@ -194,17 +281,20 @@ export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocke
   return { shown, dropped };
 }
 
+// Free: they don't use the daily allowance (reactions, poll answers, closing a poll).
+const FREE_KINDS = ['reaction', 'poll-vote', 'poll-close'];
+
 /**
  * acceptReactions — which opened reactions count: a valid badge at the time
  * the postman got it (only holders react), not sent again, not an old one
  * copied. No allowance (free). → [{ item, player }] (player = the badge's
  * account number: one reaction per player and post, the latest counts).
  */
-export function acceptReactions(items, { postmanPublicKey, seen = new Set(), paused = [] }) {
+export function acceptReactions(items, { postmanPublicKey, seen = new Set(), paused = [], kinds = ['reaction'] }) {
   const accepted = [];
   for (const item of items || []) {
     const { post, receivedAt } = item || {};
-    if (!post || post.kind !== 'reaction' || (post.id && seen.has(post.id))) continue;
+    if (!post || !kinds.includes(post.kind) || (post.id && seen.has(post.id))) continue;
     if (Math.abs(receivedAt - post.writtenAt) > MAX_POST_DELAY || paused.includes(post.from)) continue;
     const badge = checkBadge(post.badge, { postmanPublicKey, holder: post.from, at: receivedAt });
     if (!badge.ok) continue;

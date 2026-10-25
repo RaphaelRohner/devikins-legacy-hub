@@ -589,6 +589,67 @@ test('reactions: free (no allowance, no 10-second gap), one per player and post,
   assert.deepEqual((await moved.groupPosts(gid))[1].reactions, { counts: { '😂': 1 }, mine: '😂' });
 });
 
+test('polls: any member asks (counts as a post), everyone votes once (free, changeable), the creator closes early, late votes don\'t count; kept in the backup', async () => {
+  const { lockBackup, unlockBackup } = await import('../src/backup.js');
+  const { player, blank, clock } = world();
+  const alice = await player('Alice', 12);
+  const bob = await player('Bob', 1); // 1 Devikin: one post a day
+  const cid = await player('Cid', 3);
+  const gid = await alice.startGroup('Poll Club');
+  for (const p of [bob, cid]) {
+    await p.joinGroup(gid);
+    await alice.checkMail();
+    await p.checkMail();
+  }
+  await assert.rejects(bob.startPoll(gid, 'When?', ['Sat'], 60 * MINUTE), /at least 2 different answers/);
+  await assert.rejects(bob.startPoll(gid, 'When?', ['Sat', 'Sun'], 10 * MINUTE), /between 1 hour and 7 days/);
+  await bob.startPoll(gid, 'Guild meeting when?', ['Sat', 'Sun', 'Next week'], 24 * 60 * MINUTE);
+  // it was his one post for the day
+  await assert.rejects(bob.postToGroup(gid, 'and a post'), /Not yet/);
+  const [poll] = await bob.groupPolls(gid);
+  assert.deepEqual([poll.question, poll.options, poll.creator, poll.mine, poll.open], ['Guild meeting when?', ['Sat', 'Sun', 'Next week'], 'Bob', true, true]);
+  // Voting is free (Bob has no posts left) and can be changed
+  await bob.votePoll(gid, poll.id, 1);
+  await alice.checkMail();
+  assert.equal((await alice.listGroups()).find((g) => g.id === gid).unread, 1); // the new poll
+  await alice.votePoll(gid, poll.id, 0);
+  await cid.checkMail();
+  await cid.votePoll(gid, poll.id, 2);
+  await cid.votePoll(gid, poll.id, 0); // changed
+  await assert.rejects(cid.votePoll(gid, poll.id, 7), /Unknown answer/);
+  // Only the creator can close it (another member's "close" is ignored)
+  await cid.closePoll(gid, poll.id);
+  await bob.checkMail();
+  assert.equal((await bob.groupPolls(gid))[0].open, true);
+  clock.t += MINUTE;
+  await bob.closePoll(gid, poll.id);
+  clock.t += MINUTE;
+  await alice.votePoll(gid, poll.id, 1); // too late
+  for (const p of [alice, bob, cid]) await p.checkMail();
+  for (const p of [alice, bob, cid]) {
+    const r = (await p.groupPolls(gid))[0];
+    assert.deepEqual([r.open, r.counts], [false, [2, 1, 0]]);
+    assert.deepEqual(r.voters.map((v) => [v.nickname, v.choice]).sort(), [['Alice', 0], ['Bob', 1], ['Cid', 0]]);
+  }
+  assert.equal((await cid.groupPolls(gid))[0].myChoice, 0);
+  // A second poll simply ends at its time
+  clock.t += 25 * 60 * MINUTE;
+  await alice.startPoll(gid, 'Rename the group?', ['Yes', 'No'], 60 * MINUTE);
+  await bob.checkMail();
+  const second = (await bob.groupPolls(gid))[0];
+  await bob.votePoll(gid, second.id, 0);
+  clock.t += 61 * MINUTE;
+  await cid.checkMail();
+  await cid.votePoll(gid, second.id, 1); // after the end
+  await alice.checkMail();
+  const done = (await alice.groupPolls(gid))[0];
+  assert.deepEqual([done.question, done.open, done.counts], ['Rename the group?', false, [1, 0]]);
+  // Kept in the backup (the mailbox only keeps 30 days)
+  const moved = await blank();
+  await moved.restoreBackupData(await unlockBackup(await lockBackup(await alice.backupData(), 'password1', { rounds: 100000 }), 'password1'));
+  assert.deepEqual((await moved.groupPolls(gid)).map((p) => [p.question, p.counts]), [['Rename the group?', [1, 0]], ['Guild meeting when?', [2, 1, 0]]]);
+});
+
 test('groups travel in the chat backup', async () => {
   const { lockBackup, unlockBackup } = await import('../src/backup.js');
   const { player, blank, clock } = world();
@@ -796,6 +857,15 @@ test('removal votes end early once the result can\'t change: removed, kept, or o
   let d = (await owner.groupVotes(gid)).votes[0];
   assert.deepEqual([d.decided, d.valid, d.passed, d.removed], [true, true, true, true]);
   assert.equal((await owner.listGroups())[0].members, 3);
+  // Kept for good in each Hub (and its backup), after the postman's 7 days too (25 Oct 2026)
+  clock.t += 8 * 24 * 60 * MINUTE;
+  await owner.setHoldings(12); // (the weekly sign-in)
+  const later = await owner.groupVotes(gid);
+  assert.equal(later.votes.length, 0);
+  assert.deepEqual(later.history.map((h) => [h.accused, h.reason, h.removed, h.ballots.length]), [['Max', 'spam', true, 3]]);
+  const { lockBackup, unlockBackup } = await import('../src/backup.js');
+  const copy = await unlockBackup(await lockBackup(await owner.backupData(), 'password1', { rounds: 100000 }), 'password1');
+  assert.equal(copy.voteHistory.length, 1);
 });
 
 test('removal votes end early: enough "no" keeps the member and lifts the pause; an emptied wallet keeps a vote open', async () => {

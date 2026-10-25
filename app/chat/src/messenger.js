@@ -29,7 +29,7 @@ import { createIdentity, isPublicKey, secretBytes } from './identity.js';
 import { sealDirect, openDirect } from './direct.js';
 import { cleanText, nicknameKey, nextPostAllowedAt, MIN_POST_INTERVAL, POST_WINDOW, postsPerDay, postsLeft } from './rules.js';
 import {
-  sealGroupPost, sealGroupReaction, openGroupPost, acceptPosts, acceptReactions, readGroupKeyMessage, sealPinned, openPinned, groupKeyCheck, VOTE_REASON_KIND,
+  sealGroupPost, sealGroupReaction, sealGroupPoll, sealGroupPollVote, sealGroupPollClose, openGroupPost, acceptPosts, acceptReactions, readGroupKeyMessage, sealPinned, openPinned, groupKeyCheck, VOTE_REASON_KIND,
 } from './group.js';
 import { checkBadge } from './badge.js';
 import { createPostmanClient } from './client.js';
@@ -95,6 +95,15 @@ CREATE TABLE IF NOT EXISTS chat_group_recent (grp TEXT NOT NULL, author TEXT NOT
 -- 👍 / 👎 on posts (24 Oct 2026): each player's latest reaction per post ('' = taken back).
 CREATE TABLE IF NOT EXISTS chat_group_reactions (grp TEXT NOT NULL, pid TEXT NOT NULL, player TEXT NOT NULL, value TEXT NOT NULL,
   at INTEGER NOT NULL, mine INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (grp, pid, player));
+-- Polls (25 Oct 2026): kept for good here (and in the backup), the mailbox only 30 days.
+CREATE TABLE IF NOT EXISTS chat_group_polls (grp TEXT NOT NULL, pid TEXT NOT NULL, seq INTEGER NOT NULL, creator TEXT NOT NULL,
+  author TEXT NOT NULL, nickname TEXT, question TEXT NOT NULL, options TEXT NOT NULL, opened_at INTEGER NOT NULL,
+  ends_at INTEGER NOT NULL, closed_at INTEGER, mine INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (grp, pid));
+CREATE TABLE IF NOT EXISTS chat_group_poll_votes (grp TEXT NOT NULL, poll TEXT NOT NULL, player TEXT NOT NULL, choice INTEGER,
+  nickname TEXT, at INTEGER NOT NULL, mine INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (grp, poll, player));
+-- Removal votes' results, copied from the postman (which shows them for 7 days) to keep for good.
+CREATE TABLE IF NOT EXISTS chat_vote_history (grp TEXT NOT NULL, id TEXT NOT NULL, opened_at INTEGER NOT NULL, data TEXT NOT NULL,
+  PRIMARY KEY (grp, id));
 CREATE TABLE IF NOT EXISTS chat_group_names (grp TEXT NOT NULL, device TEXT NOT NULL, nickname TEXT NOT NULL, PRIMARY KEY (grp, device));
 CREATE TABLE IF NOT EXISTS chat_group_keys (grp TEXT NOT NULL, epoch INTEGER NOT NULL, key TEXT NOT NULL, PRIMARY KEY (grp, epoch));
 `;
@@ -107,13 +116,14 @@ export const GROUP_STATUS = {
 
 /**
  * What this Hub understands in a group's mailbox. When a new version learns
- * something new (2 = reactions, 24 Oct 2026), it reads its groups' mailboxes
+ * something new (2 = reactions, 24 Oct 2026; 3 = polls), it reads its groups' mailboxes
  * once more from the start (the last 30 days), so what an older page skipped
  * isn't lost - posts it already has aren't added or counted again.
  */
-const GROUP_FORMAT = 2;
+const GROUP_FORMAT = 3; // 3 = polls (25 Oct 2026)
 
-const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_reactions', 'chat_group_names', 'chat_group_keys'];
+const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_reactions', 'chat_group_polls',
+  'chat_group_poll_votes', 'chat_vote_history', 'chat_group_names', 'chat_group_keys'];
 
 /** Contact states. */
 export const STATUS = {
@@ -680,7 +690,8 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
   }
 
   async function forgetGroup(id) {
-    for (const table of ['chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_reactions', 'chat_group_names']) await run(`DELETE FROM ${table} WHERE grp = ?`, [id]);
+    for (const table of ['chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_reactions', 'chat_group_polls', 'chat_group_poll_votes',
+      'chat_vote_history', 'chat_group_names']) await run(`DELETE FROM ${table} WHERE grp = ?`, [id]);
     await run('DELETE FROM chat_groups WHERE id = ?', [id]);
   }
 
@@ -812,6 +823,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       }
       // Posts this Hub already has (when reading a mailbox again): not again.
       const have = new Map((await all('SELECT seq, pid FROM chat_group_posts WHERE grp = ?', [g.id])).map((r) => [r.seq, r.pid]));
+      for (const r of await all('SELECT seq, pid FROM chat_group_polls WHERE grp = ?', [g.id])) have.set(r.seq, r.pid);
       for (const item of items) {
         if (item.post.kind === 'post' && have.has(item.seq) && !have.get(item.seq) && item.post.id) {
           // (posts from a backup made before 24 Oct 2026 had no id yet)
@@ -831,11 +843,43 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       await run('DELETE FROM chat_group_recent WHERE grp = ? AND at < ?', [g.id, now() - 2 * POST_WINDOW]);
       for (const item of shown) {
         const mine = item.post.from === identity.publicKey;
+        if (item.post.kind === 'poll') {
+          const p = item.post;
+          const badge = checkBadge(p.badge, { postmanPublicKey: pk, holder: p.from, at: item.receivedAt });
+          await run(
+            `INSERT OR IGNORE INTO chat_group_polls (grp, pid, seq, creator, author, nickname, question, options, opened_at, ends_at, mine)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [g.id, p.id, item.seq, badge.account ?? p.from, p.from, await authorName(g.id, p.from, runState), p.question,
+              JSON.stringify(p.options), item.receivedAt, item.receivedAt + p.durationMs, mine ? 1 : 0],
+          );
+          if (!mine) added += 1;
+          continue;
+        }
         await run(
           'INSERT INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [g.id, item.seq, item.post.id ?? null, item.post.from, await authorName(g.id, item.post.from, runState), item.post.text, item.post.writtenAt, item.receivedAt, mine ? 1 : 0],
         );
         if (!mine) added += 1;
+      }
+      // Poll answers and "closed" (free; in the order the postman got them, after the polls above).
+      for (const { item, player } of acceptReactions(items, { postmanPublicKey: pk, seen, kinds: ['poll-vote', 'poll-close'] })) {
+        const x = item.post;
+        const poll = await first('SELECT * FROM chat_group_polls WHERE grp = ? AND pid = ?', [g.id, x.target]);
+        if (!poll || item.receivedAt < poll.opened_at) continue;
+        const end = Math.min(poll.ends_at, poll.closed_at ?? Infinity);
+        if (item.receivedAt >= end) continue; // too late
+        if (x.kind === 'poll-close') {
+          if (player === poll.creator) await run('UPDATE chat_group_polls SET closed_at = ? WHERE grp = ? AND pid = ?', [item.receivedAt, g.id, poll.pid]);
+          continue;
+        }
+        if (x.option !== null && x.option >= JSON.parse(poll.options).length) continue;
+        const mine = x.from === identity.publicKey || (myAccount && player === myAccount) ? 1 : 0;
+        await run(
+          `INSERT INTO chat_group_poll_votes (grp, poll, player, choice, nickname, at, mine) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (grp, poll, player) DO UPDATE SET choice = excluded.choice, nickname = excluded.nickname, at = excluded.at
+           WHERE excluded.at >= chat_group_poll_votes.at`,
+          [g.id, poll.pid, player, x.option, await authorName(g.id, x.from, runState), item.receivedAt, mine],
+        );
       }
       g.last_seq = posts[posts.length - 1].seq;
       await run('UPDATE chat_groups SET last_seq = ?, unread = unread + ? WHERE id = ?', [g.last_seq, added, g.id]);
@@ -937,6 +981,12 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       const yes = v.ballots.filter((b) => b.yes).length;
       return { ...v, reason, yes, no: v.ballots.length - yes };
     });
+    // Decided votes are kept here for good (the postman shows them for 7 days; 25 Oct 2026).
+    for (const v of votes.filter((x) => x.decided)) {
+      const { myBallot, mayVote, aboutMe, ...kept } = v;
+      await run('INSERT OR REPLACE INTO chat_vote_history (grp, id, opened_at, data) VALUES (?, ?, ?, ?)', [id, v.id, v.openedAt, JSON.stringify({ ...kept, aboutMe })]);
+    }
+    const history = (await all('SELECT data FROM chat_vote_history WHERE grp = ? ORDER BY opened_at DESC', [id])).map((h) => JSON.parse(h.data));
     // (A first guess from the weekly badge; the postman checks the wallet
     // itself when you vote, and again when the vote closes.)
     const badge = await getMe('badge');
@@ -948,7 +998,10 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       // What this device's sign-in counted (the badge); "Update my holdings"
       // signs in again to refresh it.
       myNfts: check.ok ? check.nfts : 0,
+      // open ones (and the decided ones of the last 7 days, as the postman has them)
       votes,
+      // every decided vote this Hub has seen, newest first
+      history,
       banned: r.banned,
     };
   }
@@ -1053,6 +1106,69 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     return next;
   }
 
+  /**
+   * A new poll (25 Oct 2026): counts as a post (the daily allowance).
+   * durationMs: 1 hour – 7 days. → the poll's id
+   */
+  async function startPoll(id, question, options, durationMs) {
+    const g = await myGroup(id);
+    const { allowedAt } = await nextGroupPostAt(id);
+    if (allowedAt === null) throw new Error('Please sign in again (your weekly check has run out).');
+    if (allowedAt > now()) throw new Error('Not yet: a poll counts as a post, and your next post in this group is possible later (see below).');
+    const envelope = sealGroupPoll({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, question, options, durationMs, badge: await getMe('badge'), now: now() });
+    await postman.groupPost(envelope);
+    await collectGroup(g);
+    return envelope;
+  }
+
+  /** My answer (its number; null takes my vote back) - free, changeable until the poll ends. */
+  async function votePoll(id, pollId, option) {
+    const g = await myGroup(id);
+    const envelope = sealGroupPollVote({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, pollId, option: option === null ? '' : option, badge: await getMe('badge'), now: now() });
+    await postman.groupPost(envelope, { reaction: true });
+    await collectGroup(g);
+  }
+
+  /** The poll's creator ends it now. */
+  async function closePoll(id, pollId) {
+    const g = await myGroup(id);
+    const envelope = sealGroupPollClose({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, pollId, badge: await getMe('badge'), now: now() });
+    await postman.groupPost(envelope, { reaction: true });
+    await collectGroup(g);
+  }
+
+  /**
+   * The group's polls, newest first, with the results so far.
+   * → [{ id, question, options, counts, voters: [{ nickname, choice }], myChoice,
+   *      creator (nickname), mine, openedAt, endsAt, closedAt, open }]
+   */
+  async function groupPolls(id) {
+    const polls = await all('SELECT * FROM chat_group_polls WHERE grp = ? ORDER BY opened_at DESC', [id]);
+    const out = [];
+    for (const p of polls) {
+      const options = JSON.parse(p.options);
+      const votes = (await all('SELECT * FROM chat_group_poll_votes WHERE grp = ? AND poll = ? AND choice IS NOT NULL ORDER BY at', [id, p.pid]))
+        .filter((v) => v.choice < options.length);
+      const counts = options.map((_, i) => votes.filter((v) => v.choice === i).length);
+      const endedAt = Math.min(p.ends_at, p.closed_at ?? Infinity);
+      out.push({
+        id: p.pid,
+        question: p.question,
+        options,
+        counts,
+        voters: votes.map((v) => ({ nickname: v.nickname, choice: v.choice })),
+        myChoice: votes.find((v) => v.mine)?.choice ?? null,
+        creator: p.nickname,
+        mine: !!p.mine,
+        openedAt: p.opened_at,
+        endsAt: p.ends_at,
+        closedAt: p.closed_at ?? null,
+        open: now() < endedAt,
+      });
+    }
+    return out;
+  }
+
   /** The owner sets the whole list of pinned messages (empty list: nothing pinned). */
   async function setPins(id, pins) {
     const g = await myGroup(id);
@@ -1084,6 +1200,9 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       groups: await all('SELECT * FROM chat_groups'),
       groupPosts: await all('SELECT * FROM chat_group_posts ORDER BY id'),
       groupReactions: await all('SELECT * FROM chat_group_reactions'),
+      groupPolls: await all('SELECT * FROM chat_group_polls'),
+      groupPollVotes: await all('SELECT * FROM chat_group_poll_votes'),
+      voteHistory: await all('SELECT * FROM chat_vote_history'),
       groupLast: await all('SELECT * FROM chat_group_last'),
       groupKeys: await all('SELECT * FROM chat_group_keys'),
     };
@@ -1136,6 +1255,24 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       if (typeof p.grp !== 'string' || typeof p.text !== 'string') continue;
       await run('INSERT INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [p.grp, Number(p.seq) || 0, typeof p.pid === 'string' ? p.pid : null, String(p.author ?? ''), p.nickname ?? null, p.text, Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine ? 1 : 0]);
+    }
+    for (const p of Array.isArray(data.groupPolls) ? data.groupPolls : []) {
+      if (typeof p.grp !== 'string' || typeof p.pid !== 'string' || typeof p.question !== 'string' || typeof p.options !== 'string') continue;
+      await run(
+        `INSERT OR REPLACE INTO chat_group_polls (grp, pid, seq, creator, author, nickname, question, options, opened_at, ends_at, closed_at, mine)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [p.grp, p.pid, Number(p.seq) || 0, String(p.creator ?? ''), String(p.author ?? ''), p.nickname ?? null, p.question, p.options,
+          Number(p.opened_at) || 0, Number(p.ends_at) || 0, p.closed_at == null ? null : Number(p.closed_at), p.mine ? 1 : 0],
+      );
+    }
+    for (const v of Array.isArray(data.groupPollVotes) ? data.groupPollVotes : []) {
+      if (typeof v.grp !== 'string' || typeof v.poll !== 'string' || typeof v.player !== 'string') continue;
+      await run('INSERT OR REPLACE INTO chat_group_poll_votes (grp, poll, player, choice, nickname, at, mine) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [v.grp, v.poll, v.player, v.choice == null ? null : Number(v.choice), v.nickname ?? null, Number(v.at) || 0, v.mine ? 1 : 0]);
+    }
+    for (const h of Array.isArray(data.voteHistory) ? data.voteHistory : []) {
+      if (typeof h.grp !== 'string' || typeof h.id !== 'string' || typeof h.data !== 'string') continue;
+      await run('INSERT OR REPLACE INTO chat_vote_history (grp, id, opened_at, data) VALUES (?, ?, ?, ?)', [h.grp, h.id, Number(h.opened_at) || 0, h.data]);
     }
     for (const r of Array.isArray(data.groupReactions) ? data.groupReactions : []) {
       if (typeof r.grp !== 'string' || typeof r.pid !== 'string' || typeof r.player !== 'string' || typeof r.value !== 'string') continue;
@@ -1203,6 +1340,10 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     setPinned,
     setPins,
     reactToPost,
+    startPoll,
+    votePoll,
+    closePoll,
+    groupPolls,
     groupVotes,
     openVote,
     castVote,

@@ -21,7 +21,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { MAX_TEXT_LENGTH } from '../../chat/src/rules.js';
-import { MAX_PINS } from '../../chat/src/group.js';
+import { MAX_PINS, POLL_MAX_OPTIONS as MAX_POLL_OPTIONS } from '../../chat/src/group.js';
 import ChatMessages from './ChatMessages';
 
 
@@ -209,7 +209,7 @@ function endsLabel(ms) {
  * scrolls inside a limited height, so the posts always stay in view.
  * tone 'danger' = red (removal votes).
  */
-function Fold({ title, open, onToggle, tone, testID, children }) {
+function Fold({ title, open, onToggle, tone, testID, children, maxHeight = 280 }) {
   const { colors } = useTheme();
   const danger = tone === 'danger';
   return (
@@ -223,78 +223,288 @@ function Fold({ title, open, onToggle, tone, testID, children }) {
         </Text>
         <Text style={[styles.link, { color: danger ? colors.cancelText : colors.primary }]}>{open ? 'Close ▴' : 'Open ▾'}</Text>
       </TouchableOpacity>
-      {open ? <ScrollView style={styles.foldBody} contentContainerStyle={{ gap: 6 }}>{children}</ScrollView> : null}
+      {open ? <ScrollView style={{ maxHeight }} contentContainerStyle={{ gap: 6 }}>{children}</ScrollView> : null}
     </View>
   );
 }
 
-/** The group's removal votes (open, and decided in the last week). */
-function VotesBox({ votes, busy, onCastVote, onUpdateHoldings }) {
+/** A card inside "Votes & polls": one title line, the details on a tap. */
+function Card({ title, tone, open, onToggle, testID, children }) {
   const { colors } = useTheme();
-  const [openId, setOpenId] = useState(null);
-  if (!votes || votes.votes.length === 0) return null;
+  const danger = tone === 'danger';
   return (
-    <View testID="chat-group-votes">
-      {votes.votes.map((v) => {
-        const who = v.accused ?? 'a former player';
-        const mayVoteNow = !v.decided && !v.aboutMe && !v.myBallot && v.mayVote && votes.canVote;
-        const title = v.decided
-          ? v.passed
-            ? v.removed
-              ? `🗳 Vote ended: ${who} was removed.`
-              : `🗳 Vote passed: ${who} had left already and can't rejoin.`
-            : `🗳 Vote ended: ${who} stays (${v.valid ? 'not enough yes votes' : 'too few votes'}).`
-          : `🗳 Vote: remove ${who}? · ${v.yes} yes / ${v.no} no · ${endsLabel(v.endsAt)}${mayVoteNow ? ' · your vote?' : ''}`;
+    <View style={[styles.card2, { borderColor: danger ? colors.cancelText : colors.border }]} testID={testID}>
+      <TouchableOpacity onPress={onToggle} style={styles.foldHead} testID={testID ? `${testID}-toggle` : undefined} accessibilityRole="button">
+        <Text style={[styles.note, styles.foldTitle, { color: danger ? colors.cancelText : colors.text }]}>{title}</Text>
+        <Text style={[styles.note, { color: danger ? colors.cancelText : colors.primary, fontWeight: '700' }]}>{open ? '▴' : '▾'}</Text>
+      </TouchableOpacity>
+      {open ? <View style={{ gap: 6, marginTop: 6 }}>{children}</View> : null}
+    </View>
+  );
+}
+
+function voteTitle(v) {
+  const who = v.accused ?? 'a former player';
+  if (v.decided) {
+    if (!v.passed) return `🗳 Vote ended: ${who} stays (${v.valid ? 'not enough yes votes' : 'too few votes'}).`;
+    return v.removed ? `🗳 Vote ended: ${who} was removed.` : `🗳 Vote passed: ${who} had left already and can't rejoin.`;
+  }
+  return `🗳 Vote: remove ${who}? · ${v.yes} yes / ${v.no} no · ${endsLabel(v.endsAt)}`;
+}
+
+/** One removal vote (open, or from the group's history). */
+function VoteCard({ v, votes, busy, open, onToggle, onCastVote, onUpdateHoldings }) {
+  const { colors } = useTheme();
+  const mayVoteNow = !v.decided && !v.aboutMe && !v.myBallot && v.mayVote && votes?.canVote;
+  return (
+    <Card title={`${voteTitle(v)}${mayVoteNow ? ' · your vote?' : ''}`} tone={v.decided ? null : 'danger'} open={open} onToggle={onToggle} testID="chat-group-vote">
+      <Text style={[styles.note, { color: colors.text }]}>Reason: {v.reason ?? '(given before you joined)'}</Text>
+      <Text style={[styles.note, { color: colors.secondaryText }]}>
+        Started by {v.opener ?? 'a former player'} on {dateLabel(v.openedAt)} · {v.decided
+          ? `${v.ballots.filter((b) => b.counts && b.yes).length} yes / ${v.ballots.filter((b) => b.counts && !b.yes).length} no counted`
+          : `${v.yes} yes / ${v.no} no`}
+        {v.ballots.length ? ` · ${v.ballots.map((b) => `${b.voter ?? '?'} ${b.yes ? 'yes' : 'no'}${v.decided && !b.counts ? ' (didn\'t count)' : ''}`).join(', ')}` : ''}
+      </Text>
+      {!v.decided && v.aboutMe ? (
+        <Text style={[styles.note, { color: colors.secondaryText }]}>
+          This vote is about you, so you can't vote. You can write to the group's owner in a 1:1 chat.
+        </Text>
+      ) : null}
+      {!v.decided && !v.aboutMe && v.myBallot ? (
+        <Text style={[styles.note, { color: colors.secondaryText }]}>You voted {v.myBallot.yes ? 'yes' : 'no'}.</Text>
+      ) : null}
+      {!v.decided && !v.aboutMe && !v.myBallot && !v.mayVote ? (
+        <Text style={[styles.note, { color: colors.secondaryText }]}>You joined after this vote started, so you can't vote in it.</Text>
+      ) : null}
+      {!v.decided && !v.aboutMe && !v.myBallot && v.mayVote ? (
+        votes?.canVote ? (
+          <View style={styles.row}>
+            <Button label={`Yes, remove ${v.accused}`} onPress={() => onCastVote(v.id, true)} disabled={busy} testID="chat-vote-yes" />
+            <Button label="No" quiet onPress={() => onCastVote(v.id, false)} disabled={busy} testID="chat-vote-no" />
+          </View>
+        ) : (
+          <View>
+            <Text style={[styles.note, { color: colors.secondaryText }]}>
+              Members holding at least {votes?.threshold} Devikins can vote.
+            </Text>
+            <HoldingsNote votes={votes} busy={busy} onUpdateHoldings={onUpdateHoldings} />
+          </View>
+        )
+      ) : null}
+      {!v.decided ? (
+        <Text style={[styles.note, { color: colors.secondaryText }]}>
+          A vote counts if at least 10 % of the members (never fewer than 3) vote; 60 % yes removes the member. It ends early once the result can't change any more (60 % of everyone allowed to vote said yes, or more than 40 % said no). Voting asks your
+          Klever extension to sign a short text (no fee); your wallet is checked again when the vote closes, then forgotten.
+        </Text>
+      ) : null}
+    </Card>
+  );
+}
+
+function dateLabel(ms) {
+  return new Date(ms).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function pollStatus(p) {
+  if (p.open) return endsLabel(p.endsAt);
+  const at = p.closedAt && p.closedAt < p.endsAt ? p.closedAt : p.endsAt;
+  return `${p.closedAt && p.closedAt < p.endsAt ? 'closed' : 'ended'} ${dateLabel(at)}`;
+}
+
+/** One poll: the answers with their votes (tap one to vote while it's open). */
+function PollCard({ p, busy, open, onToggle, onVote, onClose }) {
+  const { colors } = useTheme();
+  const total = p.counts.reduce((a, b) => a + b, 0);
+  const lead = Math.max(0, ...p.counts);
+  const yourTurn = p.open && p.myChoice === null;
+  return (
+    <Card
+      title={`📊 ${p.question} · ${total} vote${total === 1 ? '' : 's'} · ${pollStatus(p)}${yourTurn ? ' · your vote?' : ''}`}
+      open={open}
+      onToggle={onToggle}
+      testID="chat-group-poll"
+    >
+      <Text style={[styles.note, { color: colors.secondaryText }]}>
+        Poll by {p.creator ?? 'a former member'} on {dateLabel(p.openedAt)}
+        {p.open ? ' · one vote each, you can change it until the end' : ''}
+      </Text>
+      {p.options.map((o, i) => {
+        const n = p.counts[i];
+        const share = total ? n / total : 0;
+        const mineHere = p.myChoice === i;
+        const won = !p.open && n > 0 && n === lead;
+        const voters = p.voters.filter((v) => v.choice === i).map((v) => v.nickname ?? '?');
         return (
-          <Fold
-            key={v.id}
-            title={title}
-            open={openId === v.id}
-            onToggle={() => setOpenId(openId === v.id ? null : v.id)}
-            tone={v.decided ? null : 'danger'}
-            testID="chat-group-vote"
+          <TouchableOpacity
+            key={i}
+            disabled={!p.open || busy}
+            onPress={() => onVote(p.id, mineHere ? null : i)}
+            style={[styles.pollOption, { borderColor: mineHere ? colors.primary : colors.border }]}
+            accessibilityLabel={`${o}: ${n} vote${n === 1 ? '' : 's'}${mineHere ? ', your vote' : ''}`}
+            testID="chat-poll-option"
           >
-            <Text style={[styles.note, { color: colors.text }]}>Reason: {v.reason ?? '(given before you joined)'}</Text>
-            <Text style={[styles.note, { color: colors.secondaryText }]}>
-              Started by {v.opener ?? 'a former player'} · {v.decided
-                ? `${v.ballots.filter((b) => b.counts && b.yes).length} yes / ${v.ballots.filter((b) => b.counts && !b.yes).length} no counted`
-                : `${v.yes} yes / ${v.no} no`}
-              {v.ballots.length ? ` · ${v.ballots.map((b) => `${b.voter ?? '?'} ${b.yes ? 'yes' : 'no'}${v.decided && !b.counts ? ' (didn\'t count)' : ''}`).join(', ')}` : ''}
-            </Text>
-            {!v.decided && v.aboutMe ? (
-              <Text style={[styles.note, { color: colors.secondaryText }]}>
-                This vote is about you, so you can't vote. You can write to the group's owner in a 1:1 chat.
+            <View style={[styles.pollBar, { width: `${Math.round(share * 100)}%`, backgroundColor: colors.primary }]} />
+            <View style={styles.pollOptionRow}>
+              <Text style={[styles.note, { color: colors.text, flex: 1, fontWeight: won || mineHere ? '700' : '400' }]}>
+                {mineHere ? '✓ ' : ''}{o}
               </Text>
-            ) : null}
-            {!v.decided && !v.aboutMe && v.myBallot ? (
-              <Text style={[styles.note, { color: colors.secondaryText }]}>You voted {v.myBallot.yes ? 'yes' : 'no'}.</Text>
-            ) : null}
-            {!v.decided && !v.aboutMe && !v.myBallot && !v.mayVote ? (
-              <Text style={[styles.note, { color: colors.secondaryText }]}>You joined after this vote started, so you can't vote in it.</Text>
-            ) : null}
-            {!v.decided && !v.aboutMe && !v.myBallot && v.mayVote ? (
-              votes.canVote ? (
-                <View style={styles.row}>
-                  <Button label={`Yes, remove ${v.accused}`} onPress={() => onCastVote(v.id, true)} disabled={busy} testID="chat-vote-yes" />
-                  <Button label="No" quiet onPress={() => onCastVote(v.id, false)} disabled={busy} testID="chat-vote-no" />
-                </View>
-              ) : (
-                <View>
-                  <Text style={[styles.note, { color: colors.secondaryText }]}>
-                    Members holding at least {votes.threshold} Devikins can vote.
-                  </Text>
-                  <HoldingsNote votes={votes} busy={busy} onUpdateHoldings={onUpdateHoldings} />
-                </View>
-              )
-            ) : null}
-            <Text style={[styles.note, { color: colors.secondaryText }]}>
-              A vote counts if at least 10 % of the members (never fewer than 3) vote; 60 % yes removes the member. It ends early once the result can't change any more (60 % of everyone allowed to vote said yes, or more than 40 % said no). Voting asks your
-              Klever extension to sign a short text (no fee); your wallet is checked again when the vote closes, then forgotten.
-            </Text>
-          </Fold>
+              <Text style={[styles.note, { color: colors.text, fontWeight: '700' }]}>{n}</Text>
+            </View>
+            {voters.length ? <Text style={[styles.small, { color: colors.secondaryText }]}>{voters.join(', ')}</Text> : null}
+          </TouchableOpacity>
         );
       })}
+      {p.open && p.myChoice !== null ? (
+        <Text style={[styles.small, { color: colors.secondaryText }]}>Tap another answer to change your vote, or yours again to take it back.</Text>
+      ) : null}
+      {p.open && p.mine ? (
+        <TouchableOpacity onPress={() => onClose(p.id)} disabled={busy} testID="chat-poll-close">
+          <Text style={[styles.link, { color: colors.cancelText }]}>Close this poll now</Text>
+        </TouchableOpacity>
+      ) : null}
+    </Card>
+  );
+}
+
+const POLL_DURATIONS = [
+  { label: '1 hour', ms: 60 * 60 * 1000 },
+  { label: '6 hours', ms: 6 * 60 * 60 * 1000 },
+  { label: '1 day', ms: 24 * 60 * 60 * 1000 },
+  { label: '3 days', ms: 3 * 24 * 60 * 60 * 1000 },
+  { label: '7 days', ms: 7 * 24 * 60 * 60 * 1000 },
+];
+
+function PollForm({ busy, onStart, onCancel }) {
+  const { colors } = useTheme();
+  const [question, setQuestion] = useState('');
+  const [options, setOptions] = useState(['', '']);
+  const [duration, setDuration] = useState(POLL_DURATIONS[2].ms);
+  const filled = options.map((o) => o.trim()).filter(Boolean);
+  const inputStyle = [styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }];
+  return (
+    <View style={styles.form} testID="chat-poll-form">
+      <TextInput testID="chat-poll-question" style={inputStyle} value={question} onChangeText={setQuestion} maxLength={300}
+        placeholder="Your question" placeholderTextColor={colors.secondaryText} />
+      {options.map((o, i) => (
+        <TextInput
+          key={i}
+          testID="chat-poll-answer"
+          style={inputStyle}
+          value={o}
+          onChangeText={(t) => setOptions(options.map((x, j) => (j === i ? t : x)))}
+          maxLength={80}
+          placeholder={`Answer ${i + 1}`}
+          placeholderTextColor={colors.secondaryText}
+        />
+      ))}
+      {options.length < MAX_POLL_OPTIONS ? (
+        <TouchableOpacity onPress={() => setOptions([...options, ''])} testID="chat-poll-add-answer">
+          <Text style={[styles.link, { color: colors.primary }]}>+ Another answer</Text>
+        </TouchableOpacity>
+      ) : null}
+      <View style={styles.row}>
+        <Text style={[styles.note, { color: colors.secondaryText }]}>Runs for</Text>
+        {POLL_DURATIONS.map((d) => (
+          <TouchableOpacity
+            key={d.ms}
+            onPress={() => setDuration(d.ms)}
+            style={[styles.chip, { borderColor: duration === d.ms ? colors.primary : colors.border, backgroundColor: duration === d.ms ? colors.primary : 'transparent' }]}
+            testID="chat-poll-duration"
+          >
+            <Text style={[styles.small, { color: duration === d.ms ? colors.primaryText : colors.text }]}>{d.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <Text style={[styles.small, { color: colors.secondaryText }]}>
+        Every member has one vote and sees who voted what. Starting a poll counts as one of your posts; voting is free.
+      </Text>
+      <View style={styles.row}>
+        <Button
+          label="Start the poll"
+          testID="chat-poll-start"
+          disabled={busy || !question.trim() || new Set(filled).size < 2}
+          onPress={() => onStart(question.trim(), filled, duration)}
+        />
+        <Button label="Cancel" quiet onPress={onCancel} />
+      </View>
     </View>
+  );
+}
+
+/**
+ * "🗳 Votes & polls" (25 Oct 2026, Raphael): one line for removal votes and
+ * polls. Open ones first (newest on top, removal votes red), then "Past"
+ * folded again - kept for good in this Hub, so a guild can look back later.
+ */
+function VotesAndPolls({ votes, polls, busy, onCastVote, onUpdateHoldings, onStartPoll, onVotePoll, onClosePoll, focus }) {
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  const [openCard, setOpenCard] = useState(null);
+  const [showPast, setShowPast] = useState(false);
+  useEffect(() => {
+    if (!focus) return;
+    setOpen(true);
+    setOpenCard(`poll:${focus.id}`);
+    if ((polls || []).some((p) => p.id === focus.id && !p.open)) setShowPast(true);
+  }, [focus]);
+  const [creating, setCreating] = useState(false);
+  const openVotes = (votes?.votes || []).filter((v) => !v.decided);
+  const pastVotes = votes?.history || (votes?.votes || []).filter((v) => v.decided);
+  const items = [
+    ...openVotes.map((v) => ({ type: 'vote', at: v.openedAt, v })),
+    ...(polls || []).filter((p) => p.open).map((p) => ({ type: 'poll', at: p.openedAt, p })),
+  ].sort((a, b) => b.at - a.at);
+  const past = [
+    ...pastVotes.map((v) => ({ type: 'vote', at: v.openedAt, v })),
+    ...(polls || []).filter((p) => !p.open).map((p) => ({ type: 'poll', at: p.openedAt, p })),
+  ].sort((a, b) => b.at - a.at);
+  const yourTurn = openVotes.some((v) => !v.aboutMe && !v.myBallot && v.mayVote && votes?.canVote) || (polls || []).some((p) => p.open && p.myChoice === null);
+  const title = `🗳 Votes & polls${items.length ? ` · ${items.length} open` : ''}${yourTurn ? ' · your vote?' : ''}${past.length ? ` · ${past.length} past` : ''}`;
+  const card = (x) => {
+    const key = `${x.type}:${x.type === 'vote' ? x.v.id : x.p.id}`;
+    const toggle = () => setOpenCard(openCard === key ? null : key);
+    return x.type === 'vote' ? (
+      <VoteCard key={key} v={x.v} votes={votes} busy={busy} open={openCard === key} onToggle={toggle} onCastVote={onCastVote} onUpdateHoldings={onUpdateHoldings} />
+    ) : (
+      <PollCard key={key} p={x.p} busy={busy} open={openCard === key} onToggle={toggle} onVote={onVotePoll} onClose={onClosePoll} />
+    );
+  };
+  return (
+    <Fold
+      title={title}
+      open={open}
+      onToggle={() => setOpen(!open)}
+      tone={openVotes.length ? 'danger' : null}
+      testID="chat-group-votes"
+      maxHeight={420}
+    >
+      {items.length === 0 && !creating ? (
+        <Text style={[styles.note, { color: colors.secondaryText }]}>Nothing open right now.</Text>
+      ) : null}
+      {items.map(card)}
+      {creating ? (
+        <PollForm
+          busy={busy}
+          onCancel={() => setCreating(false)}
+          onStart={async (q, o, d) => {
+            if (await onStartPoll(q, o, d)) setCreating(false);
+          }}
+        />
+      ) : (
+        <TouchableOpacity onPress={() => setCreating(true)} testID="chat-poll-new">
+          <Text style={[styles.link, { color: colors.primary }]}>+ Start a poll</Text>
+        </TouchableOpacity>
+      )}
+      {past.length ? (
+        <TouchableOpacity onPress={() => setShowPast(!showPast)} testID="chat-votes-past-toggle">
+          <Text style={[styles.link, { color: colors.primary }]}>Past ({past.length}) {showPast ? '▴' : '▸'}</Text>
+        </TouchableOpacity>
+      ) : null}
+      {showPast ? past.map(card) : null}
+      <Text style={[styles.small, { color: colors.secondaryText }]}>
+        To start a vote to remove someone: 👥 Members. Past votes and polls stay in this browser (and in your backup).
+      </Text>
+    </Fold>
   );
 }
 
@@ -405,9 +615,12 @@ function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBa
 }
 
 export default function ChatGroupView({
-  group, me, posts, next, busy, error, onBack, onPost, onPins, onReact, onLeave, votes, loadMembers, onOpenVote, onCastVote, onLetBackIn, onUpdateHoldings,
+  group, me, posts, next, busy, error, onBack, onPost, onPins, onReact, onLeave, votes, polls, loadMembers, onOpenVote, onCastVote, onLetBackIn, onUpdateHoldings,
+  onStartPoll, onVotePoll, onClosePoll,
 }) {
   const [showMembers, setShowMembers] = useState(false);
+  // A poll to open in "Votes & polls" (tapped in the chat)
+  const [pollFocus, setPollFocus] = useState(null);
   const [showPins, setShowPins] = useState(false);
   const { colors } = useTheme();
   const [draft, setDraft] = useState('');
@@ -491,6 +704,9 @@ export default function ChatGroupView({
         </View>
       </View>
 
+      {/* Pinned, votes & polls, members: at most 45 % of the chat's height, scrolling
+          inside, so the posts and the message box always keep room (25 Oct 2026). */}
+      <ScrollView style={styles.topPart} contentContainerStyle={{ paddingBottom: 2 }}>
       {group.pinned || group.isOwner ? (
         <Fold
           title={pins.length
@@ -527,7 +743,17 @@ export default function ChatGroupView({
         </Fold>
       ) : null}
 
-      <VotesBox votes={votes} busy={busy} onCastVote={onCastVote} onUpdateHoldings={onUpdateHoldings} />
+      <VotesAndPolls
+        votes={votes}
+        polls={polls}
+        busy={busy}
+        onCastVote={onCastVote}
+        onUpdateHoldings={onUpdateHoldings}
+        onStartPoll={onStartPoll}
+        onVotePoll={onVotePoll}
+        onClosePoll={onClosePoll}
+        focus={pollFocus}
+      />
 
       <Fold
         title={`👥 Members (${group.members})`}
@@ -553,6 +779,7 @@ export default function ChatGroupView({
           Your posting here is paused while a vote about you is open ({endsLabel(group.pausedUntil)}). You can write to the owner in a 1:1 chat.
         </Text>
       ) : null}
+      </ScrollView>
 
       <ScrollView
         ref={scrollRef}
@@ -567,7 +794,16 @@ export default function ChatGroupView({
           showAuthors
           busy={busy}
           onReact={onReact}
-          items={posts.map((p) => ({ id: p.id, pid: p.pid, reactions: p.reactions, mine: p.mine, author: p.author, nickname: p.nickname, text: p.text, at: p.receivedAt }))}
+          items={[
+            ...posts.map((p) => ({ id: p.id, pid: p.pid, reactions: p.reactions, mine: p.mine, author: p.author, nickname: p.nickname, text: p.text, at: p.receivedAt })),
+            // New polls show as a line in the chat too; a tap opens them above (25 Oct 2026)
+            ...(polls || []).map((p) => ({
+              id: `poll-${p.id}`,
+              at: p.openedAt,
+              system: `📊 ${p.mine ? 'You' : p.creator ?? 'A member'} started a poll: ${p.question}`,
+              onPress: () => setPollFocus({ id: p.id, n: Date.now() }),
+            })),
+          ].sort((a, b) => a.at - b.at)}
         />
       </ScrollView>
 
@@ -626,8 +862,14 @@ const styles = StyleSheet.create({
   pinItem: { gap: 4, paddingTop: 6 },
   foldHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   foldTitle: { flex: 1, fontWeight: '700' },
-  foldBody: { maxHeight: 280 },
+  card2: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 },
+  small: { fontSize: 12, lineHeight: 16 },
+  chip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3 },
+  pollOption: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, overflow: 'hidden', gap: 2 },
+  pollBar: { position: 'absolute', left: 0, top: 0, bottom: 0, opacity: 0.18 },
+  pollOptionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   // (a line and some room between the pinned / vote / members lines and the posts - Raphael, 24 Oct 2026)
+  topPart: { flexGrow: 0, flexShrink: 1, maxHeight: '45%' },
   threadArea: { flex: 1, marginTop: 6, borderTopWidth: 1 },
   thread: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 12, maxWidth: 720, width: '100%' },
   pad: { marginHorizontal: 12 },
