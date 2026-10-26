@@ -704,7 +704,12 @@ alarm cleans up; accounts not signed in for 180 days are forgotten.
 Features > Chat, on the website and (since 26 Oct 2026, release 4.5.0) in
 the Android app: one shared screen, `src/components/ChatScreen.js` (with
 `ChatGroupView.js` and `ChatMessages.js`), shown by `ChatView.js` in the app
-and by the chat window `ChatDock.web.js` on the website. Everything that
+and by the chat window `ChatDock.web.js` on the website. In the app, a
+small 💬 tab on the right edge (`ChatDock.js`) opens it from any screen: it
+can be dragged up or down (the place is remembered with expo-sqlite's
+kv-store) and steps aside while the keyboard is open and on the chat
+itself; App.js tells it the screen through `src/web/chatDock.js`
+(`setAppScreen`, `setChatScreenOpener`). Everything that
 differs is in `src/api/chatWallet.js` (app: signing with the KLV Signer,
 `signTextWithSigner` / SIGN_MESSAGE in `klvSigner.js`, Signer 0.1.3+) and
 `chatWallet.web.js` (website: the Klever extension), plus the Hub emojis'

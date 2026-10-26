@@ -107,7 +107,7 @@ import WithdrawalTrackerView from './src/components/WithdrawalTrackerView';
 import WalletOverviewView from './src/components/WalletOverviewView';
 import ShortcutsHelp from './src/components/ShortcutsHelp';
 import ChatDock from './src/components/ChatDock';
-import { openChatDock, setHubReady, useChatUnread } from './src/web/chatDock';
+import { openChatDock, setHubReady, useChatUnread, setAppScreen, setChatScreenOpener } from './src/web/chatDock';
 import { useKeyboardShortcuts, showShortcutsHelp } from './src/web/shortcuts';
 import GettingStartedCard, { loadGuideState, setGuideHidden, GUIDE_KEYS } from './src/components/GettingStartedCard';
 import { countVisit } from './src/api/usage';
@@ -324,6 +324,18 @@ function AppContent() {
   // screen is simpler to reason about than several booleans that could
   // theoretically all be true/false in an invalid combination.
   const [currentScreen, setCurrentScreen] = useState(Object.keys(COLLECTIONS)[0]);
+  // The Android app's draggable 💬 handle (ChatDock.js, 26 Oct 2026): it
+  // needs to know the screen (it steps aside on the chat and while the Hub
+  // starts), and how to open the chat - like the ☰ menu's "Chat".
+  const openChatRef = useRef(null);
+  openChatRef.current = () => handleMenuSelectScreen('chat');
+  useEffect(() => {
+    setChatScreenOpener(() => openChatRef.current?.());
+    return () => setChatScreenOpener(null);
+  }, []);
+  useEffect(() => {
+    setAppScreen(isDatabaseReady ? currentScreen : 'loading');
+  }, [isDatabaseReady, currentScreen]);
 
   // "Where are my NFTs?" (WalletOverviewView.js): tapping a wallet row
   // shows the normal Browse list with just those NFTs -
