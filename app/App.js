@@ -1488,7 +1488,7 @@ Continue anyway?`
     );
   }
 
-  // Chat (website only for now; see ChatView.web.js and app/chat).
+  // Chat (Android app; the website shows it in its own window, ChatDock.web.js). See ChatScreen.js and app/chat.
   if (currentScreen === 'chat') {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>

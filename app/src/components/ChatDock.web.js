@@ -15,7 +15,7 @@
  *   - The window stays open while you switch sections of the Hub. "—"
  *     makes it the bubble again, "⤢" fills the screen (and back). On a
  *     narrow screen (a phone) it always fills the screen.
- *   - There is only ever one chat (ChatView.web.js) running: it stays
+ *   - There is only ever one chat (ChatScreen.js) running: it stays
  *     mounted while minimised, so it keeps checking for new mail in the
  *     background and the bubble's count stays current.
  *   - Nothing runs in the background for someone who has never used the

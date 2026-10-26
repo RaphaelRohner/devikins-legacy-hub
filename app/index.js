@@ -1,3 +1,4 @@
+import './src/crypto/setupRandom'; // first: secure random numbers for the chat (Android app)
 import { registerRootComponent } from 'expo';
 import { Platform } from 'react-native';
 import notifee from 'react-native-notify-kit';

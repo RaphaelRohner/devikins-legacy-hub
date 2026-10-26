@@ -1,5 +1,5 @@
 /**
- * ChatMessages.web.js - the messages of a 1:1 chat or a group, laid out like
+ * ChatMessages.js (website and Android app) - the messages of a 1:1 chat or a group, laid out like
  * Telegram or WhatsApp (Raphael, 24 Oct 2026: easier to read, still in the
  * Hub's colours):
  *
@@ -21,10 +21,11 @@
  * onReact(pid, emoji) - reactions on (groups); left out: none (1:1 chats)
  */
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { REACTIONS } from '../../chat/src/group.js';
-import { ANCESTRIES, HUB_FACES, isHubEmoji, hubEmojiUri, hubEmojiLabel } from '../constants/hubEmojis';
+import { ANCESTRIES, HUB_FACES, isHubEmoji, hubEmojiLabel } from '../constants/hubEmojis';
+import HubEmojiImage from './HubEmojiImage';
 
 // The Ancestry colour last picked for the Hub's own emojis (this browser only).
 const ANCESTRY_KEY = 'devi-hub-emoji-ancestry';
@@ -40,7 +41,7 @@ function readAncestry() {
 /** A reaction as shown: the Hub's own emojis as their drawing, others as text. */
 function ReactionGlyph({ value, size }) {
   if (isHubEmoji(value)) {
-    return <Image source={{ uri: hubEmojiUri(value) }} style={{ width: size, height: size }} accessibilityLabel={hubEmojiLabel(value)} />;
+    return <HubEmojiImage code={value} size={size} />;
   }
   return <Text style={{ fontSize: size * 0.85 }}>{value}</Text>;
 }

@@ -1,5 +1,5 @@
 /**
- * ChatGroupView.web.js — open groups in the Chat screen (stage 3, website)
+ * ChatGroupView.js — open groups in the Chat screen (stage 3; website and, since 26 Oct 2026, the Android app)
  *
  * GroupsCard: the list on the Chat overview – every open group, the ones
  * you're in first (with new posts counted), "Join" for the others (biggest
@@ -18,11 +18,12 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { MAX_TEXT_LENGTH } from '../../chat/src/rules.js';
 import { MAX_PINS, POLL_MAX_OPTIONS as MAX_POLL_OPTIONS } from '../../chat/src/group.js';
 import ChatMessages from './ChatMessages';
+import { CHAT_WALLET, CHAT_HERE } from '../api/chatWallet';
 
 
 function waitLabel(ms) {
@@ -78,7 +79,7 @@ export function GroupsCard({ groups, createInfo, busy, onOpen, onJoin, onCreate,
         {g.description ? <Text style={[styles.note, { color: colors.text }]}>{g.description}</Text> : null}
         <Text style={[styles.note, { color: colors.secondaryText }]}>
           {g.members} member{g.members === 1 ? '' : 's'} · by {g.owner ?? '?'}
-          {g.needsKey ? ' · you are in it, but this browser has no key yet' : ''}
+          {g.needsKey ? ` · you are in it, but ${CHAT_HERE} has no key yet` : ''}
         </Text>
       </View>
       {g.banned ? (
@@ -294,7 +295,7 @@ function VoteCard({ v, votes, busy, open, onToggle, onCastVote, onUpdateHoldings
       {!v.decided ? (
         <Text style={[styles.note, { color: colors.secondaryText }]}>
           A vote counts if at least 10 % of the members (never fewer than 3) vote; 60 % yes removes the member. It ends early once the result can't change any more (60 % of everyone allowed to vote said yes, or more than 40 % said no). Voting asks your
-          Klever extension to sign a short text (no fee); your wallet is checked again when the vote closes, then forgotten.
+          {CHAT_WALLET} to sign a short text (no fee); your wallet is checked again when the vote closes, then forgotten.
         </Text>
       ) : null}
     </Card>
@@ -502,7 +503,7 @@ function VotesAndPolls({ votes, polls, busy, onCastVote, onUpdateHoldings, onSta
       ) : null}
       {showPast ? past.map(card) : null}
       <Text style={[styles.small, { color: colors.secondaryText }]}>
-        To start a vote to remove someone: 👥 Members. Past votes and polls stay in this browser (and in your backup).
+        To start a vote to remove someone: 👥 Members. Past votes and polls stay in {CHAT_HERE}{Platform.OS === 'web' ? ' (and in your backup)' : ''}.
       </Text>
     </Fold>
   );
@@ -683,7 +684,7 @@ export default function ChatGroupView({
     `Leave ${group.name}?`,
     group.isOwner
       ? 'You started this group: if you leave, it goes to the member who joined first (your pinned messages are removed). If you are the last one, the group is deleted.'
-      : 'Its posts are deleted from this browser. You can ask to join again later.',
+      : `Its posts are deleted from ${CHAT_HERE}. You can ask to join again later.`,
     [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Leave', style: 'destructive', onPress: onLeave },

@@ -701,15 +701,25 @@ alarm cleans up; accounts not signed in for 180 days are forgotten.
 
 ### The Chat screen (stage 2a, 22 Oct 2026)
 
-Website only for now: Features > Chat (`src/components/ChatView.web.js`;
-the phone gets `ChatView.js`, a placeholder, and no menu entry). The screen
+Features > Chat, on the website and (since 26 Oct 2026, release 4.5.0) in
+the Android app: one shared screen, `src/components/ChatScreen.js` (with
+`ChatGroupView.js` and `ChatMessages.js`), shown by `ChatView.js` in the app
+and by the chat window `ChatDock.web.js` on the website. Everything that
+differs is in `src/api/chatWallet.js` (app: signing with the KLV Signer,
+`signTextWithSigner` / SIGN_MESSAGE in `klvSigner.js`, Signer 0.1.3+) and
+`chatWallet.web.js` (website: the Klever extension), plus the Hub emojis'
+picture (`HubEmojiImage.js` draws the SVG with react-native-svg in the app).
+The app gets secure random numbers for the chat's encryption from
+`src/crypto/setupRandom.js` (expo-crypto, imported first in `index.js`).
+The chat backup (Wallets > Export) is website-only for now: it needs the
+browser's WebCrypto (`chatBackup.js` is a stub in the app). The screen
 holds no chat logic: `chat/src/messenger.js` does everything (sign-in with
-the Klever extension's "sign a text", nickname, directory, contact requests
+a wallet's "sign a text", nickname, directory, contact requests
 with drop codes, accept / decline / block / unblock / remove, 1:1 messages)
 and keeps contacts and history in its own SQLite file `chat.db`
 (`src/api/chatStore.js`), separate from the wallet sets. While the screen
-is open it collects mail every 10 seconds. Signing a text with the
-extension: `signTextWithExtension` in `src/api/kleverExtension.web.js`.
+is open it collects mail every 10 seconds. Signing a text: see
+`src/api/chatWallet(.web).js` above.
 
 Chat in the backup (stage 2b): "Export all sets" on the website asks
 whether to include the chat (ChatBackupPasswordBox.js). If yes, the chat

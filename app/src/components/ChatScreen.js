@@ -1,5 +1,9 @@
 /**
- * ChatView.web.js — the Chat screen (website)
+ * ChatScreen.js — the Chat screen, on the website AND in the Android app
+ * (shared since 26 Oct 2026; was ChatView.web.js). ChatView.js /
+ * ChatDock.web.js show it. The only differences between the two are in
+ * src/api/chatWallet(.web).js: the website signs with the Klever browser
+ * extension, the app with the KLV Signer app.
  *
  * Stage 2a of the chat (design: CHAT-DESIGN-DRAFT.md in the claude.ai
  * project). Players who hold at least one Devikin sign in once with the
@@ -12,19 +16,21 @@
  * between can't read them. History is kept only in this browser.
  *
  * While the screen is open it looks for new mail every few seconds
- * (MAIL_CHECK_EVERY_MS). On the phone the chat comes later (ChatView.js).
+ * (MAIL_CHECK_EVERY_MS).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert, BackHandler,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert, BackHandler, Platform, Share,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { getMessenger } from '../api/chatStore';
-import { isExtensionAvailable, signTextWithExtension, lastSigningDetails } from '../api/kleverExtension';
+import {
+  canSignChat, signChatText, lastChatSigningDetails, CHAT_WALLET, CHAT_HERE, CHAT_DEVICE, CHAT_NO_WALLET_TEXT,
+} from '../api/chatWallet';
 import { MAIL_CHECK_EVERY_MS } from '../constants/chat';
 import { CONTACT_STATUS } from '../../chat/src/index.js';
-import ChatGroupView, { GroupsCard } from './ChatGroupView.web';
+import ChatGroupView, { GroupsCard } from './ChatGroupView';
 import ChatMessages from './ChatMessages';
 import { MAX_TEXT_LENGTH, nicknameKey } from '../../chat/src/rules.js';
 
@@ -190,7 +196,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
 
   async function signInSteps() {
     const { code, text } = await messenger.startSignIn();
-    const { address, signature } = await signTextWithExtension(text);
+    const { address, signature } = await signChatText(text);
     await messenger.finishSignIn({ code, wallet: address, signature });
   }
   const signIn = () => act(signInSteps);
@@ -287,17 +293,19 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
           <Text style={[styles.note, { color: colors.secondaryText }]}>
             Your wallet app signed in a way the Hub doesn't know yet. These details (only public things: the one-time text, your public address and that signature) help to fix it:
           </Text>
-          <Text selectable style={[styles.note, { color: colors.text, fontFamily: 'monospace' }]} testID="chat-sign-details">{lastSigningDetails()}</Text>
+          <Text selectable style={[styles.note, { color: colors.text, fontFamily: 'monospace' }]} testID="chat-sign-details">{lastChatSigningDetails()}</Text>
           <TouchableOpacity
             onPress={() => {
               try {
-                navigator.clipboard?.writeText(lastSigningDetails());
+                // Website: to the clipboard. App: Android's "share" (mail, messenger, copy…).
+                if (Platform.OS === 'web') navigator.clipboard?.writeText(lastChatSigningDetails());
+                else Share.share({ message: lastChatSigningDetails() });
               } catch (e) {
                 // (select the text above instead)
               }
             }}
           >
-            <Text style={[styles.note, { color: colors.primary, fontWeight: '700' }]}>Copy the details</Text>
+            <Text style={[styles.note, { color: colors.primary, fontWeight: '700' }]}>{Platform.OS === 'web' ? 'Copy the details' : 'Share the details'}</Text>
           </TouchableOpacity>
         </>
       ) : null}
@@ -319,7 +327,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
 
   // --- sign in ---
   if (status.state === 'signed-out') {
-    const hasExtension = isExtensionAvailable();
+    const hasWallet = canSignChat();
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {header('Chat', onClose)}
@@ -331,8 +339,8 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
                 Devikin.
               </Text>
               <Text style={[styles.note, { color: colors.secondaryText }]}>
-                {'• Messages are sealed on your computer and opened only on the other player\'s. The Hub\'s "postman" in between can\'t read them.\n'
-                  + '• Your chat history is kept only in this browser.\n'
+                {`• Messages are sealed on your ${CHAT_DEVICE} and opened only on the other player's. The Hub's "postman" in between can't read them.\n`
+                  + `• Your chat history is kept only in ${CHAT_HERE}.\n`
                   + '• Your wallet address is never shown to other players.'}
               </Text>
               {status.expired ? (
@@ -340,19 +348,16 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
                   Once a week the Hub checks again that your wallet holds Devikins. Please sign in again with the same wallet.
                 </Text>
               ) : null}
-              {hasExtension ? (
+              {hasWallet ? (
                 <>
                   <Text style={[styles.note, { color: colors.secondaryText }]}>
-                    Signing in: your Klever extension asks you to sign a short text. It is NOT a transaction: it costs nothing
+                    Signing in: your {CHAT_WALLET} asks you to sign a short text. It is NOT a transaction: it costs nothing
                     and moves nothing. It only shows that you hold Devikins.
                   </Text>
-                  {button(busy ? 'Waiting for the extension…' : 'Sign in with the Klever extension', signIn, { testID: 'chat-sign-in' })}
+                  {button(busy ? `Waiting for the ${CHAT_WALLET}…` : `Sign in with the ${CHAT_WALLET}`, signIn, { testID: 'chat-sign-in' })}
                 </>
               ) : (
-                <Text style={[styles.text, { color: colors.text }]}>
-                  To sign in, you need the Klever Wallet browser extension (for Chrome, Brave or Edge) with the wallet that
-                  holds your Devikins. Install it, open it once, then reload this page.
-                </Text>
+                <Text style={[styles.text, { color: colors.text }]}>{CHAT_NO_WALLET_TEXT}</Text>
               )}
               {errorLine}
             </>,
@@ -415,8 +420,8 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
         onVotePoll={(pollId, option) => act(() => messenger.votePoll(openGroup.id, pollId, option))}
         onClosePoll={(pollId) => act(() => messenger.closePoll(openGroup.id, pollId))}
         loadMembers={() => messenger.groupMemberNames(openGroup.id)}
-        onOpenVote={(nickname, reason) => act(() => messenger.openVote(openGroup.id, nickname, reason, signTextWithExtension))}
-        onCastVote={(voteId, yes) => act(() => messenger.castVote(voteId, yes, signTextWithExtension))}
+        onOpenVote={(nickname, reason) => act(() => messenger.openVote(openGroup.id, nickname, reason, signChatText))}
+        onCastVote={(voteId, yes) => act(() => messenger.castVote(voteId, yes, signChatText))}
         onLetBackIn={(account) => act(() => messenger.letBackIn(openGroup.id, account))}
         onUpdateHoldings={() => updateHoldings(openGroup.id)}
         onLeave={() => act(async () => {
@@ -439,7 +444,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
           {isBlocked
             ? button('Unblock', () => act(() => messenger.unblockContact(open.id)), { quiet: true })
             : button('Block', () => confirm(`Block ${open.nickname}?`, 'They can\'t send you anything until you unblock them. They aren\'t told.', 'Block', () => act(() => messenger.blockContact(open.id))), { quiet: true })}
-          {button('Remove', () => confirm(`Remove ${open.nickname}?`, 'The contact and your messages with them are deleted from this browser, and they can\'t write to you any more.', 'Remove', () => act(async () => {
+          {button('Remove', () => confirm(`Remove ${open.nickname}?`, `The contact and your messages with them are deleted from ${CHAT_HERE}, and they can't write to you any more.`, 'Remove', () => act(async () => {
             await messenger.removeContact(open.id);
             setOpenId(null);
           })), { quiet: true })}
@@ -583,23 +588,23 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
         <View style={styles.pad}>
           <Text style={[styles.note, { color: colors.secondaryText }]}>
             Signed in until {new Date(status.verifiedUntil).toLocaleDateString()} (checked weekly). Your chat history is
-            kept only in this browser.
+            kept only in {CHAT_HERE}.
           </Text>
           <TouchableOpacity
             onPress={() => Alert.alert(
-              'Leave the chat in this browser?',
+              `Leave the chat in ${CHAT_HERE}?`,
               'Your contacts and messages here are deleted.\n\n'
-                + '"Only this browser": the chat keeps working in the other browser where you brought it with a backup.\n\n'
-                + '"Leave the chat": the postman forgets this chat key everywhere, and your nickname is freed if this was its only browser. You can sign in again later.',
+                + `"Only ${CHAT_HERE}": the chat keeps working in the other browser where you brought it with a backup.\n\n`
+                + '"Leave the chat": the postman forgets this chat key everywhere, and your nickname is freed if no other browser has this chat. You can sign in again later.',
               [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Leave the chat', style: 'destructive', onPress: () => act(() => messenger.leave()) },
-                { text: 'Only this browser', onPress: () => act(() => messenger.forgetHere()) },
+                { text: `Only ${CHAT_HERE}`, onPress: () => act(() => messenger.forgetHere()) },
               ],
             )}
             testID="chat-leave"
           >
-            <Text style={[styles.note, { color: colors.cancelText, textDecorationLine: 'underline', marginTop: 8 }]}>Leave the chat in this browser</Text>
+            <Text style={[styles.note, { color: colors.cancelText, textDecorationLine: 'underline', marginTop: 8 }]}>Leave the chat in {CHAT_HERE}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

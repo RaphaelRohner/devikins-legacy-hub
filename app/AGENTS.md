@@ -29,9 +29,11 @@ or NFT count, never log (Cloudflare logs are off in `wrangler.toml`), and
 add to the "what it keeps" list in `chat/postman/README.md` before storing
 anything new. Raphael deploys it himself (README there).
 
-The Chat screen (stage 2a, 22 Oct 2026) is `src/components/ChatView.web.js`
-(website only; `ChatView.js` is the phone placeholder, and the menu shows
-Chat only on the website). It uses the core through `src/api/chatStore.js`
+The Chat screen (stage 2a, 22 Oct 2026) is `src/components/ChatScreen.js`,
+shared by the website and the Android app since 26 Oct 2026; keep it free
+of website-only things (`window`, `document`, `navigator`) unless guarded
+by `Platform.OS === 'web'` or a try. What differs (signing: Klever
+extension vs. KLV Signer) lives in `src/api/chatWallet(.web).js`. It uses the core through `src/api/chatStore.js`
 (own database file `chat.db`, separate from the wallet sets). The postman's
 address is in `src/constants/chat.js`. Website test: `tests/web/chat.spec.js`
 (runs the real postman code locally via `tests/web/chatPostman.mjs`).

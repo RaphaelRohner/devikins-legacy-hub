@@ -191,8 +191,7 @@ export default function HamburgerMenu({
     },
   ].filter((entry) => {
     if (entry.key === 'signer') return !IS_WEB;
-    // The chat starts on the website; the phone app gets it later.
-    if (entry.key === 'chat') return IS_WEB;
+    // (The chat is in the app too since 26 Oct 2026, signing with the KLV Signer.)
     if (entry.key === 'donate') return DONATION_ADDRESS !== '';
     return true;
   });

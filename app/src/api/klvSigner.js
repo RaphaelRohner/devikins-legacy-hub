@@ -32,6 +32,8 @@
  */
 
 import * as IntentLauncher from 'expo-intent-launcher';
+import { prepareKlvMessage, verifySignatureSync } from '@klever/connect-crypto';
+import { bech32Decode } from '@klever/connect-encoding';
 import { signerStatus } from '../../modules/klv-signer-check';
 
 // Always name the Signer exactly (package + screen), so no other app can
@@ -44,6 +46,8 @@ const SIGNER = {
 const ACTION = {
   GET_ADDRESS: 'com.raphaelrohner.klvsigner.action.GET_ADDRESS',
   SIGN_TRANSACTION: 'com.raphaelrohner.klvsigner.action.SIGN_TRANSACTION',
+  // Sign a short text, not a transaction (Signer 0.1.3+; SIGNER-PROTOCOL.md 3c): the chat's sign-in and votes.
+  SIGN_MESSAGE: 'com.raphaelrohner.klvsigner.action.SIGN_MESSAGE',
 };
 
 const PROTOCOL_VERSION = '1';
@@ -148,4 +152,47 @@ export async function signWithSigner(unsignedHex) {
     );
   }
   return answer;
+}
+
+/**
+ * signTextWithSigner - asks the Signer to sign a short text (NOT a
+ * transaction: nothing is sent, no fee), e.g. the chat's sign-in text.
+ * Checks the answer before using it: the signature must be valid for this
+ * text and the Signer's wallet (Klever's message format; the synchronous
+ * check, the asynchronous one needs WebCrypto, which apps don't have).
+ * -> { address, signature } (signature: hex), like signTextWithExtension.
+ */
+// The last text-signing answer (only public things), for the "doesn't match"
+// help in the chat - like lastSigningDetails() in kleverExtension.web.js.
+let lastDetails = '';
+export function lastSignerDetails() {
+  return lastDetails;
+}
+
+export async function signTextWithSigner(text) {
+  lastDetails = '';
+  let answer;
+  try {
+    answer = await askSigner(ACTION.SIGN_MESSAGE, { text });
+  } catch (e) {
+    if (e.code === 'UNKNOWN_ACTION') {
+      throw Object.assign(new Error('Your KLV Signer is too old to sign in to the chat. Please update it to version 0.1.3 or newer.'), { code: 'SIGNER_TOO_OLD' });
+    }
+    throw e;
+  }
+  const address = String(answer.address || '');
+  const signature = String(answer.signature || '').toLowerCase();
+  lastDetails = JSON.stringify({ wallet: 'KLV Signer', text, address, signature }, null, 1);
+  let valid = false;
+  try {
+    const { prefix, data } = bech32Decode(address);
+    const bytes = Uint8Array.from(signature.match(/../g) || [], (h) => parseInt(h, 16));
+    valid = prefix === 'klv' && data.length === 32 && bytes.length === 64 && verifySignatureSync(prepareKlvMessage(text), bytes, data);
+  } catch (e) {
+    valid = false;
+  }
+  if (!valid) {
+    throw Object.assign(new Error("The KLV Signer's signature doesn't match this text and wallet, so it wasn't used."), { code: 'SIGNATURE_MISMATCH' });
+  }
+  return { address, signature };
 }
