@@ -25,7 +25,7 @@ players.
 - **"Where are my NFTs?":** a table of every wallet holding your NFTs.
 - **Breeding Helper**, a guided setup, and an offline helper ("Ask Devi")
   that explains the game's words and the Hub.
-- **Chat (beta, website):** one-to-one chats and open groups for Devikins
+- **Chat (beta, website and Android app):** one-to-one chats and open groups for Devikins
   holders, end-to-end encrypted. See below.
 - **Backups:** "Export all sets" saves everything to a file (the chat
   locked with a password of your choice).
@@ -53,16 +53,18 @@ players.
 - Members holding 10+ Devikins can vote someone out of a group; the
   wallets are checked again when the vote closes.
 - Reactions 👍 👎 ❤️ 😂 😮 🔥 (free).
-- Works with the Klever browser extension (Chrome) and in the Klever app's
-  own browser on Android.
+- Website: works with the Klever browser extension (Chrome) and in the
+  Klever app's own browser on Android.
+- Android app: you sign in through the **KLV Signer** app (version 0.1.3 or
+  newer), so your key stays in one place.
 
 ## Limitations
 
 - **Android app** as an APK from Releases, not the Play Store: you'll need
   to allow installs from unknown sources. Other systems: use the website.
-- **The chat is website-only for now.** The Android app will get it
-  through the KLV Signer app (so keys stay in one place). On iPhone, the
-  Klever app's browser should work, but it hasn't been tested yet.
+- **The chat backup is website-only for now:** in the Android app, the
+  chat lives only on that phone. On iPhone, the Klever app's browser should
+  work for the website's chat, but it hasn't been tested yet.
 - **The chat is a beta** on one small server: expect the odd rough edge.
   The same chat open in two browsers at once can split the messages
   between them (linked devices are planned).
