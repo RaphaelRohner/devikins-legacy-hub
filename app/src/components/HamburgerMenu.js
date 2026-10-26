@@ -271,7 +271,7 @@ export default function HamburgerMenu({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 24 }]}>
+      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 12 }]}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.text }]}>Menu</Text>
           <TouchableOpacity
@@ -335,7 +335,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 16,
-    // paddingTop is set inline above (insets.top + 24) so it accounts
+    // paddingTop is set inline above (insets.top + 12: the ✕ sits at the same
+    // height as the pages' round back button, 26 Oct 2026) so it accounts
     // for the device's actual status bar / notch height, not just a
     // fixed guess - see the insets comment near the top of this file.
   },

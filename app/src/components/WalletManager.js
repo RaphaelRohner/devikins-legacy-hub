@@ -74,6 +74,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import useKeepFocusedInputVisible from '../hooks/useKeepFocusedInputVisible';
 import { isValidKleverAddress } from '../utils/kleverAddress';
 import {
   View,
@@ -173,6 +174,9 @@ export default function WalletManager({
   // replaced with an editable text field plus Save/Cancel buttons instead
   // of the usual Edit/Delete buttons.
   const [editingId, setEditingId] = useState(null);
+  // The field you type in stays in view when the keyboard opens (Android app, 26 Oct 2026).
+  const listScrollRef = useRef(null);
+  useKeepFocusedInputVisible(listScrollRef);
   const [editAddressInput, setEditAddressInput] = useState('');
   // The optional friendly name (e.g. "Main", "Trading") - edited
   // alongside the address, and shown next to the Edit/Delete buttons
@@ -1147,7 +1151,7 @@ export default function WalletManager({
           the set switcher down to Danger zone, all one continuous
           scroll region) fixes that - only the back button/title/
           subtitle above stay fixed. */}
-      <ScrollView contentContainerStyle={styles.listContent}>
+      <ScrollView ref={listScrollRef} contentContainerStyle={styles.listContent}>
         {/* First visit (no wallet yet, only the one starting set): App.js
             opens this screen straight away, so it says what the Hub is and
             what to do first (Raphael, 14 Oct 2026). */}
@@ -1587,7 +1591,8 @@ export default function WalletManager({
 
       {/* "What's this wallet?" - asked right after adding one (14 Oct 2026). */}
       <Modal visible={!!namingWallet} transparent animationType="fade" onRequestClose={() => finishNaming(null)}>
-        <View style={styles.namingBackdrop}>
+        {/* (a pop-up isn't inside the app's keyboard handling: it moves up by itself, 26 Oct 2026) */}
+        <KeyboardAvoidingView style={styles.namingBackdrop} behavior={IS_WEB ? undefined : 'padding'}>
           <View style={[styles.namingCard, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="naming-box">
             <Text style={[styles.namingTitle, { color: colors.text }]}>What's this wallet?</Text>
             <Text style={[styles.namingAddress, { color: colors.secondaryText }]} numberOfLines={1} ellipsizeMode="middle">
@@ -1655,7 +1660,7 @@ export default function WalletManager({
               <Text style={[styles.namingSkipText, { color: colors.secondaryText }]}>Skip</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { MIN_PASSWORD_LENGTH } from '../api/chatBackup';
 
@@ -64,7 +64,8 @@ export default function ChatBackupPasswordBox({ ask, onAnswer }) {
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={() => onAnswer(null)}>
-      <View style={styles.backdrop}>
+      {/* (moves up with the keyboard on phones, 26 Oct 2026) */}
+      <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'web' ? undefined : 'padding'}>
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="chat-backup-box">
           <Text style={[styles.title, { color: colors.text }]}>{isExport ? 'Include your chat?' : 'Bring your chat back?'}</Text>
           <Text style={[styles.text, { color: colors.text }]}>
@@ -87,7 +88,7 @@ export default function ChatBackupPasswordBox({ ask, onAnswer }) {
             <Text style={[styles.skipText, { color: colors.secondaryText }]}>{isExport ? 'Back up without the chat' : 'Skip the chat'}</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

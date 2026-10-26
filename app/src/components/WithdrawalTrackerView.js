@@ -20,6 +20,7 @@
  * for the whole list, and everything about specific NFTs next to the list.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import useKeepFocusedInputVisible from '../hooks/useKeepFocusedInputVisible';
 import {
   View,
   Text,
@@ -255,6 +256,8 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
   // callback was made before the list was reloaded).
   const itemsRef = useRef([]);
   const scrollRef = useRef(null);
+  // The field you type in stays in view when the keyboard opens (Android app, 26 Oct 2026).
+  useKeepFocusedInputVisible(scrollRef);
   const checkSectionYRef = useRef(0);
   const reload = useCallback(async () => {
     const [list, log] = await Promise.all([getWithdrawalItems(), getWithdrawalArrivals()]);

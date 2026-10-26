@@ -57,9 +57,11 @@ import {
   Alert,
   Modal,
   useWindowDimensions,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { NavigationBar } from 'expo-navigation-bar';
 
 import {
   initWalletSets,
@@ -152,11 +154,34 @@ function KleverscanLayer() {
   );
 }
 
+// The Android app draws "edge to edge" (Expo's default on newer Android), so
+// Android no longer shrinks the screen by itself when the keyboard opens - the
+// keyboard covered text fields, e.g. the wallet address on the Wallets page
+// (Raphael and a friend, 26 Oct 2026). One KeyboardAvoidingView around the whole
+// app shrinks every screen by the keyboard's height instead; scrolling screens
+// then keep the field you type in visible. Android only: the iPhone screens
+// already do this themselves, and the website doesn't need it.
+const KEYBOARD_ROOM = Platform.OS === 'android' ? 'padding' : undefined;
+
+// Android's own Back / Home / Recent buttons at the bottom follow the Hub's
+// light/dark switch (26 Oct 2026: on a friend's phone they stayed white in
+// light mode, white on white). The top bar is set by each screen's StatusBar.
+// (app.json: the navigation-bar plugin with enforceContrast off, so Android
+// doesn't lay its own see-through layer over them instead.)
+function SystemButtons() {
+  const { isDark } = useTheme();
+  if (Platform.OS !== 'android') return null;
+  return <NavigationBar style={isDark ? 'light' : 'dark'} />;
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <AppContent />
+        <SystemButtons />
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={KEYBOARD_ROOM} enabled={!!KEYBOARD_ROOM}>
+          <AppContent />
+        </KeyboardAvoidingView>
         <KleverscanLayer />
         <ShortcutsHelp />
         <ChatDock />
