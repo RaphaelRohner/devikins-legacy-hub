@@ -193,6 +193,7 @@ test('Reset All Data also empties the Withdrawals list', async ({ page }) => {
   await openMenuEntry(page, 'Wallets');
   await expect(page.getByText(/Your IDs \(2\)/)).toBeVisible();
   await page.getByText('Danger zone').locator('xpath=..').getByRole('switch').click();
+  await page.getByTestId('reset-confirm').fill('RESET');
   await page.getByText('Reset All Data', { exact: true }).click();
   await expect.poll(() => dialogs.join('\n')).toMatch(/Reset all data\?/);
   await expect(page.getByText(/Your IDs \(\d+\)/)).toHaveCount(0);

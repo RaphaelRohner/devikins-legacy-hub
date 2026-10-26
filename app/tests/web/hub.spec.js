@@ -239,6 +239,7 @@ test('Reset All Data during a fetch: asks to stop the fetch first, then resets c
 
   await openMenuEntry(page, 'Wallets');
   await page.getByText('Danger zone').locator('xpath=..').getByRole('switch').click();
+  await page.getByTestId('reset-confirm').fill('RESET');
   // First tap: the fetch is still running, so the Hub asks to stop it
   // (the test accepts = "Stop fetch"); nothing is deleted yet.
   await page.getByText('Reset All Data', { exact: true }).click();
@@ -274,6 +275,15 @@ test('after Reset All Data the old count is gone (no "2 Devikins" without a wall
   await expect(page.getByText('2 Devikins', { exact: true })).toBeVisible();
   await openMenuEntry(page, 'Wallets');
   await page.getByText('Danger zone').locator('xpath=..').getByRole('switch').click();
+  // Greyed out until RESET is typed (26 Oct 2026): a tap does nothing.
+  await page.getByText('Reset All Data', { exact: true }).click({ force: true });
+  await page.waitForTimeout(500);
+  expect(dialogs.join('\n')).not.toMatch(/Reset all data\?/);
+  await page.getByTestId('reset-confirm').fill('reset');
+  await page.getByText('Reset All Data', { exact: true }).click({ force: true });
+  await page.waitForTimeout(500);
+  expect(dialogs.join('\n')).not.toMatch(/Reset all data\?/);
+  await page.getByTestId('reset-confirm').fill('RESET');
   await page.getByText('Reset All Data', { exact: true }).click();
   await expect.poll(() => dialogs.join('\n')).toMatch(/Reset all data\?/);
   await expect(page.getByText(TEST_WALLET)).toHaveCount(0);

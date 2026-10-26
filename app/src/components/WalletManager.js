@@ -200,6 +200,13 @@ export default function WalletManager({
   // The "Danger zone" label + toggle itself always stays visible so
   // it's still easy to find on purpose.
   const [isDangerZoneVisible, setIsDangerZoneVisible] = useState(false);
+  // Reset All Data stays greyed out until the word RESET is typed (a
+  // friend's suggestion, 26 Oct 2026; like REMOVE in the KLV Signer):
+  // one quick tap can't wipe everything. Cleared whenever the danger
+  // zone is closed and after a reset.
+  const RESET_WORD = 'RESET';
+  const [resetTyped, setResetTyped] = useState('');
+  const resetUnlocked = resetTyped.trim() === RESET_WORD;
 
   // Real, measured on-disk storage per wallet set (database file +
   // images folder - see storageStats.js), plus a grand total across all
@@ -1049,6 +1056,7 @@ export default function WalletManager({
   // destructive an action it really is - the one button on this whole
   // screen bigger than a single set's own Delete above.
   function handleResetAllData() {
+    if (resetTyped.trim() !== RESET_WORD) return; // second guard (button greyed out then)
     if (stopFetchFirst('reset all data')) return;
     Alert.alert(
       'Reset all data?',
@@ -1061,6 +1069,7 @@ export default function WalletManager({
           onPress: async () => {
             try {
               await resetAllData();
+              setResetTyped('');
               onWalletSetsChanged();
             } catch (err) {
               reportSetActionError(err, 'Resetting all data');
@@ -1565,7 +1574,7 @@ export default function WalletManager({
             <Text style={[styles.dangerZoneTitle, { color: colors.text }]}>Danger zone</Text>
             <Switch
               value={isDangerZoneVisible}
-              onValueChange={setIsDangerZoneVisible}
+              onValueChange={(on) => { setIsDangerZoneVisible(on); if (!on) setResetTyped(''); }}
               trackColor={{ false: colors.border, true: colors.primary }}
               thumbColor={colors.surface}
             />
@@ -1575,10 +1584,24 @@ export default function WalletManager({
               <Text style={[styles.dangerZoneText, { color: colors.secondaryText }]}>
                 Wipes every wallet set, every saved wallet, every stored NFT (and their downloaded images) and your Withdrawals list - useful for testing the app again from a fresh start. Your actual NFTs on the blockchain are never affected. To clear out just one set instead, use its own Delete button above.
               </Text>
+              <Text style={[styles.dangerZoneText, { color: colors.text }]}>Type {RESET_WORD} to unlock the button:</Text>
+              <TextInput
+                style={[styles.resetInput, { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]}
+                value={resetTyped}
+                onChangeText={setResetTyped}
+                placeholder={RESET_WORD}
+                placeholderTextColor={colors.secondaryText}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                accessibilityLabel={`Type ${RESET_WORD} to unlock Reset All Data`}
+                testID="reset-confirm"
+              />
               <TouchableOpacity
-                style={[styles.resetButton, { backgroundColor: colors.statusFailedBackground }, isBusy && { opacity: 0.5 }]}
+                style={[styles.resetButton, { backgroundColor: colors.statusFailedBackground }, (isBusy || !resetUnlocked) && { opacity: 0.5 }]}
                 onPress={handleResetAllData}
-                disabled={isBusy}
+                disabled={isBusy || !resetUnlocked}
+                accessibilityState={{ disabled: isBusy || !resetUnlocked }}
+                testID="reset-all-data"
               >
                 <Text style={[styles.resetButtonText, { color: colors.cancelText }]}>Reset All Data</Text>
               </TouchableOpacity>
@@ -2001,6 +2024,14 @@ const styles = StyleSheet.create({
   dangerZoneText: {
     fontSize: 13,
     marginTop: 8,
+    marginBottom: 10,
+  },
+  resetInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 15,
     marginBottom: 10,
   },
   resetButton: {
