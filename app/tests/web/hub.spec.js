@@ -26,7 +26,8 @@ test('a first-time visitor sees the start hint, and About shows the version', as
   await openHub(page);
   await expect(page.getByText(/First add a wallet/)).toBeVisible(); // the start hint
   await openMenuEntry(page, 'About');
-  await expect(page.getByText(new RegExp(`Version ${APP_VERSION.replace(/\./g, '\\.')}`))).toBeVisible();
+  // Plain text, no pattern: getByText finds it inside the longer line (CodeQL, 27 Oct 2026).
+  await expect(page.getByText(`Version ${APP_VERSION}`)).toBeVisible();
   await expect(page.getByText('Website', { exact: false }).first()).toBeVisible();
   // The user counter comes from the (pretend) relay.
   for (const label of ['Today', '7 days', '30 days', 'Since launch', 'Hubs', 'Visits', '61']) {
