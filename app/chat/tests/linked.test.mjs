@@ -242,3 +242,76 @@ test('group posts written on another device before the devices knew each other c
   await alice.linkedDevices();
   assert.deepEqual((await alice.groupPosts(gid)).map((p) => [p.mine, p.text]).at(-1), [true, 'Written on the phone']);
 });
+
+// --- linking by QR code (27 Oct 2026) ---
+
+test('QR code: a device without a wallet joins with a one-time code, then gets the history after a yes', async () => {
+  const w = world();
+  const { alice, bob } = await chatting(w);
+  const link = await alice.startLink();
+  assert.match(link.qr, /^devi-link:[0-9a-f]{20}$/);
+  assert.match(link.shown, /^[0-9A-F]{4}(-[0-9A-F]{4}){4}$/);
+
+  const phone = await w.blank();
+  const s = await phone.finishLink(link.qr);
+  assert.equal(s.state, 'ready');
+  assert.equal(s.nickname, 'Alice');
+  assert.equal(s.linked, true);
+  assert.equal(s.nfts, 3);
+  // One use only.
+  const other = await w.blank();
+  await assert.rejects(() => other.finishLink(link.shown), /expired or was already used/);
+
+  w.clock.t += 2 * MINUTE;
+  const seen = await alice.linkedDevices();
+  assert.equal(seen.others.length, 1);
+  assert.equal(seen.others[0].isNew, true);
+  await alice.copyHistoryTo(phone.identity.publicKey);
+  await phone.checkMail();
+  assert.deepEqual(await texts(phone, 'Bob'), [[true, 'Hi Bob'], [false, 'Hi Alice']]);
+  // The linked phone can write, and its group posts carry a valid badge.
+  await phone.sendMessage((await phone.listContacts())[0].id, 'Linked by QR');
+  await bob.checkMail();
+  assert.deepEqual((await texts(bob, 'Alice')).at(-1), [false, 'Linked by QR']);
+  const gid = await alice.startGroup('Breeders', '');
+  await bob.joinGroup(gid);
+  await alice.checkMail(); // (lets Bob in)
+  await bob.checkMail();
+  await phone.checkMail();
+  w.clock.t += 2 * MINUTE;
+  await phone.postToGroup(gid, 'Phone post');
+  await bob.checkMail();
+  assert.deepEqual((await bob.groupPosts(gid)).map((p) => p.text), ['Phone post']);
+});
+
+test('QR code: expired after 5 minutes; only signed-in players can make one', async () => {
+  const w = world();
+  const { alice } = await chatting(w);
+  const link = await alice.startLink();
+  w.clock.t += 6 * MINUTE;
+  const phone = await w.blank();
+  await assert.rejects(() => phone.finishLink(link.code), /expired/);
+  await assert.rejects(() => phone.finishLink('not a code'), /isn't a link code/);
+  await assert.rejects(() => phone.startLink(), /sign in/i);
+});
+
+test('a linked device stays signed in: the weekly wallet sign-in on another device renews it too', async () => {
+  const w = world();
+  const { alice } = await chatting(w);
+  const phone = await w.blank();
+  await phone.finishLink((await alice.startLink()).code);
+  w.clock.t += 2 * MINUTE;
+  await alice.linkedDevices();
+  await phone.checkMail();
+  const before = (await phone.status()).verifiedUntil;
+  // Six days later: the website signs in again with the wallet ...
+  w.clock.t += 6 * 24 * 60 * MINUTE;
+  await alice.setHoldings(5);
+  // ... and the phone gets the fresh badge (and the new count) with its next mail check.
+  await phone.checkMail();
+  const after = await phone.status();
+  assert.ok(after.verifiedUntil > before);
+  assert.equal(after.nfts, 5);
+  w.clock.t += 2 * 24 * 60 * MINUTE; // past the first week
+  assert.equal((await phone.status()).state, 'ready');
+});

@@ -32,6 +32,8 @@ import { MAIL_CHECK_EVERY_MS } from '../constants/chat';
 import { CONTACT_STATUS } from '../../chat/src/index.js';
 import ChatGroupView, { GroupsCard } from './ChatGroupView';
 import ChatMessages from './ChatMessages';
+import QrCode from './QrCode';
+import QrScannerModal from './QrScannerModal';
 import { MAX_TEXT_LENGTH, nicknameKey } from '../../chat/src/rules.js';
 
 
@@ -69,6 +71,10 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
   const [groupPolls, setGroupPolls] = useState([]);
   // Linked devices (27 Oct 2026): my other devices, new ones, a history copy coming in
   const [devices, setDevices] = useState(null);
+  // Linking by QR code: the code shown here (on a signed-in device), the code typed in (on a new one), the camera
+  const [linkInfo, setLinkInfo] = useState(null);
+  const [linkTyped, setLinkTyped] = useState('');
+  const [scanning, setScanning] = useState(false);
   const openIdRef = useRef(null);
   openIdRef.current = openId;
   const openGroupRef = useRef(null);
@@ -353,7 +359,12 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
                   + `• Your chat history is kept only in ${CHAT_HERE}.\n`
                   + '• Your wallet address is never shown to other players.'}
               </Text>
-              {status.expired ? (
+              {status.expired && status.linked ? (
+                <Text style={[styles.text, { color: colors.text, fontWeight: '700' }]}>
+                  Once a week the Hub checks again that your wallet holds Devikins. This device was linked with a QR code:
+                  sign in with your wallet on your other device (or here), and this one is renewed too. Or link it again below.
+                </Text>
+              ) : status.expired ? (
                 <Text style={[styles.text, { color: colors.text, fontWeight: '700' }]}>
                   Once a week the Hub checks again that your wallet holds Devikins. Please sign in again with the same wallet.
                 </Text>
@@ -372,7 +383,43 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
               {errorLine}
             </>,
           )}
+          {/* Linking by QR code (27 Oct 2026): no wallet needed on this device */}
+          {card(
+            <View style={{ gap: 8 }}>
+              <Text style={[styles.section, { color: colors.text }]}>Already chatting on another device?</Text>
+              <Text style={[styles.note, { color: colors.secondaryText }]}>
+                Link this one to it, without a wallet here: on the other device open the Chat, tap "Link another device",
+                then {Platform.OS === 'web' ? 'type the code shown under the QR code here' : 'scan its QR code (or type the code shown under it)'}.
+                Your history is copied once you say yes there.
+              </Text>
+              {Platform.OS !== 'web' ? button('Scan the QR code', () => setScanning(true), { testID: 'chat-link-scan' }) : null}
+              <View style={styles.row}>
+                <TextInput
+                  testID="chat-link-code"
+                  style={[styles.input, { flex: 1, color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                  value={linkTyped}
+                  onChangeText={setLinkTyped}
+                  placeholder="Code, e.g. 4F2A-91C3-…"
+                  placeholderTextColor={colors.secondaryText}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={40}
+                />
+                {button('Link', () => act(() => messenger.finishLink(linkTyped)), { disabled: !linkTyped.trim(), testID: 'chat-link-finish' })}
+              </View>
+            </View>,
+          )}
         </ScrollView>
+        <QrScannerModal
+          visible={scanning}
+          onClose={() => setScanning(false)}
+          extract={(data) => data.trim()}
+          hint="Point the camera at the QR code in the Chat on your other device"
+          onScanned={(data) => {
+            setScanning(false);
+            act(() => messenger.finishLink(data));
+          }}
+        />
       </View>
     );
   }
@@ -637,6 +684,23 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
             kept only on your own devices. To chat on another device too (website or Android app), sign in there with the
             same wallet: this device then offers to copy your history to it.
           </Text>
+          {linkInfo ? (
+            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border, alignItems: 'center', gap: 8, marginTop: 8, marginHorizontal: 0 }]} testID="chat-link-qr">
+              <Text style={[styles.section, { color: colors.text }]}>Link another device</Text>
+              <Text style={[styles.note, { color: colors.secondaryText, textAlign: 'center' }]}>
+                On the other device (the Hub app or website), open the Chat and scan this code, or type the code below.
+                It works once, until {new Date(linkInfo.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+                Only show it to yourself: the device that uses it joins your chat.
+              </Text>
+              <QrCode text={linkInfo.qr} size={220} accessibilityLabel="QR code to link another device" />
+              <Text selectable style={[styles.text, { color: colors.text, fontFamily: 'monospace', letterSpacing: 1 }]} testID="chat-link-shown">{linkInfo.shown}</Text>
+              {button('Done', () => setLinkInfo(null), { quiet: true })}
+            </View>
+          ) : (
+            <TouchableOpacity onPress={() => act(async () => setLinkInfo(await messenger.startLink()))} testID="chat-link-start">
+              <Text style={[styles.note, { color: colors.primary, fontWeight: '700', marginTop: 8 }]}>Link another device (QR code, no wallet needed there)</Text>
+            </TouchableOpacity>
+          )}
           <Text style={[styles.note, { color: colors.secondaryText, marginTop: 8 }]} testID="chat-devices">
             Your devices: this one{devices?.label ? ` (${devices.label})` : ''}
             {(devices?.others || []).length ? '' : ' only'}

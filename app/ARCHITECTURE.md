@@ -727,7 +727,14 @@ a yes on an existing device ("New device in your chat" card) - the whole
 history, in parts. A new device never gets history without that yes. "Your
 devices" at the bottom of the chat lists them, with "Take out" (postman
 `POST /me/devices/remove`). Details: `chat/src/messenger.js` (section
-"linked devices") and `chat/tests/linked.test.mjs`. The screen
+"linked devices") and `chat/tests/linked.test.mjs`.
+A device can also join without a wallet, by QR code ("Link another device"
+on a signed-in device; the new one scans it in the app or types the code):
+postman `POST /link/start` / `/link/finish`, one use, 5 minutes. It gets the
+same Devikins count and end as the linking device's badge; after a wallet
+sign-in on any device, fresh badges for the other devices come from
+`POST /badges/mine` and go to them sealed. QR drawing: `src/components/QrCode.js`
+(`qrcode-generator`, as in the KLV Signer). The screen
 holds no chat logic: `chat/src/messenger.js` does everything (sign-in with
 a wallet's "sign a text", nickname, directory, contact requests
 with drop codes, accept / decline / block / unblock / remove, 1:1 messages)

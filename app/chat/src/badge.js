@@ -26,14 +26,19 @@ const tag = (event, name) => (event.tags || []).find((t) => Array.isArray(t) && 
 
 const ACCOUNT = /^[0-9a-f]{32}$/;
 
-/** Postman side: a badge for `holder` (chat public key) holding `nfts`, valid `days` days. */
-export function issueBadge(postmanIdentity, { holder, nfts, now, days = BADGE_DAYS, account }) {
+/**
+ * Postman side: a badge for `holder` (chat public key) holding `nfts`, valid
+ * `days` days - or until `expiresAtSec` (a device linked by QR code gets the
+ * same count and end as the device that linked it, 27 Oct 2026).
+ */
+export function issueBadge(postmanIdentity, { holder, nfts, now, days = BADGE_DAYS, account, expiresAtSec }) {
   if (!isPublicKey(holder)) throw new Error('Not a chat key.');
   const n = Math.floor(Number(nfts));
   if (!Number.isFinite(n) || n < 1) throw new Error('Only holders get a badge.');
   if (account !== undefined && !ACCOUNT.test(account)) throw new Error('Not an account number.');
   const issued = Math.floor(now / 1000);
-  const tags = [['p', holder], ['nfts', String(n)], ['expiration', String(issued + days * 86400)]];
+  const end = Number.isInteger(expiresAtSec) ? expiresAtSec : issued + days * 86400;
+  const tags = [['p', holder], ['nfts', String(n)], ['expiration', String(end)]];
   if (account) tags.push(['account', account]);
   return finalizeEvent(
     {

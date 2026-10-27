@@ -37,6 +37,12 @@ Keeps:
   new device, in parts) wait like 1:1 envelopes and are deleted once picked
   up; the postman can't read them. It keeps the day each device was added,
   and a player can take one of their devices out (`/me/devices/remove`);
+- **link codes** (QR codes to add a device without a wallet, 27 Oct 2026):
+  only a fingerprint of the one-time code, which account it's for, and the
+  Devikins count and end of the linking device's badge (so the new device
+  gets the same); deleted once used or after 5 minutes. After a wallet
+  sign-in, a device can ask for the same fresh badge for its player's other
+  devices (`/badges/mine`) and passes them on sealed;
 - **open groups** (stage 3): name, description, owner (account number),
   members (account numbers and from which post on they may read), players
   asking to join with the drop code they gave for that, the owner's

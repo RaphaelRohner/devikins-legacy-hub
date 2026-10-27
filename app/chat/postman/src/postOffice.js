@@ -49,6 +49,8 @@ export const VERSION = '1';
 export const KEEP_FOR = 30 * DAY;
 export const FORGET_AFTER = 180 * DAY;
 export const SIGNIN_VALID_FOR = 5 * MINUTE;
+/** A link code (QR code to add a device without a wallet, 27 Oct 2026) works once, for this long. */
+export const LINK_VALID_FOR = 5 * MINUTE;
 export const MAX_OPEN_SIGNINS = 3;
 export const MAX_DEVICES = 5;
 export const MAX_ENVELOPE_CHARS = 64 * 1024;
@@ -131,6 +133,9 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS ballots (vote TEXT NOT NULL, account TEXT NOT NULL, yes INTEGER NOT NULL,
      eligible INTEGER NOT NULL, at INTEGER NOT NULL, wallet TEXT, checked INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (vote, account))`,
   'CREATE TABLE IF NOT EXISTS proofs (code TEXT PRIMARY KEY, device TEXT NOT NULL, expires INTEGER NOT NULL)',
+  // Link codes (QR codes, 27 Oct 2026): only a fingerprint of the code; the Devikins count and end of
+  // the linking device's badge, so the new device gets the same; gone after use or 5 minutes.
+  'CREATE TABLE IF NOT EXISTS links (fp TEXT PRIMARY KEY, account TEXT NOT NULL, nfts INTEGER NOT NULL, badge_until INTEGER NOT NULL, expires INTEGER NOT NULL)',
   // Bans are kept by wallet fingerprint, so leaving the chat and signing in again doesn't undo them.
   `CREATE TABLE IF NOT EXISTS group_bans (id INTEGER PRIMARY KEY AUTOINCREMENT, grp TEXT NOT NULL, player TEXT NOT NULL,
      nickname TEXT, at INTEGER NOT NULL, UNIQUE (grp, player))`,
@@ -550,6 +555,61 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       if (!items.every((i) => allowed.has(i.to))) refuse(400, "One envelope isn't for one of your other devices.");
       spend(`self:${account.id}`, DAILY_SELF_ITEMS, t, items.length);
       return { delivered: deliver(items, 'self', t) };
+    },
+
+    /**
+     * Linking by QR code (27 Oct 2026): a signed-in device asks for a one-time
+     * code (shown as a QR code); a new device hands it in and joins the
+     * account - no wallet needed on the new device. The linking device shows
+     * its badge, so the new one gets the same Devikins count and end (the
+     * postman keeps no counts).
+     */
+    'POST /link/start': async ({ device, body, t }) => {
+      const account = verifiedAccount(device, t);
+      const badge = checkBadge(body.badge, { postmanPublicKey: postman.publicKey, holder: device, at: t });
+      if (!badge.ok || badge.account !== account.id) refuse(403, 'Please sign in with your wallet again first.');
+      if (devicesOf(account.id).length >= MAX_DEVICES) refuse(409, `At most ${MAX_DEVICES} devices per player; take one out first.`);
+      run('DELETE FROM links WHERE expires <= ?', t);
+      if (row('SELECT COUNT(*) AS n FROM links WHERE account = ?', account.id).n >= MAX_OPEN_SIGNINS) refuse(429, 'Too many link codes open; please wait 5 minutes.');
+      const code = randomHex(10);
+      const expiresAt = t + LINK_VALID_FOR;
+      run('INSERT INTO links (fp, account, nfts, badge_until, expires) VALUES (?, ?, ?, ?, ?)',
+        await sha256Hex(code), account.id, badge.nfts, Math.floor(badge.until / 1000), expiresAt);
+      return { code, expiresAt };
+    },
+
+    'POST /link/finish': async ({ device, body, t }) => {
+      const code = typeof body.code === 'string' ? body.code.toLowerCase().replace(/[^0-9a-f]/g, '') : '';
+      const fp = code.length === 20 ? await sha256Hex(code) : null;
+      const link = fp ? row('SELECT * FROM links WHERE fp = ?', fp) : null;
+      if (link) run('DELETE FROM links WHERE fp = ?', fp); // one try per code
+      if (!link || link.expires <= t) refuse(400, 'This link code has expired or was already used; show a new one.');
+      const account = row('SELECT * FROM accounts WHERE id = ?', link.account);
+      if (!account) refuse(400, 'This link code has expired or was already used; show a new one.');
+      const current = accountOf(device);
+      if (current && current.id !== account.id) refuse(409, 'This device already has a chat of its own. Leave the chat on it first.');
+      if (!current) {
+        if (devicesOf(account.id).length >= MAX_DEVICES) refuse(409, `At most ${MAX_DEVICES} devices per player; take one out first.`);
+        run('INSERT INTO devices (key, account, added) VALUES (?, ?, ?)', device, account.id, t);
+      }
+      const badge = issueBadge(postman, { holder: device, nfts: link.nfts, now: t, account: account.id, expiresAtSec: link.badge_until });
+      return { account: account.id, nickname: account.nickname ?? null, nfts: link.nfts, badge, verifiedUntil: Math.min(account.verified_until, link.badge_until * 1000) };
+    },
+
+    /**
+     * After a wallet sign-in on one device: the same fresh badge (Devikins
+     * count, end) for each of the player's OTHER devices, so devices linked
+     * by QR code stay signed in. The asking device passes them on, sealed.
+     */
+    'POST /badges/mine': ({ device, body, t }) => {
+      const account = verifiedAccount(device, t);
+      const badge = checkBadge(body.badge, { postmanPublicKey: postman.publicKey, holder: device, at: t });
+      if (!badge.ok || badge.account !== account.id) refuse(403, 'Please sign in with your wallet again first.');
+      const until = Math.floor(badge.until / 1000);
+      return {
+        badges: devicesOf(account.id).filter((d) => d !== device)
+          .map((d) => ({ device: d, badge: issueBadge(postman, { holder: d, nfts: badge.nfts, now: t, account: account.id, expiresAtSec: until }) })),
+      };
     },
 
     /** Takes one of the player's OTHER devices out of the account (e.g. a lost phone). */

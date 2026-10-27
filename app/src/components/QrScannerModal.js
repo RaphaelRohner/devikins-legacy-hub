@@ -40,7 +40,8 @@ export function extractAddress(scannedText) {
   return match ? match[0] : trimmed;
 }
 
-export default function QrScannerModal({ visible, onScanned, onClose }) {
+// (extract / hint: other uses than wallet addresses, e.g. the chat's link code, 27 Oct 2026)
+export default function QrScannerModal({ visible, onScanned, onClose, extract = extractAddress, hint = 'Point the camera at a Klever wallet address QR code' }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
@@ -60,7 +61,7 @@ export default function QrScannerModal({ visible, onScanned, onClose }) {
   function handleBarcodeScanned({ data }) {
     if (hasScannedRef.current) return;
     hasScannedRef.current = true;
-    onScanned(extractAddress(data));
+    onScanned(extract(data));
   }
 
   return (
@@ -108,7 +109,7 @@ export default function QrScannerModal({ visible, onScanned, onClose }) {
 
         {permission?.granted && (
           <View style={[styles.hintBar, { bottom: insets.bottom + 24 }]}>
-            <Text style={styles.hintText}>Point the camera at a Klever wallet address QR code</Text>
+            <Text style={styles.hintText}>{hint}</Text>
           </View>
         )}
       </View>

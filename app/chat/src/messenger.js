@@ -264,6 +264,8 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       verifiedUntil: (await getMe('verifiedUntil')) ?? 0,
       nfts: await getMe('nfts'),
       nextRequestAt: (await getMe('nextRequestAt')) ?? 0,
+      // Joined by QR code from another device (no wallet signed in here)
+      linked: !!(await getMe('linked')),
     };
   }
 
@@ -292,7 +294,45 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     await setMe('verifiedUntil', r.verifiedUntil);
     await setMe('nfts', r.nfts);
     await setMe('nickname', r.nickname ?? null);
+    await setMe('linked', null);
+    // My devices linked by QR code get the fresh badge too (they can't sign in with a wallet themselves).
+    await shareBadges().catch(() => {});
     return status();
+  }
+
+  // --- linking a device by QR code (27 Oct 2026) -------------------------------
+
+  /**
+   * On a signed-in device: a one-time link code (valid 5 minutes) to show as
+   * a QR code. → { code, shown ("4F2A-91C3-…"), qr ("devi-link:…"), expiresAt }
+   */
+  async function startLink() {
+    const { code, expiresAt } = await postman.linkStart(await getMe('badge'));
+    return { code, shown: code.toUpperCase().match(/.{1,4}/g).join('-'), qr: `devi-link:${code}`, expiresAt };
+  }
+
+  /** On the new device: hand in the code (scanned or typed) and join that chat account. → status() */
+  async function finishLink(text) {
+    const code = String(text || '').replace(/^devi-link:/i, '').toLowerCase().replace(/[^0-9a-f]/g, '');
+    if (code.length !== 20) throw new Error("That isn't a link code from the Hub's chat.");
+    const r = await postman.linkFinish(code);
+    await setMe('account', r.account);
+    await setMe('badge', r.badge);
+    await setMe('verifiedUntil', r.verifiedUntil);
+    await setMe('nfts', r.nfts);
+    await setMe('nickname', r.nickname ?? null);
+    await setMe('linked', true);
+    devicesCheckedAt = 0;
+    return status();
+  }
+
+  /** After a wallet sign-in: fresh badges for my other devices, passed on sealed. */
+  async function shareBadges() {
+    // (straight from the postman's list - noting new devices is left to the next mail check)
+    const others = ((await postman.me()).devices || []).filter((d) => d !== identity.publicKey && isPublicKey(d));
+    if (!others.length) return;
+    const { badges } = await postman.badgesMine(await getMe('badge'));
+    for (const b of badges || []) if (others.includes(b.device)) await queueSync({ t: 'badge', badge: b.badge }, [b.device]);
   }
 
   async function setNickname(nickname) {
@@ -1004,6 +1044,17 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
 
   /** A sync envelope from another of my devices. */
   async function applySync(from, d) {
+    if (d.t === 'badge') {
+      // A fresh badge from my wallet sign-in on another device: only if it's
+      // genuine, for this device, and newer than the one here.
+      const check = checkBadge(d.badge, { postmanPublicKey: await postmanKey(), holder: identity.publicKey, at: now() });
+      if (!check.ok || check.account !== (await getMe('account'))) return 'ignored';
+      if (check.until <= ((await getMe('verifiedUntil')) ?? 0)) return 'ignored';
+      await setMe('badge', d.badge);
+      await setMe('verifiedUntil', check.until);
+      await setMe('nfts', check.nfts);
+      return 'synced';
+    }
     if (d.t === 'hello') {
       if (typeof d.label === 'string') await run('UPDATE chat_devices SET label = ? WHERE key = ?', [cleanText(d.label).slice(0, 40), from]);
       return 'synced';
@@ -1821,6 +1872,8 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     checkMail,
     leave,
     // linked devices (27 Oct 2026)
+    startLink,
+    finishLink,
     linkedDevices,
     copyHistoryTo,
     dismissNewDevice,

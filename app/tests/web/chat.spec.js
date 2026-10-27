@@ -505,3 +505,32 @@ test('linked devices: the same player in a second browser gets the history after
     postman.stop();
   }
 });
+
+test('linking by QR code: a second browser without the Klever extension joins with the code shown on the first', async ({ browser }) => {
+  const postman = await startPostman();
+  try {
+    const alice = await openPlayer(browser, postman, await postman.newWallet(3));
+    await signInAs(alice.page, 'Alice');
+    await alice.page.getByTestId('chat-link-start').click();
+    await expect(alice.page.getByTestId('chat-link-qr')).toBeVisible();
+    const shown = (await alice.page.getByTestId('chat-link-shown').textContent()).trim();
+    expect(shown).toMatch(/^[0-9A-F]{4}(-[0-9A-F]{4}){4}$/);
+
+    // No wallet in the second browser: it links with the code instead.
+    const second = await openPlayer(browser, postman, null, { extension: false });
+    await second.page.getByTestId('chat-link-code').fill(shown.toLowerCase());
+    await second.page.getByTestId('chat-link-finish').click();
+    await expect(second.page.getByText('Chat · Alice')).toBeVisible({ timeout: 15_000 });
+
+    // The first browser lists it among Alice's devices (no history to offer yet: no contacts, no groups).
+    await expect(alice.page.getByTestId('chat-device')).toHaveCount(1, { timeout: 20_000 });
+    await expect(alice.page.getByTestId('chat-device')).toContainText('Chrome on');
+    // A used code doesn't work twice.
+    const third = await openPlayer(browser, postman, null, { extension: false });
+    await third.page.getByTestId('chat-link-code').fill(shown);
+    await third.page.getByTestId('chat-link-finish').click();
+    await expect(third.page.getByTestId('chat-error')).toContainText(/expired or was already used/);
+  } finally {
+    postman.stop();
+  }
+});

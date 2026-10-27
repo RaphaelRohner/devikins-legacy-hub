@@ -52,6 +52,10 @@ export function createPostmanClient({ baseUrl, identity, fetchFn = (...a) => fet
     // Linked devices (27 Oct 2026): envelopes for this player's OWN other devices, and taking one out.
     self: (items) => call('POST', '/self', { items }),
     removeDevice: (key) => call('POST', '/me/devices/remove', { key }),
+    // Linking a device by QR code (27 Oct 2026)
+    linkStart: (badge) => call('POST', '/link/start', { badge }),
+    linkFinish: (code) => call('POST', '/link/finish', { code }),
+    badgesMine: (badge) => call('POST', '/badges/mine', { badge }),
     mailDone: (ids) => call('POST', '/mail/done', { ids }),
     leave: () => call('POST', '/leave', {}),
     groups: () => call('GET', '/groups'),
