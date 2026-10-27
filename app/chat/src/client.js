@@ -9,6 +9,7 @@
  */
 
 import { makeAuthHeader } from './httpAuth.js';
+import { checkAlbum } from './album.js';
 
 export function createPostmanClient({ baseUrl, identity, fetchFn = (...a) => fetch(...a), now = () => Date.now() }) {
   const base = baseUrl.replace(/\/+$/, '');
@@ -77,5 +78,45 @@ export function createPostmanClient({ baseUrl, identity, fetchFn = (...a) => fet
     unban: (group, ban) => call('POST', '/groups/unban', { group, ban }),
     rekey: ({ group, epoch, keyCheck, items }) => call('POST', '/groups/rekey', { group, epoch, keyCheck, items }),
     groupPosts: (group, after) => call('GET', `/group/posts?group=${group}&after=${after}`),
+    // Collectors Albums (27 Oct 2026). Publishing is signed with this DEVICE's key
+    // (a signed-in holder, against spam); deleting with the ALBUM's key (see albumClient).
+    publishAlbum: (album) => call('POST', '/albums/publish', { album }),
+    deleteAlbum: () => call('POST', '/albums/delete', {}),
+  };
+}
+
+/**
+ * publicAlbums — reading the Collectors Albums, for everyone (also on the
+ * website without signing in: no key, nothing signed). Every album is
+ * checked here (its signature and the wallet's proof); damaged ones are left out.
+ *   list(before?) → { albums: [{ key, title, name, count, updated }], more }
+ *   one(key)      → the checked album (see album.js checkAlbum) or throws
+ */
+export function publicAlbums({ baseUrl, fetchFn = (...a) => fetch(...a) }) {
+  const base = baseUrl.replace(/\/+$/, '');
+  async function get(path) {
+    let response;
+    try {
+      response = await fetchFn(base + path, { method: 'GET' });
+    } catch {
+      throw new Error("Can't reach the albums. Check the internet connection and try again.");
+    }
+    let answer = null;
+    try { answer = await response.json(); } catch { answer = null; }
+    if (!response.ok) throw new Error(answer?.error || `The albums answered ${response.status}.`);
+    return answer;
+  }
+  return {
+    async list(before = null) {
+      const r = await get(`/albums${before ? `?before=${Number(before)}` : ''}`);
+      const albums = (Array.isArray(r?.albums) ? r.albums : []).filter((a) => a && typeof a.key === 'string' && typeof a.title === 'string');
+      return { albums, more: albums.length >= 50 };
+    },
+    async one(key) {
+      const r = await get(`/albums/one?key=${encodeURIComponent(key)}`);
+      const checked = checkAlbum(r?.album);
+      if (!checked.ok || checked.album.key !== key) throw new Error("This album can't be shown: it doesn't check out.");
+      return checked.album;
+    },
   };
 }

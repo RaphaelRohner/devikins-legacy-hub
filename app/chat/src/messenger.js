@@ -46,6 +46,7 @@ import {
 } from './group.js';
 import { checkBadge } from './badge.js';
 import { createPostmanClient } from './client.js';
+import { createAlbumKey, sealAlbum, checkAlbum, albumProofText, cleanAlbum } from './album.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS chat_me (k TEXT PRIMARY KEY NOT NULL, v TEXT NOT NULL);
@@ -125,6 +126,10 @@ CREATE TABLE IF NOT EXISTS chat_devices (key TEXT PRIMARY KEY NOT NULL, added IN
 CREATE TABLE IF NOT EXISTS chat_sync_out (id INTEGER PRIMARY KEY AUTOINCREMENT, device TEXT NOT NULL, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS chat_sync_in (transfer TEXT NOT NULL, part INTEGER NOT NULL, total INTEGER NOT NULL, data TEXT NOT NULL,
   at INTEGER NOT NULL, PRIMARY KEY (transfer, part));
+-- Collectors Albums (27 Oct 2026): my albums, each with its OWN key (secret: only this account's devices
+-- have it). event = the album as last published (NULL = made, not published yet); published = when.
+CREATE TABLE IF NOT EXISTS chat_albums (key TEXT PRIMARY KEY NOT NULL, secret TEXT NOT NULL, event TEXT, published INTEGER NOT NULL DEFAULT 0,
+  created INTEGER NOT NULL);
 `;
 
 /** Group states on this device. */
@@ -144,6 +149,10 @@ const GROUP_FORMAT = 3; // 3 = polls (25 Oct 2026)
 const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_reactions', 'chat_group_polls',
   'chat_group_poll_votes', 'chat_vote_history', 'chat_group_names', 'chat_group_keys'];
 const DEVICE_TABLES = ['chat_devices', 'chat_sync_out', 'chat_sync_in'];
+const ALBUM_TABLES = ['chat_albums'];
+
+/** My published albums are published again (fresh date) when older than this: the postman keeps them 60 days after that. */
+export const ALBUM_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** A history copy goes in parts this long (each sealed envelope must stay under 64 KB). */
 export const SYNC_PART_CHARS = 6000;
@@ -734,6 +743,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     // What's still waiting to go to my other devices (e.g. the rest of a history copy).
     await flushSync().catch(() => {});
     if (failure) throw failure;
+    if (!leaving) await refreshAlbums().catch(() => {});
     if (!leaving && (await first('SELECT id FROM chat_groups LIMIT 1'))) await syncGroups();
     return counts;
   }
@@ -743,12 +753,16 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     leaving = true;
     try {
       if (mailRun) await mailRun.catch(() => {});
+      // My albums go too (only if this was my last device; otherwise the others keep them).
+      if (!(await refreshDevices({ force: true }).catch(() => ownDevices)).length) {
+        for (const a of await all('SELECT key FROM chat_albums WHERE event IS NOT NULL')) await deleteAlbum(a.key).catch(() => {});
+      }
       await postman.leave();
     } catch (e) {
       leaving = false;
       throw e;
     }
-    for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES, ...DEVICE_TABLES]) await run(`DELETE FROM ${table}`);
+    for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES, ...DEVICE_TABLES, ...ALBUM_TABLES]) await run(`DELETE FROM ${table}`);
     ownDevices = [];
     // A new chat key for a fresh start (the old one is forgotten at the postman).
     identity = createIdentity();
@@ -874,6 +888,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       voteHistory: await all('SELECT * FROM chat_vote_history'),
       groupLast: await all('SELECT * FROM chat_group_last'),
       groupNames: await all('SELECT * FROM chat_group_names'),
+      albums: await all('SELECT * FROM chat_albums'),
     };
   }
 
@@ -1040,6 +1055,28 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       if (!groupOk(n) || typeof n.device !== 'string' || typeof n.nickname !== 'string') continue;
       await run('INSERT OR IGNORE INTO chat_group_names (grp, device, nickname) VALUES (?, ?, ?)', [n.grp, n.device, n.nickname]);
     }
+    for (const a of arr(data.albums)) await mergeAlbum(a);
+  }
+
+  /** One of my albums from another of my devices (its key and its latest version). */
+  async function mergeAlbum(a) {
+    if (!isPublicKey(a?.key) || !HEX64.test(a.secret || '')) return false;
+    try { secretBytes({ publicKey: a.key, secretKey: a.secret }); } catch { return false; } // (the secret must belong to the key)
+    let event = null;
+    if (typeof a.event === 'string') {
+      try {
+        const e = JSON.parse(a.event);
+        if (checkAlbum(e).ok && e.pubkey === a.key) event = a.event;
+      } catch { event = null; }
+    }
+    const local = await first('SELECT * FROM chat_albums WHERE key = ?', [a.key]);
+    if (!local) {
+      await run('INSERT INTO chat_albums (key, secret, event, published, created) VALUES (?, ?, ?, ?, ?)',
+        [a.key, a.secret, event, event ? Number(a.published) || 0 : 0, Number(a.created) || now()]);
+    } else if (event && (Number(a.published) || 0) > local.published) {
+      await run('UPDATE chat_albums SET event = ?, published = ? WHERE key = ?', [event, Number(a.published) || 0, a.key]);
+    }
+    return true;
   }
 
   /** A sync envelope from another of my devices. */
@@ -1092,6 +1129,13 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       }
       await mergeContact(d.c, { overwrite: true });
       return 'synced';
+    }
+    if (d.t === 'album') {
+      if (d.deleted) {
+        if (isPublicKey(d.key)) await run('DELETE FROM chat_albums WHERE key = ?', [d.key]);
+        return 'synced';
+      }
+      return (await mergeAlbum(d.a)) ? 'synced' : 'damaged';
     }
     if (d.t === 'group') {
       await mergeGroups([d.g], d.keys);
@@ -1683,6 +1727,105 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
   // --- backup (locked with a password by backup.js) ------------------------
 
   /** True if there's a chat here worth backing up (signed in once, or contacts). */
+  // --- Collectors Albums (27 Oct 2026) -----------------------------------------
+  // An album has its own key (album.js): published under that key only, so it
+  // isn't linked to my chat account unless I choose to show my nickname on it.
+
+  const albumRow = (r) => {
+    let album = null;
+    if (r.event) {
+      const c = checkAlbum(JSON.parse(r.event));
+      album = c.ok ? c.album : null;
+    }
+    return { key: r.key, published: r.published, album };
+  };
+
+  /** My albums (published or not), newest first: [{ key, published, album | null }]. */
+  async function myAlbums() {
+    return (await all('SELECT * FROM chat_albums ORDER BY created DESC')).map(albumRow);
+  }
+
+  /**
+   * A new album key (step 1 of making an album). → { key, proofText }:
+   * the wallet signs proofText next (Klever extension / KLV Signer).
+   */
+  async function newAlbum() {
+    const k = createAlbumKey();
+    await run('INSERT INTO chat_albums (key, secret, event, published, created) VALUES (?, ?, NULL, 0, ?)', [k.publicKey, k.secretKey, now()]);
+    await queueSync({ t: 'album', a: { key: k.publicKey, secret: k.secretKey, event: null, published: 0, created: now() } });
+    return { key: k.publicKey, proofText: albumProofText(k.publicKey) };
+  }
+
+  /** The text the wallet signs for one of my albums (e.g. to show another wallet in it). */
+  const albumProof = (key) => albumProofText(key);
+
+  /**
+   * Publishes (or updates) one of my albums. contents: { title, description,
+   * showName (my chat nickname on it, or not), wallet, proof, items: [{ kind, nonce, note }] }
+   * → the checked album
+   */
+  async function publishAlbum(key, { title, description = '', showName = false, wallet, proof, items }) {
+    const r = await first('SELECT * FROM chat_albums WHERE key = ?', [key]);
+    if (!r) throw new Error('This album is no longer on this device.');
+    const name = showName ? await getMe('nickname') : null;
+    if (showName && !name) throw new Error('Pick a chat nickname first, or publish the album without a name.');
+    cleanAlbum({ title, description, name, wallet, proof, items }); // (plain messages for the screen)
+    // (never older than the version published before, also if this device's clock is behind)
+    const at = Math.max(now(), r.published + 1000);
+    const event = sealAlbum({ publicKey: r.key, secretKey: r.secret }, { title, description, name, wallet, proof, items }, at);
+    const checked = checkAlbum(event);
+    if (!checked.ok) throw new Error(checked.problem === "the wallet's proof doesn't match"
+      ? "The wallet's signature doesn't match this wallet. Please sign again with the wallet whose NFTs are in the album."
+      : `This album can't be published (${checked.problem}).`);
+    await postman.publishAlbum(event);
+    const text = JSON.stringify(event);
+    await run('UPDATE chat_albums SET event = ?, published = ? WHERE key = ?', [text, at, key]);
+    await queueSync({ t: 'album', a: { key, secret: r.secret, event: text, published: at, created: r.created } });
+    return checked.album;
+  }
+
+  /** Takes one of my albums down (at the postman and on my devices); a not-yet-published one is just forgotten. */
+  async function deleteAlbum(key) {
+    const r = await first('SELECT * FROM chat_albums WHERE key = ?', [key]);
+    if (!r) return;
+    if (r.event) {
+      // (signed with the album's own key: the postman lets only that key delete it)
+      await createPostmanClient({ baseUrl: postmanUrl, identity: { publicKey: r.key, secretKey: r.secret }, fetchFn, now }).deleteAlbum();
+    }
+    await run('DELETE FROM chat_albums WHERE key = ?', [key]);
+    await queueSync({ t: 'album', key, deleted: true });
+  }
+
+  /**
+   * Publishes my albums again with a fresh date once they're a week old, so
+   * the postman keeps them (it forgets albums 60 days after their last
+   * update, e.g. of a player who stopped using the Hub). Only from a
+   * signed-in device; the same contents, the same wallet proof.
+   */
+  async function refreshAlbums() {
+    if ((await status()).state !== 'ready') return 0;
+    let n = 0;
+    for (const r of await all('SELECT * FROM chat_albums WHERE event IS NOT NULL AND published < ?', [now() - ALBUM_REFRESH_MS])) {
+      const c = checkAlbum(JSON.parse(r.event));
+      if (!c.ok) continue;
+      const { title, description, name, wallet, proof, items } = c.album;
+      const at = Math.max(now(), r.published + 1000);
+      const event = sealAlbum({ publicKey: r.key, secretKey: r.secret }, { title, description, name, wallet, proof, items }, at);
+      try {
+        await postman.publishAlbum(event);
+      } catch (e) {
+        // (another of my devices was quicker: its version comes as a sync; not tried again for a week)
+        if (e.status === 409) { await run('UPDATE chat_albums SET published = ? WHERE key = ?', [now(), r.key]); continue; }
+        throw e;
+      }
+      const text = JSON.stringify(event);
+      await run('UPDATE chat_albums SET event = ?, published = ? WHERE key = ?', [text, at, r.key]);
+      await queueSync({ t: 'album', a: { key: r.key, secret: r.secret, event: text, published: at, created: r.created } });
+      n += 1;
+    }
+    return n;
+  }
+
   async function hasChat() {
     return !!(await getMe('account')) || (await all('SELECT id FROM chat_contacts LIMIT 1')).length > 0;
   }
@@ -1705,6 +1848,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       voteHistory: await all('SELECT * FROM chat_vote_history'),
       groupLast: await all('SELECT * FROM chat_group_last'),
       groupKeys: await all('SELECT * FROM chat_group_keys'),
+      albums: await all('SELECT * FROM chat_albums'),
     };
   }
 
@@ -1724,7 +1868,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       throw new Error("The chat in this backup can't be read.");
     }
     const wipe = async () => {
-      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES, ...DEVICE_TABLES]) await run(`DELETE FROM ${table}`);
+      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES, ...DEVICE_TABLES, ...ALBUM_TABLES]) await run(`DELETE FROM ${table}`);
     };
     await wipe();
     try {
@@ -1801,6 +1945,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       );
       idMap.set(c.id, r.lastInsertRowId);
     }
+    for (const a of Array.isArray(data.albums) ? data.albums : []) await mergeAlbum(a);
     for (const m of data.messages) {
       const contact = idMap.get(m.contact);
       if (!contact || typeof m.text !== 'string') continue;
@@ -1819,7 +1964,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     leaving = true;
     try {
       if (mailRun) await mailRun.catch(() => {});
-      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES, ...DEVICE_TABLES]) await run(`DELETE FROM ${table}`);
+      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES, ...DEVICE_TABLES, ...ALBUM_TABLES]) await run(`DELETE FROM ${table}`);
       ownDevices = [];
       identity = createIdentity();
       await setMe('identity', identity);
@@ -1879,5 +2024,12 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     copyHistoryTo,
     dismissNewDevice,
     removeDevice,
+    // Collectors Albums (27 Oct 2026)
+    myAlbums,
+    newAlbum,
+    albumProof,
+    publishAlbum,
+    deleteAlbum,
+    refreshAlbums,
   };
 }

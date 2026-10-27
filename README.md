@@ -27,6 +27,13 @@ players.
   that explains the game's words and the Hub.
 - **Chat (beta, website and Android app):** one-to-one chats and open groups for Devikins
   holders, end-to-end encrypted. See below.
+- **Collectors Albums (new):** show chosen NFTs from one of your wallets,
+  with a note on each ("May event 2025"), and browse other players'
+  albums, also on the website without signing in. Each NFT is checked:
+  the wallet proved it's the owner's, and the Hub asks Klever whether the
+  NFT is still in it. Anonymous unless you choose to show your chat
+  nickname; the wallet address is visible (a separate showcase wallet keeps
+  your main one private).
 - **Backups:** "Export all sets" saves everything to a file (the chat
   locked with a password of your choice).
 
@@ -43,6 +50,9 @@ players.
   `app/chat/postman`) can't read them and doesn't keep wallet addresses
   (only those of voters, briefly, until a vote is counted). Its README
   lists exactly what it stores.
+- **Collectors Albums are public on purpose:** an album shows the wallet
+  address its NFTs are in (proven by a signature, again not a transaction).
+  The Hub tells you before you publish one.
 - **Found a security problem?** Please report it privately, see
   [SECURITY.md](SECURITY.md).
 

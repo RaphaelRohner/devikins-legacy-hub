@@ -53,8 +53,20 @@ Keeps:
   and a daily count of actions (2 days) – by wallet fingerprint, so leaving
   and signing in again doesn't reset the pauses and allowances.
 - Times on waiting mail are rounded to the hour.
+- **Collectors Albums** (27 Oct 2026), public on purpose: each album is
+  stored under its **own album key** only – title, description, the NFTs
+  shown (kind and number, with the owner's notes), the **wallet address**
+  whose NFTs they are, that wallet's signature proving it, and the owner's
+  nickname only if they chose to show it. No account number, no device next
+  to it. The owner's Hub publishes it again weekly; an album not refreshed
+  for 60 days is deleted (at most 5,000 albums). Anyone can read them, also
+  without signing in; every reader's Hub checks the signatures and whether
+  the wallet still holds each NFT itself. Publishing needs a signed-in
+  player (against spam), so in that moment the postman sees which device
+  publishes which album (and forgets).
 
-Doesn't keep: wallet addresses, NFT counts, message contents (it can't read
+Doesn't keep: wallet addresses (except the ones players put on their albums
+themselves), NFT counts, message contents (it can't read
 them), who wrote to whom in 1:1 chats (drops need only a drop code, no
 signature), IP addresses, logs.
 
@@ -93,7 +105,8 @@ that many. The daily posting allowance is the band's lower end.
 
 ## Limits against misuse (all per day, so the free plan can't be used up)
 
-- 1,500 actions per player (contact requests, drop-code changes, group posts);
+- 1,500 actions per player (contact requests, drop-code changes, group posts;
+  publishing an album counts as 10);
 - 300 envelopes per drop code (one contact can't flood a mailbox; blocking
   = removing that code);
 - 3,000 envelopes per player to their own other devices (linked devices);
@@ -150,6 +163,10 @@ someone who intercepted it (no request today is harmful to repeat).
 | `POST /group/post` | member | one sealed group post (at most 1 every 10 seconds); `reaction: true` for a reaction (👍 ❤️ …: no 10-second gap, counts as an action) |
 | `GET /group/posts?group=&after=` | member | a group's posts after number N – only those from after you joined |
 | `POST /leave` | device | forget this device (and the account with its last device) |
+| `POST /albums/publish` | signed-in | `{album}` – a Collectors Album signed with its own key, with the wallet's proof; the name on it (if any) must be the player's own nickname; a newer version replaces it |
+| `POST /albums/delete` | the album's key | delete that album (the request is signed with the album's key, which only its owner's devices have) |
+| `GET /albums?before=` | anyone | the albums, newest first (50 at a time): key, title, name, how many NFTs, when |
+| `GET /albums/one?key=` | anyone | one album (to be checked by the reader) |
 
 ## Putting it on Cloudflare (Raphael)
 

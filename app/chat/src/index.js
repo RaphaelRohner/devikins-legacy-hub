@@ -11,6 +11,7 @@ export {
 export { issueBadge, checkBadge, BADGE_DAYS } from './badge.js';
 export * from './rules.js';
 export { createFakePostman } from './fakePostman.js';
-export { createPostmanClient } from './client.js';
+export { createPostmanClient, publicAlbums } from './client.js';
+export * from './album.js';
 export { createMessenger, STATUS as CONTACT_STATUS, GROUP_STATUS } from './messenger.js';
 export { lockBackup, unlockBackup, MIN_PASSWORD_LENGTH } from './backup.js';

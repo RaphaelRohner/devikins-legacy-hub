@@ -102,6 +102,7 @@ import { setKleverscanOpener } from './src/api/openKleverscan';
 import SignerTestView from './src/components/SignerTestView';
 import ChatView from './src/components/ChatView';
 import DonateView from './src/components/DonateView';
+import AlbumsView from './src/components/AlbumsView';
 import AboutView from './src/components/AboutView';
 import WithdrawalTrackerView from './src/components/WithdrawalTrackerView';
 import WalletOverviewView from './src/components/WalletOverviewView';
@@ -747,7 +748,7 @@ function AppContent() {
         setIsMenuOpen(false);
         return true; // handled - don't also exit the app
       }
-      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help' || currentScreen === 'breeding' || currentScreen === 'kleverscan' || currentScreen === 'signer' || currentScreen === 'withdrawals' || currentScreen === 'about' || currentScreen === 'donate' || currentScreen === 'chat' || currentScreen === 'overview') {
+      if (currentScreen === 'wallets' || currentScreen === 'feedback' || currentScreen === 'help' || currentScreen === 'breeding' || currentScreen === 'kleverscan' || currentScreen === 'signer' || currentScreen === 'withdrawals' || currentScreen === 'about' || currentScreen === 'donate' || currentScreen === 'chat' || currentScreen === 'overview' || currentScreen === 'albums') {
         goToScreen(lastCollectionScreen);
         return true; // handled - don't also exit the app
       }
@@ -1506,6 +1507,16 @@ Continue anyway?`
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <ChatView onClose={() => goToScreen(lastCollectionScreen)} />
+      </SafeAreaView>
+    );
+  }
+
+  // Collectors Albums (27 Oct 2026) - see AlbumsView.js. Same full-screen-takeover pattern.
+  if (currentScreen === 'albums') {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <AlbumsView onClose={() => goToScreen(lastCollectionScreen)} />
       </SafeAreaView>
     );
   }

@@ -13,7 +13,7 @@ const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { installFakeServers } = require('./fakeServers');
-const { openHub, openMenuEntry } = require('./helpers');
+const { openHub, openMenuEntry, goBack, nameNewWallet } = require('./helpers');
 
 const POSTMAN_HOST = 'devi-postman-test.raphaelrohner.workers.dev';
 
@@ -60,7 +60,7 @@ async function findGroup(page, name) {
 /** One player: a browser context with the fake servers, the postman and a pretend Klever extension. */
 async function openPlayer(browser, postman, wallet, { extension = true, openChat = true, kleverApp = false } = {}) {
   const context = await browser.newContext();
-  await installFakeServers(context);
+  const fake = await installFakeServers(context);
   const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'Content-Type, Authorization', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
   await context.route(`https://${POSTMAN_HOST}/**`, async (route) => {
     const request = route.request();
@@ -94,7 +94,7 @@ async function openPlayer(browser, postman, wallet, { extension = true, openChat
   if (kleverApp) await page.addInitScript(() => { window.__kleverApp = true; });
   const dialogs = await openHub(page);
   if (openChat) await openMenuEntry(page, 'Chat');
-  return { context, page, dialogs };
+  return { context, page, dialogs, fake };
 }
 
 async function signInAs(page, nickname) {
@@ -538,6 +538,73 @@ test('linking by QR code: a second browser without the Klever extension joins wi
     await third.page.getByTestId('chat-link-finish').click();
     await expect(third.page.getByTestId('chat-error')).toContainText(/expired or was already used/);
     for (const p of [alice, second, third]) await p.context.close();
+  } finally {
+    postman.stop();
+  }
+});
+
+test('Collectors Albums: a player publishes an album with notes; a visitor without signing in sees it checked', async ({ browser }) => {
+  test.setTimeout(180_000);
+  const postman = await startPostman();
+  try {
+    const wallet = await postman.newWallet(3);
+    const alice = await openPlayer(browser, postman, wallet);
+    await signInAs(alice.page, 'Alice');
+    await alice.page.getByTestId('chat-dock-minimise').click();
+    // Alice's wallet holds Testy (Devikin 101) and the Fine Test Hammer (weapon 201); she loads them into the Hub.
+    for (const id of ['devikin:101', 'weapon:201']) alice.fake.chain.holders.set(id, wallet.address);
+    await openMenuEntry(alice.page, 'Wallets');
+    await alice.page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(wallet.address);
+    await alice.page.getByText('Add', { exact: true }).click();
+    await nameNewWallet(alice.page);
+    await goBack(alice.page);
+    await openMenuEntry(alice.page, 'Fetch/Update');
+    await expect.poll(() => new Set(alice.fake.requests.filter((u) => /devikins\.com\/.+\.png$/.test(u))).size, { timeout: 60_000 }).toBeGreaterThanOrEqual(2);
+    await expect(alice.page.getByText(/^\d+%$/)).toHaveCount(0, { timeout: 60_000 });
+
+    // My albums > New album: the privacy note (accepted), the wallet signs, two NFTs with a note.
+    await openMenuEntry(alice.page, 'Collectors Albums');
+    await expect(alice.page.getByText('No albums yet', { exact: false })).toBeVisible();
+    await alice.page.getByTestId('albums-mine').click();
+    await alice.page.getByTestId('album-new').click();
+    await alice.page.getByTestId('album-sign').click();
+    await expect.poll(() => alice.dialogs.some((d) => /^Albums are public/.test(d) && /Kleverscan/.test(d))).toBe(true);
+    await alice.page.getByTestId('album-title-input').fill('My first finds');
+    await expect(alice.page.getByTestId('album-pick')).toHaveCount(2);
+    await alice.page.getByTestId('album-pick').filter({ hasText: '#101' }).click();
+    await alice.page.getByTestId('album-pick').filter({ hasText: '#201' }).click();
+    await alice.page.getByTestId('album-picked').filter({ hasText: '#101' }).getByPlaceholder(/Note/).fill('May event 2025 Bonded Yoda');
+    await alice.page.getByTestId('album-publish').click();
+    await expect(alice.page.getByTestId('album-published')).toBeVisible();
+
+    // A visitor: no extension, no chat. The album is anonymous; both NFTs are checked as still in the wallet.
+    const visitor = await openPlayer(browser, postman, null, { extension: false, openChat: false });
+    for (const id of ['devikin:101', 'weapon:201']) visitor.fake.chain.holders.set(id, wallet.address);
+    await openMenuEntry(visitor.page, 'Collectors Albums');
+    const row = visitor.page.getByTestId('album-row').filter({ hasText: 'My first finds' });
+    await expect(row).toContainText('Anonymous collector');
+    await expect(row).toContainText('2 NFTs');
+    await row.click();
+    await expect(visitor.page.getByTestId('album-title')).toHaveText('My first finds');
+    await expect(visitor.page.getByTestId('album-item')).toHaveCount(2);
+    await expect(visitor.page.getByText('May event 2025 Bonded Yoda')).toBeVisible();
+    await expect(visitor.page.getByTestId('album-item').filter({ hasText: '✓ in the wallet' })).toHaveCount(2, { timeout: 20_000 });
+    await expect(visitor.page.getByText(wallet.address.slice(0, 10), { exact: false })).toBeVisible();
+    await expect(visitor.page.getByText('Alice')).toHaveCount(0);
+
+    // Testy is sold: the next visit shows it faded, "no longer in the wallet".
+    visitor.fake.chain.holders.set('devikin:101', 'klv1someoneelse');
+    await goBack(visitor.page);
+    await row.click();
+    await expect(visitor.page.getByTestId('album-gone')).toContainText('1 of these NFTs is no longer in this wallet', { timeout: 20_000 });
+
+    // Alice deletes it: gone for everyone.
+    await goBack(alice.page);
+    await alice.page.getByTestId('my-album-delete').click();
+    await expect(alice.page.getByTestId('my-album')).toHaveCount(0);
+    await goBack(visitor.page);
+    await expect(visitor.page.getByText('No albums yet', { exact: false })).toBeVisible();
+    for (const p of [alice, visitor]) await p.context.close();
   } finally {
     postman.stop();
   }

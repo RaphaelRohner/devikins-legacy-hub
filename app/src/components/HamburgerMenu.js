@@ -15,14 +15,14 @@
  *                Fetch/Update, Kleverscan (find a wallet to try the Hub)
  *   Browse NFTs  Devikins, Weapons, Equipment, Where are my NFTs?
  *   Features     Chat (website only for now, since 22 Oct 2026),
- *                Withdrawals, Breeding Helper, KLV Signer (test - Android
+ *                Collectors Albums (27 Oct 2026), Withdrawals, Breeding Helper, KLV Signer (test - Android
  *                app only; signs with the separate KLV Signer app)
  *   Help         Ask Devi, Feedback, About
  * A closed category shows a grey line listing what's inside (16 Oct 2026).
  *   Donate       on its own at the bottom (only once a donation address
  *                is set in src/constants/donation.js)
  *
- * Planned entries (Marketplace, Collectors Album) are added to
+ * Planned entries (Marketplace) are added to
  * their category once they exist - not shown before.
  *
  * On the website, Kleverscan opens in a new browser tab and the KLV Signer
@@ -131,6 +131,13 @@ export default function HamburgerMenu({
       onPress: () => onSelectScreen('chat'),
     },
     {
+      key: 'albums',
+      label: 'Collectors Albums',
+      hint: 'Show your NFTs, see other collections (new)',
+      screen: 'albums',
+      onPress: () => onSelectScreen('albums'),
+    },
+    {
       key: 'withdrawals',
       label: 'Withdrawals',
       screen: 'withdrawals',
@@ -206,7 +213,7 @@ export default function HamburgerMenu({
     // "never have looked under Tools" for the Breeding Helper).
     { key: 'setup', title: 'Set Up', entries: ['guide', 'wallets', 'fetch', 'kleverscan'] },
     { key: 'browse', title: 'Browse NFTs', entries: ['devikin', 'weapon', 'equipment', 'overview'] },
-    { key: 'features', title: 'Features', entries: ['chat', 'withdrawals', 'breeding', 'signer'] },
+    { key: 'features', title: 'Features', entries: ['chat', 'albums', 'withdrawals', 'breeding', 'signer'] },
     { key: 'help', title: 'Help', entries: ['help', 'feedback', 'about'] },
   ];
   const entryByKey = Object.fromEntries(entries.map((e) => [e.key, e]));

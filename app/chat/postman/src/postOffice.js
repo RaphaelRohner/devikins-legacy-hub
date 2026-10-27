@@ -38,6 +38,7 @@ import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { issueBadge, checkBadge, BADGE_DAYS } from '../../src/badge.js';
 import { isPublicKey } from '../../src/identity.js';
+import { checkAlbum } from '../../src/album.js';
 import {
   contactRequestWait, DAY, MINUTE, MIN_POST_INTERVAL, nicknameKey,
   GAME_ACCOUNT, votingThreshold, voteResult, voteDecidedEarly, canOpenVote, isPostingPaused, VOTE_DURATION, holdingBand, bandLabel,
@@ -51,6 +52,9 @@ export const FORGET_AFTER = 180 * DAY;
 export const SIGNIN_VALID_FOR = 5 * MINUTE;
 /** A link code (QR code to add a device without a wallet, 27 Oct 2026) works once, for this long. */
 export const LINK_VALID_FOR = 5 * MINUTE;
+/** Collectors Albums (27 Oct 2026): kept this long after the owner's Hub last refreshed them; at most this many in all. */
+export const ALBUM_KEEP_DAYS = 60;
+export const MAX_ALBUMS = 5000;
 export const MAX_OPEN_SIGNINS = 3;
 export const MAX_DEVICES = 5;
 export const MAX_ENVELOPE_CHARS = 64 * 1024;
@@ -136,6 +140,10 @@ const SCHEMA = [
   // Link codes (QR codes, 27 Oct 2026): only a fingerprint of the code; the Devikins count and end of
   // the linking device's badge, so the new device gets the same; gone after use or 5 minutes.
   'CREATE TABLE IF NOT EXISTS links (fp TEXT PRIMARY KEY, account TEXT NOT NULL, nfts INTEGER NOT NULL, badge_until INTEGER NOT NULL, expires INTEGER NOT NULL)',
+  // Collectors Albums (27 Oct 2026): stored under the ALBUM's own key only - no account, no device.
+  `CREATE TABLE IF NOT EXISTS albums (key TEXT PRIMARY KEY, event TEXT NOT NULL, title TEXT NOT NULL, name TEXT,
+     count INTEGER NOT NULL, updated INTEGER NOT NULL, expires INTEGER NOT NULL)`,
+  'CREATE INDEX IF NOT EXISTS albums_by_updated ON albums (updated)',
   // Bans are kept by wallet fingerprint, so leaving the chat and signing in again doesn't undo them.
   `CREATE TABLE IF NOT EXISTS group_bans (id INTEGER PRIMARY KEY AUTOINCREMENT, grp TEXT NOT NULL, player TEXT NOT NULL,
      nickname TEXT, at INTEGER NOT NULL, UNIQUE (grp, player))`,
@@ -610,6 +618,45 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
         badges: devicesOf(account.id).filter((d) => d !== device)
           .map((d) => ({ device: d, badge: issueBadge(postman, { holder: d, nfts: badge.nfts, now: t, account: account.id, expiresAtSec: until }) })),
       };
+    },
+
+    // --- Collectors Albums (27 Oct 2026) ----------------------------------------
+    // Everyone may read them (also without signing in). Publishing needs a
+    // signed-in holder (against spam; counted in the daily allowance), but
+    // what's stored is only the album, under its own key.
+
+    'POST /albums/publish': ({ device, body, t }) => {
+      const account = verifiedAccount(device, t);
+      const r = checkAlbum(body.album);
+      if (!r.ok) refuse(400, `This album can't be published (${r.problem}).`);
+      const a = r.album;
+      if (a.name !== null && nicknameKey(a.name) !== nicknameKey(account.nickname || '')) refuse(403, 'The name on an album must be your own chat nickname.');
+      const old = row('SELECT updated FROM albums WHERE key = ?', a.key);
+      if (old && old.updated > a.updatedAt) refuse(409, 'A newer version of this album is already published.');
+      if (!old && row('SELECT COUNT(*) AS n FROM albums').n >= MAX_ALBUMS) refuse(507, 'The postman has as many albums as it can hold.');
+      spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t, 10);
+      run(`INSERT INTO albums (key, event, title, name, count, updated, expires) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (key) DO UPDATE SET event = excluded.event, title = excluded.title, name = excluded.name,
+             count = excluded.count, updated = excluded.updated, expires = excluded.expires`,
+        a.key, stringify(body.album), a.title, a.name, a.items.length, a.updatedAt, t + ALBUM_KEEP_DAYS * DAY);
+      return { published: true, key: a.key };
+    },
+
+    /** Deleting an album: the request is signed with the ALBUM's key (only its owner has it). */
+    'POST /albums/delete': ({ device }) => ({ deleted: rows('DELETE FROM albums WHERE key = ? RETURNING key', device).length > 0 }),
+
+    /** The albums, newest first: { albums: [{ key, title, name, count, updated }] }; `before` = updated time for the next page. */
+    'GET /albums': ({ query, t }) => {
+      const before = Number(query.get('before')) || Number.MAX_SAFE_INTEGER;
+      return {
+        albums: rows('SELECT key, title, name, count, updated FROM albums WHERE expires > ? AND updated < ? ORDER BY updated DESC LIMIT 50', t, before),
+      };
+    },
+
+    'GET /albums/one': ({ query, t }) => {
+      const a = row('SELECT event FROM albums WHERE key = ? AND expires > ?', String(query.get('key') || ''), t);
+      if (!a) refuse(404, 'This album no longer exists.');
+      return { album: JSON.parse(a.event) };
     },
 
     /** Takes one of the player's OTHER devices out of the account (e.g. a lost phone). */
@@ -1099,7 +1146,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     },
   };
 
-  const OPEN = new Set(['GET /hello', 'POST /drop', 'POST /drop/devices']);
+  const OPEN = new Set(['GET /hello', 'POST /drop', 'POST /drop/devices', 'GET /albums', 'GET /albums/one']);
 
   /**
    * handle — one request. → { status, body }
@@ -1141,6 +1188,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     run('DELETE FROM posts WHERE at < ?', cutoff);
     run('DELETE FROM signins WHERE expires <= ?', t);
     run('DELETE FROM proofs WHERE expires <= ?', t);
+    run('DELETE FROM albums WHERE expires <= ?', t);
     run('DELETE FROM requests WHERE at < ?', t - DAY);
     run('DELETE FROM lastpost WHERE at < ?', t - DAY);
     run('DELETE FROM budget WHERE day < ?', Math.floor(t / DAY) - 1);

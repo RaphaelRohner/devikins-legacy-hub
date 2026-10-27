@@ -777,3 +777,23 @@ remaining member's devices (`POST /groups/rekey`, checked against a new
 key check); Hubs keep all of a group's keys (`chat_group_keys`) so older
 posts stay readable.
 
+
+### Collectors Albums (27 Oct 2026)
+
+`src/components/AlbumsView.js` (☰ › Features › Collectors Albums): players
+show chosen NFTs from one wallet with a note on each; everyone can browse
+them, on the website also without signing in. The album itself is plain
+calculation in `chat/src/album.js`: each album has its **own key** (made on
+the device, kept with the chat and copied to linked devices) and is signed
+with it, and the wallet whose NFTs it shows signs a short text naming that
+key (`albumProofText`, not a transaction). Every viewer's Hub checks both
+signatures (`checkAlbum`, via `publicAlbums` in `chat/src/client.js`), loads
+each NFT's picture and name like the rest of the Hub (`metadataApi.js`) and
+asks Klever's node whether the wallet still holds it (`holdsNft`); NFTs that
+left the wallet show faded. The postman stores each album under its album
+key only (no account, no device), so it isn't linked to the chat nickname
+unless the owner switches "Show my chat nickname" on (the postman checks the
+name is theirs). Publishing needs the chat sign-in (against spam); the
+owner's Hub republishes weekly, and the postman forgets an album 60 days
+after its last update. Visitor comments (and holders confirming them) come
+later.
