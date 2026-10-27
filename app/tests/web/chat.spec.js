@@ -484,7 +484,8 @@ test('linked devices: the same player in a second browser gets the history after
 
     // The first browser offers to copy the history; yes.
     await expect(alice.page.getByTestId('chat-new-device')).toBeVisible({ timeout: 20_000 });
-    await expect(alice.page.getByTestId('chat-new-device')).toContainText('Website signed in with your wallet');
+    // (named by its browser and system, from the device's own sealed hello)
+    await expect(alice.page.getByTestId('chat-new-device')).toContainText(/Chrome on \w+ signed in with your wallet/);
     await alice.page.getByTestId('chat-copy-history').click();
     await expect(alice.page.getByTestId('chat-new-device')).toHaveCount(0);
     await expect(alice.page.getByTestId('chat-device')).toHaveCount(1);

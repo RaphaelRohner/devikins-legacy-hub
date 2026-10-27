@@ -220,3 +220,25 @@ test('two devices that both have a history (linked before this update): each cop
     assert.deepEqual(await texts(m, 'Carol'), [[true, 'Phone-only chat']]);
   }
 });
+
+test('group posts written on another device before the devices knew each other count as mine', async () => {
+  const w = world();
+  const { alice } = await chatting(w);
+  const gid = await alice.startGroup('Breeders', '');
+  const phone = await w.player('Alice', 3, alice, 'Android app');
+  w.clock.t += 2 * MINUTE;
+  await phone.checkMail();
+  await phone.joinGroup(gid).catch(() => {});
+  await alice.checkMail();
+  await phone.checkMail();
+  w.clock.t += 2 * MINUTE;
+  await phone.postToGroup(gid, 'Written on the phone');
+  // The website files it while it doesn't know the phone yet (as an older Hub would have) ...
+  await alice.db.runAsync('DELETE FROM chat_devices');
+  await alice.checkMail();
+  await alice.db.runAsync("UPDATE chat_group_posts SET mine = 0 WHERE text = 'Written on the phone'");
+  // ... and puts it right once it knows the phone is one of hers.
+  w.clock.t += 2 * MINUTE;
+  await alice.linkedDevices();
+  assert.deepEqual((await alice.groupPosts(gid)).map((p) => [p.mine, p.text]).at(-1), [true, 'Written on the phone']);
+});

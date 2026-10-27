@@ -174,7 +174,7 @@ const HEX64 = /^[0-9a-f]{64}$/;
  * createMessenger
  *   db:        { execAsync, runAsync, getAllAsync } (expo-sqlite style)
  *   postmanUrl: the postman's address
- *   deviceLabel: what kind of device this is ("Website", "Android app"), shown
+ *   deviceLabel: which device this is ("Chrome on Mac", "Motorola moto g(5) (Android app)"), shown
  *              in the list of linked devices on the player's other devices
  *   devicesCheckEveryMs: how often to ask the postman for the account's devices
  *   fetchFn, now: for tests
@@ -754,7 +754,21 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       await run('DELETE FROM chat_sync_out WHERE device = ?', [key]);
     }
     ownDevices = [...keys];
-    if (fresh.length && deviceLabel) await queueSync({ t: 'hello', label: deviceLabel }, fresh);
+    // What my other devices posted before this device knew them (e.g. from the
+    // phone before linked devices existed) is mine too.
+    for (const key of ownDevices) {
+      await run('UPDATE chat_group_posts SET mine = 1 WHERE author = ? AND mine = 0', [key]);
+      await run('UPDATE chat_group_polls SET mine = 1 WHERE author = ? AND mine = 0', [key]);
+    }
+    // Hello (this device's kind) to new devices - and to all of them once
+    // the label itself changed (e.g. "Website" became "Chrome on Mac", 27 Oct 2026).
+    if (deviceLabel && ownDevices.length) {
+      const targets = (await getMe('helloLabel')) === deviceLabel ? fresh : ownDevices;
+      if (targets.length) {
+        await queueSync({ t: 'hello', label: deviceLabel }, targets);
+        await setMe('helloLabel', deviceLabel);
+      }
+    }
     return ownDevices;
   }
 
