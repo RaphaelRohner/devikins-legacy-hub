@@ -43,6 +43,8 @@ players.
   `app/chat/postman`) can't read them and doesn't keep wallet addresses
   (only those of voters, briefly, until a vote is counted). Its README
   lists exactly what it stores.
+- **Found a security problem?** Please report it privately, see
+  [SECURITY.md](SECURITY.md).
 
 ## The chat in short
 
