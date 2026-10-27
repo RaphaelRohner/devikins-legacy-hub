@@ -68,7 +68,13 @@ async function openPlayer(browser, postman, wallet, { extension = true, openChat
     const url = new URL(request.url());
     const headers = {};
     if (request.headers().authorization) headers.authorization = request.headers().authorization;
-    const r = await fetch(postman.local + url.pathname + url.search, { method: request.method(), headers, body: request.postData() || undefined });
+    let r;
+    try {
+      r = await fetch(postman.local + url.pathname + url.search, { method: request.method(), headers, body: request.postData() || undefined });
+    } catch {
+      // (the test's postman has stopped while a page still checks for mail: answer like an unreachable server)
+      return route.abort('connectionrefused').catch(() => {});
+    }
     return route.fulfill({ status: r.status, contentType: 'application/json', headers: cors, body: await r.text() });
   });
   const page = await context.newPage();
@@ -501,6 +507,7 @@ test('linked devices: the same player in a second browser gets the history after
     // ... and the first browser shows it as Alice's own.
     await alice.page.getByTestId('chat-contact').filter({ hasText: 'Bob' }).click();
     await expect(alice.page.getByText('From my second browser')).toBeVisible({ timeout: 20_000 });
+    for (const p of [alice, bob, second]) await p.context.close();
   } finally {
     postman.stop();
   }
@@ -530,6 +537,7 @@ test('linking by QR code: a second browser without the Klever extension joins wi
     await third.page.getByTestId('chat-link-code').fill(shown);
     await third.page.getByTestId('chat-link-finish').click();
     await expect(third.page.getByTestId('chat-error')).toContainText(/expired or was already used/);
+    for (const p of [alice, second, third]) await p.context.close();
   } finally {
     postman.stop();
   }
