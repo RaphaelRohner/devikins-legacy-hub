@@ -17,7 +17,11 @@ const T0 = 1_800_000_000_000;
 test('a badge proves "verified holder of N NFTs" for one chat key, without a wallet', () => {
   const badge = issueBadge(postman, { holder: alice.publicKey, nfts: 3, now: T0 });
   assert.ok(!JSON.stringify(badge).includes('klv1'), 'wallet in badge');
-  assert.deepEqual(checkBadge(badge, { postmanPublicKey: postman.publicKey, holder: alice.publicKey, at: T0 + HOUR }), { ok: true, nfts: 3, until: T0 + 7 * DAY - (T0 % 1000), account: null });
+  assert.deepEqual(checkBadge(badge, { postmanPublicKey: postman.publicKey, holder: alice.publicKey, at: T0 + HOUR }), { ok: true, nfts: 2, until: T0 + 7 * DAY - (T0 % 1000), account: null });
+  // Only the band, never the exact count: 3 → 2 (2–4), 37 → 25 (25–49), 1066 → 50 (50+).
+  for (const [n, band] of [[1, 1], [3, 2], [9, 5], [10, 10], [37, 25], [1066, 50]]) {
+    assert.equal(checkBadge(issueBadge(postman, { holder: alice.publicKey, nfts: n, now: T0 }), { postmanPublicKey: postman.publicKey, holder: alice.publicKey, at: T0 }).nfts, band);
+  }
   assert.equal(checkBadge(badge, { postmanPublicKey: postman.publicKey, holder: bob.publicKey, at: T0 }).problem, 'badge of someone else');
   assert.equal(checkBadge(badge, { postmanPublicKey: postman.publicKey, holder: alice.publicKey, at: T0 + 8 * DAY }).problem, 'expired');
   assert.equal(checkBadge(badge, { postmanPublicKey: eve.publicKey, holder: alice.publicKey, at: T0 }).problem, 'not from the postman');
@@ -65,7 +69,7 @@ test('posting limits by holdings are applied by every member\'s Hub, using the p
   const group = createGroup();
   const keys = { 1: group.key };
   const one = issueBadge(postman, { holder: alice.publicKey, nfts: 1, now: T0 });
-  const three = issueBadge(postman, { holder: bob.publicKey, nfts: 3, now: T0 }); // → 3 posts a day
+  const three = issueBadge(postman, { holder: bob.publicKey, nfts: 3, now: T0 }); // 3 Devikins = band 2–4 → 2 posts a day
   const item = (from, badge, at, text = 'hi') => ({ post: openGroupPost(sealGroupPost({ group, from, text, badge, now: at }), { groupId: group.id, keys }), receivedAt: at });
   const items = [
     item(alice, one, T0, 'For sale: #4821'),
@@ -74,14 +78,14 @@ test('posting limits by holdings are applied by every member\'s Hub, using the p
     item(bob, three, T0, 'b1'),
     item(bob, three, T0 + 5 * 1000, 'too quick'), // under 10 seconds: too early
     item(bob, three, T0 + 10 * 1000, 'b2'),
-    item(bob, three, T0 + 20 * 1000, 'b3'), // a burst is fine...
-    item(bob, three, T0 + 30 * 1000, 'b4'), // ...but 3 a day are used up
+    item(bob, three, T0 + 20 * 1000, 'b3'), // ...but 2 a day are used up
+    item(bob, three, T0 + 30 * 1000, 'b4'),
     item(bob, three, T0 + DAY + 1, 'b5'), // the first one is 24 h old: one more
   ];
   const lastAccepted = {};
   const { shown, dropped } = acceptPosts(items, { postmanPublicKey: postman.publicKey, lastAccepted });
-  assert.deepEqual(shown.map((s) => s.post.text), ['For sale: #4821', 'b1', 'b2', 'b3', 'still for sale', 'b5']);
-  assert.deepEqual(dropped.map((d) => d.post?.text ?? d.item.post.text), ['too quick', 'b4', 'spam']);
+  assert.deepEqual(shown.map((s) => s.post.text), ['For sale: #4821', 'b1', 'b2', 'still for sale', 'b5']);
+  assert.deepEqual(dropped.map((d) => d.post?.text ?? d.item.post.text), ['too quick', 'b3', 'b4', 'spam']);
   assert.ok(dropped.every((d) => d.reason === 'too early'));
   // a post without a genuine badge is dropped; so is one from a paused author
   const fake = issueBadge(eve, { holder: eve.publicKey, nfts: 99, now: T0 });

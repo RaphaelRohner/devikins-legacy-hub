@@ -354,15 +354,15 @@ test('groups: create, ask to join, a member\'s Hub lets you in, posts from joini
   const alice = await player('Alice', 3); // 3 Devikins: 3 posts a day
   const bob = await player('Bob', 50); // 50: 50 posts a day
   // Starting a group takes the voting threshold (10 Devikins at the last sign-in).
-  assert.deepEqual(await alice.groupCreateInfo().then((i) => [i.threshold === null || i.threshold === 10, i.nfts]), [true, 3]);
-  await assert.rejects(alice.createGroup('Too Small'), /at least 10 Devikins \(your last sign-in counted 3\)/);
+  assert.deepEqual(await alice.groupCreateInfo().then((i) => [i.threshold === null || i.threshold === 10, i.nfts]), [true, 2]); // (badges carry bands: 3 → 2–4)
+  await assert.rejects(alice.createGroup('Too Small'), /at least 10 Devikins \(your last sign-in counted 2–4\)/);
   await alice.listGroups();
-  assert.deepEqual(await alice.groupCreateInfo(), { threshold: 10, nfts: 3, allowed: false });
+  assert.deepEqual(await alice.groupCreateInfo(), { threshold: 10, nfts: 2, allowed: false });
   const gid = await alice.startGroup('Fire Breeders', 'Trading Fire Devikins');
   await alice.postToGroup(gid, 'Welcome, Fire fans!');
   await assert.rejects(alice.postToGroup(gid, 'and again'), /Not yet/);
   const next = await alice.nextGroupPostAt(gid);
-  assert.equal(next.nfts, 3);
+  assert.equal(next.nfts, 2);
   // The owner may answer every 10 seconds, whatever she holds
   assert.deepEqual([next.owner, next.allowedAt - clock.t], [true, 10 * 1000]);
 

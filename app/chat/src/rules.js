@@ -41,6 +41,34 @@ export const MIN_POST_INTERVAL = 10 * 1000;
 export const POST_WINDOW = DAY;
 
 /**
+ * Holding bands (Raphael, 27 Oct 2026). A badge travels with every group
+ * post, so its Devikins count was readable by every member - and an exact
+ * count (say 37) points to the few wallets holding exactly that many. Badges
+ * now carry only the lower end of the band: 1 · 2–4 · 5–9 · 10–24 · 25–49 ·
+ * 50+. The posting allowance is that number (a holder of 37 posts 25 a day);
+ * members' Hubs keep checking it. Many wallets share each band.
+ */
+export const HOLDING_BANDS = [1, 2, 5, 10, 25, 50];
+
+/** The band (its lower end) for `nfts` Devikins; 0 for none. */
+export function holdingBand(nfts) {
+  const n = Math.floor(Number(nfts));
+  if (!Number.isFinite(n) || n < 1) return 0;
+  let band = 1;
+  for (const b of HOLDING_BANDS) if (n >= b) band = b;
+  return band;
+}
+
+/** "1", "2–4", "5–9", "10–24", "25–49", "50+" (for the screen). */
+export function bandLabel(nfts) {
+  const band = holdingBand(nfts);
+  if (!band) return '0';
+  const next = HOLDING_BANDS[HOLDING_BANDS.indexOf(band) + 1];
+  if (!next) return `${band}+`;
+  return next - 1 === band ? String(band) : `${band}–${next - 1}`;
+}
+
+/**
  * postsPerDay — how many group posts someone holding `nfts` NFTs may write
  * in any 24 hours: one per NFT. 1 → 1, 65 → 65. No NFTs → 0.
  */

@@ -85,6 +85,12 @@ the weekly limit on starting votes also stays with the wallet. Closed votes
 show which ballots counted – so the group can see that a voter no longer
 held the threshold at the end (accepted, 22 Oct 2026).
 
+**Badges carry bands, not counts** (27 Oct 2026): the signed note "this chat
+key holds Devikins" says only the band - 1 · 2–4 · 5–9 · 10–24 · 25–49 ·
+50+ (its lower end) - because it travels with every group post and an
+exact count would point other players to the few wallets holding exactly
+that many. The daily posting allowance is the band's lower end.
+
 ## Limits against misuse (all per day, so the free plan can't be used up)
 
 - 1,500 actions per player (contact requests, drop-code changes, group posts);

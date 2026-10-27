@@ -40,7 +40,7 @@ import { issueBadge, checkBadge, BADGE_DAYS } from '../../src/badge.js';
 import { isPublicKey } from '../../src/identity.js';
 import {
   contactRequestWait, DAY, MINUTE, MIN_POST_INTERVAL, nicknameKey,
-  GAME_ACCOUNT, votingThreshold, voteResult, voteDecidedEarly, canOpenVote, isPostingPaused, VOTE_DURATION,
+  GAME_ACCOUNT, votingThreshold, voteResult, voteDecidedEarly, canOpenVote, isPostingPaused, VOTE_DURATION, holdingBand, bandLabel,
 } from '../../src/rules.js';
 import { checkAuthHeader } from '../../src/httpAuth.js';
 import { signInText, voteProofText, isWalletSignature, devikinsHeld, walletPublicKey } from './kleverProof.js';
@@ -814,8 +814,9 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       // 2026), counted at the last sign-in: the badge this device was given.
       const badge = checkBadge(body.badge, { postmanPublicKey: postman.publicKey, holder: device, at: t });
       if (!badge.ok || (badge.account !== null && badge.account !== account.id)) refuse(403, 'Please sign in with your wallet again (it is checked once a week).');
-      if (badge.nfts < threshold) {
-        refuse(403, `Starting a group takes at least ${threshold} Devikins (your last sign-in counted ${badge.nfts}). "Update my holdings" counts again.`);
+      // (Badges carry bands since 27 Oct 2026: the threshold is compared by its band, e.g. 12 → 10.)
+      if (badge.nfts < holdingBand(threshold)) {
+        refuse(403, `Starting a group takes at least ${threshold} Devikins (your last sign-in counted ${bandLabel(badge.nfts)}). "Update my holdings" counts again.`);
       }
       spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
       const id = body.id;

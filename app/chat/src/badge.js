@@ -16,6 +16,7 @@
  *     It is a random number made by the postman, not the wallet.
  */
 
+import { holdingBand } from './rules.js';
 import { finalizeEvent, verifyEvent } from 'nostr-tools/pure';
 import { isPublicKey, secretBytes } from './identity.js';
 
@@ -33,8 +34,9 @@ const ACCOUNT = /^[0-9a-f]{32}$/;
  */
 export function issueBadge(postmanIdentity, { holder, nfts, now, days = BADGE_DAYS, account, expiresAtSec }) {
   if (!isPublicKey(holder)) throw new Error('Not a chat key.');
-  const n = Math.floor(Number(nfts));
-  if (!Number.isFinite(n) || n < 1) throw new Error('Only holders get a badge.');
+  // Only the band, never the exact count (rules.js, 27 Oct 2026).
+  const n = holdingBand(nfts);
+  if (n < 1) throw new Error('Only holders get a badge.');
   if (account !== undefined && !ACCOUNT.test(account)) throw new Error('Not an account number.');
   const issued = Math.floor(now / 1000);
   const end = Number.isInteger(expiresAtSec) ? expiresAtSec : issued + days * 86400;

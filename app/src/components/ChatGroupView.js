@@ -20,7 +20,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { MAX_TEXT_LENGTH } from '../../chat/src/rules.js';
+import { MAX_TEXT_LENGTH, bandLabel } from '../../chat/src/rules.js';
 import { MAX_PINS, POLL_MAX_OPTIONS as MAX_POLL_OPTIONS } from '../../chat/src/group.js';
 import ChatMessages from './ChatMessages';
 import { CHAT_WALLET, CHAT_HERE } from '../api/chatWallet';
@@ -183,7 +183,7 @@ export function GroupsCard({ groups, createInfo, busy, onOpen, onJoin, onCreate,
         <View style={styles.form} testID="chat-group-new-too-few">
           <Text style={[styles.note, { color: colors.secondaryText }]}>
             Starting a group takes at least {createInfo.threshold} Devikins, the same as voting (your last sign-in counted{' '}
-            {createInfo.nfts}). You can join any group.
+            {bandLabel(createInfo.nfts)}). You can join any group.
           </Text>
           <TouchableOpacity onPress={onUpdateHoldings} disabled={busy} testID="chat-group-new-update">
             <Text style={[styles.link, { color: colors.primary }]}>Update my holdings</Text>
@@ -519,7 +519,7 @@ function HoldingsNote({ votes, busy, onUpdateHoldings }) {
   return (
     <View style={styles.row}>
       <Text style={[styles.note, { color: colors.secondaryText, flex: 1 }]}>
-        Your chat sign-in counted {votes.myNfts ?? 0} Devikin{votes.myNfts === 1 ? '' : 's'}. Got more since?
+        Your chat sign-in counted {bandLabel(votes.myNfts ?? 0)} Devikin{votes.myNfts === 1 ? '' : 's'}. Got more since?
       </Text>
       <TouchableOpacity onPress={onUpdateHoldings} disabled={busy} testID="chat-update-holdings">
         <Text style={[styles.link, { color: colors.primary }]}>Update my holdings</Text>
@@ -816,8 +816,8 @@ export default function ChatGroupView({
             : next.owner
               ? "As the group's owner you can always answer (one post every 10 seconds)."
               : next.left === 0
-                ? `You've used your ${next.perDay} post${next.perDay === 1 ? '' : 's'} for the last 24 hours (one per Devikin). Next post possible in ${waitLabel(waitMs)}.`
-                : `${next.left} of ${next.perDay} post${next.perDay === 1 ? '' : 's'} left for today (one per Devikin, over 24 hours).${waitMs > 0 ? ' One moment…' : ''}`}
+                ? `You've used your ${next.perDay} post${next.perDay === 1 ? '' : 's'} for the last 24 hours (one per Devikin, counted in steps: ${bandLabel(next.nfts)}). Next post possible in ${waitLabel(waitMs)}.`
+                : `${next.left} of ${next.perDay} post${next.perDay === 1 ? '' : 's'} left for today (one per Devikin, counted in steps: ${bandLabel(next.nfts)}).${waitMs > 0 ? ' One moment…' : ''}`}
         </Text>
         <View style={styles.row}>
           <TextInput

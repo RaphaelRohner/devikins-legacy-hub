@@ -40,7 +40,7 @@
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { createIdentity, isPublicKey, secretBytes } from './identity.js';
 import { sealDirect, openDirect } from './direct.js';
-import { cleanText, nicknameKey, nextPostAllowedAt, MIN_POST_INTERVAL, POST_WINDOW, postsPerDay, postsLeft } from './rules.js';
+import { cleanText, nicknameKey, nextPostAllowedAt, MIN_POST_INTERVAL, POST_WINDOW, postsPerDay, postsLeft, holdingBand } from './rules.js';
 import {
   sealGroupPost, sealGroupReaction, sealGroupPoll, sealGroupPollVote, sealGroupPollClose, openGroupPost, acceptPosts, acceptReactions, readGroupKeyMessage, sealPinned, openPinned, groupKeyCheck, VOTE_REASON_KIND,
 } from './group.js';
@@ -1183,7 +1183,8 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     const badge = await getMe('badge');
     const check = badge ? checkBadge(badge, { postmanPublicKey: await postmanKey(), holder: identity.publicKey, at: now() }) : { ok: false };
     const nfts = check.ok ? check.nfts : 0;
-    return { threshold, nfts, allowed: threshold === null || nfts >= threshold };
+    // (badges carry bands: the threshold is compared by its band, as the postman does)
+    return { threshold, nfts, allowed: threshold === null || nfts >= holdingBand(threshold) };
   }
 
   async function forgetGroup(id) {
@@ -1492,7 +1493,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     const check = badge ? checkBadge(badge, { postmanPublicKey: await postmanKey(), holder: identity.publicKey, at: now() }) : { ok: false };
     return {
       threshold: r.threshold,
-      canVote: check.ok && check.nfts >= r.threshold,
+      canVote: check.ok && check.nfts >= holdingBand(r.threshold),
       canOpen: r.canOpen,
       // What this device's sign-in counted (the badge); "Update my holdings"
       // signs in again to refresh it.

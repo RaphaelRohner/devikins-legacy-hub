@@ -257,7 +257,7 @@ test('QR code: a device without a wallet joins with a one-time code, then gets t
   assert.equal(s.state, 'ready');
   assert.equal(s.nickname, 'Alice');
   assert.equal(s.linked, true);
-  assert.equal(s.nfts, 3);
+  assert.equal(s.nfts, 2); // (the band 2–4 of the linking device's badge)
   // One use only.
   const other = await w.blank();
   await assert.rejects(() => other.finishLink(link.shown), /expired or was already used/);

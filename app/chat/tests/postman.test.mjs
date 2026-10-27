@@ -128,7 +128,7 @@ test('sign-in: a wallet holding Devikins gets a badge for the chat key (no walle
   assert.equal(r.status, 200);
   assert.equal(r.body.nfts, 7);
   const badge = checkBadge(JSON.parse(JSON.stringify(r.body.badge)), { postmanPublicKey: office.postmanPublicKey, holder: device.publicKey, at: Date.UTC(2026, 9, 22) });
-  assert.deepEqual([badge.ok, badge.nfts, badge.account], [true, 7, r.body.account]);
+  assert.deepEqual([badge.ok, badge.nfts, badge.account], [true, 5, r.body.account]); // the band 5–9, not the exact 7
   assert.ok(!JSON.stringify(r.body.badge).includes(wallet.address));
   assert.equal(r.body.verifiedUntil, Date.UTC(2026, 9, 28, 12, 0, 0));
 });
@@ -374,7 +374,7 @@ test('groups: created at the postman, listed, joined with a member\'s help; new 
   const fire = newGroup('Fire Breeders', 'Trading Fire Devikins');
   // Starting a group takes the voting threshold (10), as counted at the last sign-in.
   const tooFew = await call(a.device, 'POST', '/groups/create', { ...fire.body, badge: a.badge });
-  assert.deepEqual([tooFew.status, tooFew.body.error], [403, 'Starting a group takes at least 10 Devikins (your last sign-in counted 3). "Update my holdings" counts again.']);
+  assert.deepEqual([tooFew.status, tooFew.body.error], [403, 'Starting a group takes at least 10 Devikins (your last sign-in counted 2–4). "Update my holdings" counts again.']);
   assert.equal((await call(b.device, 'POST', '/groups/create', fire.body)).status, 403); // no badge
   assert.equal((await call(b.device, 'POST', '/groups/create', { ...fire.body, badge: a.badge })).status, 403); // someone else's
   assert.equal((await call(b.device, 'GET', '/groups')).body.createThreshold, 10);
@@ -423,15 +423,13 @@ test('groups: created at the postman, listed, joined with a member\'s help; new 
   assert.equal(aliceSees.length, 3);
   const newer = (await call(a.device, 'GET', `/group/posts?group=${group.id}&after=${p1.body.seq}`)).body.posts;
   assert.equal(newer.length, 2);
-  // Alice holds 3 Devikins: 3 posts a day - a 4th within 24 h is dropped by every reader.
-  clock.t += MINUTE;
-  assert.equal((await post(a, 'Third')).status, 200);
+  // Alice holds 3 Devikins: band 2–4, so 2 posts a day - a 3rd within 24 h is dropped by every reader.
   clock.t += MINUTE;
   assert.equal((await post(a, 'One too many')).status, 200);
   const all = (await call(a.device, 'GET', `/group/posts?group=${group.id}`)).body.posts;
   const items = all.map((p) => ({ post: openGroupPost(p.envelope, { groupId: group.id, keys: { 1: group.key } }), receivedAt: p.receivedAt }));
   const { shown, dropped } = acceptPosts(items, { postmanPublicKey: office.postmanPublicKey });
-  assert.deepEqual(shown.map((x) => x.post.text), ['Welcome!', 'Hi all', 'Hi Bob', 'Third']);
+  assert.deepEqual(shown.map((x) => x.post.text), ['Welcome!', 'Hi all', 'Hi Bob']);
   assert.deepEqual(dropped.map((d) => [d.item.post.text, d.reason]), [['One too many', 'too early']]);
   const members = (await call(b.device, 'GET', `/groups/members?group=${group.id}`)).body.members;
   assert.deepEqual(members.map((m) => m.nickname), ['Alice', 'Bob']);

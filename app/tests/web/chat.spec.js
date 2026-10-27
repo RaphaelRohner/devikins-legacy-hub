@@ -305,7 +305,7 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await signInAs(bob.page, 'Bob');
 
   // Starting a group takes as many Devikins as voting (10 here; 24 Oct 2026)
-  await expect(alice.page.getByTestId('chat-group-new-too-few')).toContainText('Starting a group takes at least 10 Devikins, the same as voting (your last sign-in counted 3).');
+  await expect(alice.page.getByTestId('chat-group-new-too-few')).toContainText('Starting a group takes at least 10 Devikins, the same as voting (your last sign-in counted 2–4).');
   await expect(alice.page.getByTestId('chat-group-new')).toHaveCount(0);
   await aliceWallet.setHoldings(12);
   await alice.page.getByTestId('chat-group-new-update').click();
@@ -347,12 +347,12 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await expect(bob.page.getByTestId('chat-group-pinned')).toContainText('Rules: be nice, no spam.');
   await expect(bob.page.getByText('No posts yet since you joined.')).toBeVisible();
   await expect(bob.page.getByText('Welcome, Fire fans!')).toHaveCount(0);
-  await expect(bob.page.getByTestId('chat-group-limit')).toContainText('24 of 24 posts left for today');
+  await expect(bob.page.getByTestId('chat-group-limit')).toContainText('10 of 10 posts left for today'); // (24 Devikins: band 10–24)
   await bob.page.getByTestId('chat-group-draft').fill('Hi everyone');
   await bob.page.getByTestId('chat-group-draft').press('Enter');
   await expect(bob.page.getByText('Hi everyone')).toBeVisible();
   // One of his 24 posts for the day is used
-  await expect(bob.page.getByTestId('chat-group-limit')).toContainText('23 of 24 posts left for today', { timeout: 30_000 });
+  await expect(bob.page.getByTestId('chat-group-limit')).toContainText('9 of 10 posts left for today', { timeout: 30_000 });
 
   // Alice sees Bob's post with his name
   await expect(alice.page.getByText('Hi everyone')).toBeVisible();
@@ -406,7 +406,7 @@ test('removal votes: a member starts a vote with a reason, another supports it, 
   await expect(bob.page.getByTestId('chat-group-member')).toHaveCount(3);
   // His sign-in counted 2: no vote link yet. He now holds 12 and updates.
   await expect(bob.page.getByTestId('chat-vote-start')).toHaveCount(0);
-  await expect(bob.page.getByTestId('chat-group-members')).toContainText('Your chat sign-in counted 2 Devikins');
+  await expect(bob.page.getByTestId('chat-group-members')).toContainText('Your chat sign-in counted 2–4 Devikins');
   await bobWallet.setHoldings(12);
   await bob.page.getByTestId('chat-update-holdings').click();
   await expect(bob.page.getByTestId('chat-update-holdings')).toHaveCount(0, { timeout: 30_000 });
