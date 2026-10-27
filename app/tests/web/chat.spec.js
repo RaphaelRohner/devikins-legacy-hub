@@ -72,7 +72,7 @@ async function openPlayer(browser, postman, wallet, { extension = true, openChat
     return route.fulfill({ status: r.status, contentType: 'application/json', headers: cors, body: await r.text() });
   });
   const page = await context.newPage();
-  await page.addInitScript(() => { window.__HUB_CHAT_MAIL_MS = 700; });
+  await page.addInitScript(() => { window.__HUB_CHAT_MAIL_MS = 700; window.__HUB_CHAT_DEVICES_MS = 1000; });
   if (extension) {
     await page.exposeFunction('__testSign', (text) => wallet.sign(text));
     await page.addInitScript((address) => {
@@ -456,4 +456,51 @@ test('removal votes: a member starts a vote with a reason, another supports it, 
 
   for (const p of [alice, bob, max]) await p.context.close();
   postman.stop();
+});
+
+test('linked devices: the same player in a second browser gets the history after a yes on the first', async ({ browser }) => {
+  const postman = await startPostman();
+  try {
+    const aliceWallet = await postman.newWallet(3);
+    const alice = await openPlayer(browser, postman, aliceWallet);
+    const bob = await openPlayer(browser, postman, await postman.newWallet(3));
+    await signInAs(alice.page, 'Alice');
+    await signInAs(bob.page, 'Bob');
+    await alice.page.getByTestId('chat-search').fill('Bob');
+    await alice.page.getByTestId('chat-search-button').click();
+    await alice.page.getByTestId('chat-ask').click();
+    await bob.page.getByTestId('chat-accept').click({ timeout: 15_000 });
+    await alice.page.getByTestId('chat-contact').filter({ hasText: 'Bob' }).click();
+    await expect(alice.page.getByTestId('chat-draft')).toBeEnabled({ timeout: 15_000 });
+    await alice.page.getByTestId('chat-draft').fill('Before the phone');
+    await alice.page.getByTestId('chat-send').click();
+    await alice.page.getByLabel('Back').first().click();
+
+    // The same wallet in a second browser: straight in (same account, same nickname), no history yet.
+    const second = await openPlayer(browser, postman, aliceWallet);
+    await second.page.getByTestId('chat-sign-in').click();
+    await expect(second.page.getByText('Chat · Alice')).toBeVisible();
+    await expect(second.page.getByTestId('chat-contact')).toHaveCount(0);
+
+    // The first browser offers to copy the history; yes.
+    await expect(alice.page.getByTestId('chat-new-device')).toBeVisible({ timeout: 20_000 });
+    await expect(alice.page.getByTestId('chat-new-device')).toContainText('Website signed in with your wallet');
+    await alice.page.getByTestId('chat-copy-history').click();
+    await expect(alice.page.getByTestId('chat-new-device')).toHaveCount(0);
+    await expect(alice.page.getByTestId('chat-device')).toHaveCount(1);
+
+    // The second browser has the contact and the message, and can write; Bob gets it.
+    await expect(second.page.getByTestId('chat-contact').filter({ hasText: 'Bob' })).toBeVisible({ timeout: 20_000 });
+    await second.page.getByTestId('chat-contact').filter({ hasText: 'Bob' }).click();
+    await expect(second.page.getByText('Before the phone')).toBeVisible();
+    await second.page.getByTestId('chat-draft').fill('From my second browser');
+    await second.page.getByTestId('chat-send').click();
+    await bob.page.getByTestId('chat-contact').filter({ hasText: 'Alice' }).click();
+    await expect(bob.page.getByText('From my second browser')).toBeVisible({ timeout: 20_000 });
+    // ... and the first browser shows it as Alice's own.
+    await alice.page.getByTestId('chat-contact').filter({ hasText: 'Bob' }).click();
+    await expect(alice.page.getByText('From my second browser')).toBeVisible({ timeout: 20_000 });
+  } finally {
+    postman.stop();
+  }
 });

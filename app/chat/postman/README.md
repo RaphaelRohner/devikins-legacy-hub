@@ -31,6 +31,12 @@ Keeps:
   holds it;
 - sealed **1:1 envelopes** until the device confirms it has them (at most
   30 days), and sealed **group envelopes** once per group for 30 days;
+- **linked devices** (27 Oct 2026): a player's devices (website, phone …)
+  are one account. Envelopes a device sends to its player's *own* other
+  devices (copies of what it wrote or changed, and once the history for a
+  new device, in parts) wait like 1:1 envelopes and are deleted once picked
+  up; the postman can't read them. It keeps the day each device was added,
+  and a player can take one of their devices out (`/me/devices/remove`);
 - **open groups** (stage 3): name, description, owner (account number),
   members (account numbers and from which post on they may read), players
   asking to join with the drop code they gave for that, the owner's
@@ -78,7 +84,9 @@ held the threshold at the end (accepted, 22 Oct 2026).
 - 1,500 actions per player (contact requests, drop-code changes, group posts);
 - 300 envelopes per drop code (one contact can't flood a mailbox; blocking
   = removing that code);
-- at most 500 envelopes waiting per device, 5 devices per player, 1 group
+- 3,000 envelopes per player to their own other devices (linked devices);
+- at most 500 envelopes waiting per device (a full one is skipped, so the
+  player's other devices still get theirs), 5 devices per player, 1 group
   post every 10 seconds (the daily allowance - posts per 24 h = Devikins - is
   checked by every member's Hub), group envelopes up to 24 KB (a 2,000-character post fits),
   64 KB per 1:1 envelope;

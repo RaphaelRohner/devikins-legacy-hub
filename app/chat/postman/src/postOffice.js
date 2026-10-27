@@ -64,6 +64,12 @@ export const MAX_GROUP_ENVELOPE_CHARS = 24 * 1024;
 export const DAILY_ACTIONS_PER_PLAYER = 1500;
 /** … and of envelopes dropped with one drop code. */
 export const DAILY_DROPS_PER_CODE = 300;
+/**
+ * Linked devices (27 Oct 2026): envelopes a player's device sends to its
+ * OWN other devices per day (copies of what it sent and changed, and once
+ * the whole history for a new device, in parts).
+ */
+export const DAILY_SELF_ITEMS = 3000;
 export const MAX_GROUPS_CREATED_PER_PLAYER = 5;
 export const MAX_GROUPS = 1000;
 /**
@@ -230,13 +236,14 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
   }
 
   function deliver(items, kind, t) {
-    for (const item of items) {
-      const waiting = row('SELECT COUNT(*) AS n FROM mail WHERE device = ?', item.to).n;
-      if (waiting >= MAX_WAITING_PER_DEVICE) refuse(507, "This player's mailbox is full; they need to open the Hub first.");
-    }
+    // A device whose mailbox is full (e.g. one that's never opened any more)
+    // is skipped, so the player's other devices still get the envelope
+    // (linked devices, 27 Oct 2026). Only if none can take it is it refused.
+    const open = items.filter((item) => row('SELECT COUNT(*) AS n FROM mail WHERE device = ?', item.to).n < MAX_WAITING_PER_DEVICE);
+    if (open.length === 0) refuse(507, "This player's mailbox is full; they need to open the Hub first.");
     const hour = Math.floor(t / HOUR_MS) * HOUR_MS;
-    for (const item of items) run('INSERT INTO mail (device, kind, envelope, at) VALUES (?, ?, ?, ?)', item.to, kind, item.text, hour);
-    return items.length;
+    for (const item of open) run('INSERT INTO mail (device, kind, envelope, at) VALUES (?, ?, ?, ?)', item.to, kind, item.text, hour);
+    return open.length;
   }
 
   const isGroupId = (g) => typeof g === 'string' && HEX32.test(g);
@@ -524,8 +531,39 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
         nickname: account.nickname ?? null,
         verifiedUntil: account.verified_until,
         devices: devicesOf(account.id),
+        // (with the day each was added - for the list of linked devices)
+        deviceList: rows('SELECT key, added FROM devices WHERE account = ? ORDER BY added', account.id).map((d) => ({ key: d.key, added: d.added })),
         nextRequestAt: nextRequestAt(account.wallet_fp, t),
       };
+    },
+
+    // --- linked devices (27 Oct 2026) ------------------------------------------
+    // A player's devices (website, phone …) form one account. They keep each
+    // other up to date with sealed envelopes sent to the account's OTHER
+    // devices only; the postman can't read them, as with all mail.
+
+    'POST /self': ({ device, body, t }) => {
+      const account = accountOf(device);
+      if (!account) refuse(403, 'Please sign in with your wallet first.');
+      const items = checkItems(body.items);
+      const allowed = new Set(devicesOf(account.id).filter((d) => d !== device));
+      if (!items.every((i) => allowed.has(i.to))) refuse(400, "One envelope isn't for one of your other devices.");
+      spend(`self:${account.id}`, DAILY_SELF_ITEMS, t, items.length);
+      return { delivered: deliver(items, 'self', t) };
+    },
+
+    /** Takes one of the player's OTHER devices out of the account (e.g. a lost phone). */
+    'POST /me/devices/remove': ({ device, body }) => {
+      const account = accountOf(device);
+      if (!account) refuse(403, 'Please sign in with your wallet first.');
+      const key = body.key;
+      if (key === device) refuse(400, 'To take this device out, leave the chat on it.');
+      if (!isPublicKey(key) || !devicesOf(account.id).includes(key)) refuse(404, 'That is not one of your devices.');
+      run('DELETE FROM devices WHERE key = ?', key);
+      run('DELETE FROM mail WHERE device = ?', key);
+      run('DELETE FROM signins WHERE device = ?', key);
+      run('DELETE FROM proofs WHERE device = ?', key);
+      return { removed: true };
     },
 
     'POST /nickname': ({ device, body, t }) => {

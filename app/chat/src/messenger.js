@@ -22,6 +22,19 @@
  *   - Declining a request: it's simply forgotten; they're not told.
  *
  * Message history stays only in this local database.
+ *
+ * Linked devices (27 Oct 2026): signing in with the same wallet on another
+ * device (website, phone …) makes it part of the same account. The devices
+ * keep each other up to date with sealed "sync" envelopes sent only to the
+ * account's own other devices (postman: POST /self):
+ *   - what I write in a 1:1 chat, and every change to a contact (request,
+ *     accept, block, remove …), and groups I start or ask to join;
+ *   - once, when a new device turns up and I say yes on a device that has
+ *     the history: all contacts, messages, groups (with their keys), posts,
+ *     polls and votes, in parts (the "history copy").
+ * A new device never gets history without a yes on an existing one.
+ * Messages from contacts reach every device directly (each sender seals one
+ * envelope per device; device lists are refreshed from the postman).
  */
 
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
@@ -106,6 +119,12 @@ CREATE TABLE IF NOT EXISTS chat_vote_history (grp TEXT NOT NULL, id TEXT NOT NUL
   PRIMARY KEY (grp, id));
 CREATE TABLE IF NOT EXISTS chat_group_names (grp TEXT NOT NULL, device TEXT NOT NULL, nickname TEXT NOT NULL, PRIMARY KEY (grp, device));
 CREATE TABLE IF NOT EXISTS chat_group_keys (grp TEXT NOT NULL, epoch INTEGER NOT NULL, key TEXT NOT NULL, PRIMARY KEY (grp, epoch));
+-- Linked devices (27 Oct 2026): this account's OTHER devices ('new' = not offered the history yet),
+-- sync envelopes waiting to go out, and parts of a history copy coming in.
+CREATE TABLE IF NOT EXISTS chat_devices (key TEXT PRIMARY KEY NOT NULL, added INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL, label TEXT);
+CREATE TABLE IF NOT EXISTS chat_sync_out (id INTEGER PRIMARY KEY AUTOINCREMENT, device TEXT NOT NULL, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS chat_sync_in (transfer TEXT NOT NULL, part INTEGER NOT NULL, total INTEGER NOT NULL, data TEXT NOT NULL,
+  at INTEGER NOT NULL, PRIMARY KEY (transfer, part));
 `;
 
 /** Group states on this device. */
@@ -124,6 +143,12 @@ const GROUP_FORMAT = 3; // 3 = polls (25 Oct 2026)
 
 const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_reactions', 'chat_group_polls',
   'chat_group_poll_votes', 'chat_vote_history', 'chat_group_names', 'chat_group_keys'];
+const DEVICE_TABLES = ['chat_devices', 'chat_sync_out', 'chat_sync_in'];
+
+/** A history copy goes in parts this long (each sealed envelope must stay under 64 KB). */
+export const SYNC_PART_CHARS = 6000;
+/** At most this many parts (about 2.4 MB of history). */
+export const SYNC_MAX_PARTS = 400;
 
 /** Contact states. */
 export const STATUS = {
@@ -149,9 +174,12 @@ const HEX64 = /^[0-9a-f]{64}$/;
  * createMessenger
  *   db:        { execAsync, runAsync, getAllAsync } (expo-sqlite style)
  *   postmanUrl: the postman's address
+ *   deviceLabel: what kind of device this is ("Website", "Android app"), shown
+ *              in the list of linked devices on the player's other devices
+ *   devicesCheckEveryMs: how often to ask the postman for the account's devices
  *   fetchFn, now: for tests
  */
-export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Date.now() }) {
+export async function createMessenger({ db, postmanUrl, deviceLabel = '', devicesCheckEveryMs = 60 * 1000, fetchFn, now = () => Date.now() }) {
   await db.execAsync(SCHEMA);
   const all = (sql, params = []) => db.getAllAsync(sql, params);
   const first = async (sql, params = []) => (await all(sql, params))[0] ?? null;
@@ -195,6 +223,12 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
   }
   hexToBytes(identity.secretKey); // (throws if damaged)
   let postman = createPostmanClient({ baseUrl: postmanUrl, identity, fetchFn, now });
+
+  // This account's OTHER devices (linked devices), as last told by the postman.
+  let ownDevices = (await all('SELECT key FROM chat_devices')).map((r) => r.key);
+  let devicesCheckedAt = 0;
+  /** Was this chat key (a group post's author, say) one of mine - this device or another of my devices? */
+  const isMe = (key) => key === identity.publicKey || ownDevices.includes(key);
 
   const contactRow = (r) => r && ({
     id: r.id,
@@ -312,18 +346,44 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     const t = now();
     if (existing) {
       await run('UPDATE chat_contacts SET devices = ?, last_at = ? WHERE id = ?', [JSON.stringify(player.devices), t, existing.id]);
+      await syncContact(existing.id);
       return existing.id;
     }
     const r = await run(
       'INSERT INTO chat_contacts (nickname, devices, my_code, status, created, last_at) VALUES (?, ?, ?, ?, ?, ?)',
       [player.nickname, JSON.stringify(player.devices), code, STATUS.OUTGOING, t, t],
     );
+    await syncContact(r.lastInsertRowId);
     return r.lastInsertRowId;
   }
 
+  /**
+   * The contact's current devices, asked from the postman with the drop code
+   * they gave me (they may have linked a phone since). Devices that belong to
+   * another contact are never taken. Keeps the old list if the postman can't
+   * be asked.
+   */
+  async function freshDevices(c) {
+    try {
+      let devices = null;
+      if (c.theirCode) devices = (await postman.devicesFor(c.theirCode)).devices;
+      else if (c.status === STATUS.OUTGOING) devices = (await playerAt(c.nickname))?.devices ?? null;
+      if (!Array.isArray(devices)) return c;
+      const theirs = await ownDevicesOnly(devices.filter(isPublicKey), c.id);
+      if (theirs.length && JSON.stringify(theirs) !== JSON.stringify(c.devices)) {
+        await run('UPDATE chat_contacts SET devices = ? WHERE id = ?', [JSON.stringify(theirs), c.id]);
+        return { ...c, devices: theirs };
+      }
+    } catch {
+      // (keep the list we have)
+    }
+    return c;
+  }
+
   async function sendControl(contact, type, body) {
-    const items = sealDirect({ from: identity, toDevices: contact.devices, type, body });
-    await postman.drop(contact.theirCode, items);
+    const c = contact.id ? await freshDevices(contact) : contact;
+    const items = sealDirect({ from: identity, toDevices: c.devices, type, body });
+    await postman.drop(c.theirCode, items);
   }
 
   /** Accept a contact request. */
@@ -342,12 +402,16 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       throw e;
     }
     await run('UPDATE chat_contacts SET my_code = ?, status = ?, last_at = ?, unread = 0 WHERE id = ?', [code, STATUS.ACCEPTED, now(), id]);
+    await syncContact(id);
     return id;
   }
 
   /** Decline a contact request: it's forgotten; they aren't told. */
   async function declineContact(id) {
+    const c = await contactById(id);
+    if (!c || c.status !== STATUS.INCOMING) return;
     await run('DELETE FROM chat_contacts WHERE id = ? AND status = ?', [id, STATUS.INCOMING]);
+    await syncContactGone(c.nickname);
   }
 
   /** Block: take back my drop code, so the postman refuses their envelopes. */
@@ -357,6 +421,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     if (c.status === STATUS.BLOCKED) return;
     if (c.myCode) await postman.codes({ remove: [c.myCode] });
     await run('UPDATE chat_contacts SET status = ?, my_code = NULL, before_block = ? WHERE id = ?', [STATUS.BLOCKED, c.status, id]);
+    await syncContact(id);
   }
 
   /** Unblock: a new drop code, sent to them, so they can write again. */
@@ -366,16 +431,19 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     // A blocked request goes back to being an open request (not accepted).
     if (c.beforeBlock === STATUS.INCOMING && c.theirCode) {
       await run('UPDATE chat_contacts SET status = ?, before_block = NULL WHERE id = ?', [STATUS.INCOMING, id]);
+      await syncContact(id);
       return;
     }
     // Never accepted by them (or no way to reach them): simply forget it.
     if (c.beforeBlock !== STATUS.ACCEPTED || !c.theirCode) {
       await run('DELETE FROM chat_contacts WHERE id = ?', [id]);
+      await syncContactGone(c.nickname);
       return;
     }
     const code = await newCode();
     await sendControl(c, 'contact-accept', { nickname: await getMe('nickname'), code, devices: [identity.publicKey] });
     await run('UPDATE chat_contacts SET my_code = ?, status = ?, before_block = NULL WHERE id = ?', [code, STATUS.ACCEPTED, id]);
+    await syncContact(id);
   }
 
   /** Remove a contact from the list (blocks them first, so they can't write any more). */
@@ -385,6 +453,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     if (c.myCode) await postman.codes({ remove: [c.myCode] }).catch(() => {});
     await run('DELETE FROM chat_messages WHERE contact = ?', [id]);
     await run('DELETE FROM chat_contacts WHERE id = ?', [id]);
+    await syncContactGone(c.nickname);
   }
 
   // --- messages ------------------------------------------------------------
@@ -412,6 +481,8 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     }
     await run('INSERT INTO chat_messages (contact, mine, text, sent_at, received_at) VALUES (?, 1, ?, ?, ?)', [contactId, clean, t, t]);
     await run('UPDATE chat_contacts SET last_at = ?, ended = 0 WHERE id = ?', [t, contactId]);
+    // (my other devices show it too)
+    await queueSync({ t: 'msg', peer: c.nickname, text: clean, sentAt: t });
   }
 
   // --- the mailbox -----------------------------------------------------------
@@ -436,10 +507,28 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     return devices.filter((d) => !taken.has(d));
   }
 
+  // (contacts' device lists are refreshed at most once per mail collection)
+  let refreshedThisRun = false;
+
   async function handle(opened) {
     const { from, type } = opened;
     const t = now();
-    const known = await contactByDevice(from);
+    let known = await contactByDevice(from);
+
+    if (type === 'sync') {
+      // Only from one of MY other devices (as the postman lists them now).
+      if (!ownDevices.includes(from)) await refreshDevices({ force: true });
+      if (!ownDevices.includes(from)) return 'not my device';
+      return applySync(from, opened.data || {});
+    }
+
+    // A contact writing from a device we don't know yet (e.g. they linked
+    // their phone): ask the postman for my contacts' current devices once.
+    if (!known && (type === 'text' || type === 'contact-accept') && !refreshedThisRun) {
+      refreshedThisRun = true;
+      for (const c of await listContacts()) if (c.status !== STATUS.BLOCKED) await freshDevices(c);
+      known = await contactByDevice(from);
+    }
 
     if (type === 'contact-request') {
       const { nickname, code } = opened.data || {};
@@ -491,8 +580,17 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       // A member's Hub let us into a group we asked to join.
       let g;
       try { g = readGroupKeyMessage(opened.data); } catch { return 'damaged'; }
-      const mine = await first('SELECT * FROM chat_groups WHERE id = ?', [g.id]);
-      if (!mine) return 'ignored';
+      let mine = await first('SELECT * FROM chat_groups WHERE id = ?', [g.id]);
+      if (!mine) {
+        // Asked to join (or let in) from another of my devices: the postman
+        // knows the account is in it or asking, so this device takes the key too.
+        const { groups } = await postman.groups();
+        const there = groups.find((x) => x.id === g.id);
+        if (!there || !(there.member || there.asking)) return 'ignored';
+        await run('INSERT OR IGNORE INTO chat_groups (id, name, description, owner, status, joined_at) VALUES (?, ?, ?, ?, ?, ?)',
+          [g.id, there.name, there.description ?? '', there.owner ?? null, GROUP_STATUS.ASKING, t]);
+        mine = await first('SELECT * FROM chat_groups WHERE id = ?', [g.id]);
+      }
       const isNewEpoch = mine.status === GROUP_STATUS.MEMBER && mine.key && g.epoch > mine.epoch;
       if (!isNewEpoch && mine.status !== GROUP_STATUS.ASKING && mine.key) return 'ignored';
       // Only the group's real (current) key: it must match the fingerprint
@@ -556,6 +654,8 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
 
   async function collectMail() {
     const counts = { messages: 0, requests: 0, accepted: 0 };
+    refreshedThisRun = false;
+    await refreshDevices().catch(() => {});
     const { items } = await postman.mail();
     const done = [];
     let failure = null;
@@ -584,9 +684,15 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       if (result === 'accepted') counts.accepted += 1;
       if (result === 'joined') counts.joined = (counts.joined || 0) + 1;
       if (result === 'new key') counts.newKeys = (counts.newKeys || 0) + 1;
+      if (result === 'synced' || result === 'history') counts.synced = (counts.synced || 0) + 1;
+      if (result === 'history') counts.history = (counts.history || 0) + 1;
     }
     if (done.length) await postman.mailDone(done);
     await run('DELETE FROM chat_seen WHERE at < ?', [now() - SEEN_KEEP]);
+    // (parts of a history copy that never completed)
+    await run('DELETE FROM chat_sync_in WHERE at < ?', [now() - SEEN_KEEP]);
+    // What's still waiting to go to my other devices (e.g. the rest of a history copy).
+    await flushSync().catch(() => {});
     if (failure) throw failure;
     if (!leaving && (await first('SELECT id FROM chat_groups LIMIT 1'))) await syncGroups();
     return counts;
@@ -602,12 +708,332 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       leaving = false;
       throw e;
     }
-    for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES]) await run(`DELETE FROM ${table}`);
+    for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES, ...DEVICE_TABLES]) await run(`DELETE FROM ${table}`);
+    ownDevices = [];
     // A new chat key for a fresh start (the old one is forgotten at the postman).
     identity = createIdentity();
     await setMe('identity', identity);
     postman = createPostmanClient({ baseUrl: postmanUrl, identity, fetchFn, now });
     leaving = false;
+  }
+
+  // --- linked devices (27 Oct 2026) -------------------------------------------
+
+  /** True if this device has something worth copying to a new one. */
+  async function hasHistory() {
+    return (await all('SELECT id FROM chat_contacts LIMIT 1')).length > 0 || (await all('SELECT id FROM chat_groups LIMIT 1')).length > 0;
+  }
+
+  /**
+   * Asks the postman which devices belong to this account (at most once a
+   * minute, `devicesCheckEveryMs`, unless `force`). Devices seen for the first time are noted: on a
+   * device that has a history they're 'new' (the screen offers to copy the
+   * history to them); each new one gets a short hello with this device's kind.
+   */
+  async function refreshDevices({ force = false } = {}) {
+    if (!force && now() - devicesCheckedAt < devicesCheckEveryMs) return ownDevices;
+    if (!(await getMe('account'))) return ownDevices;
+    const me = await postman.me();
+    devicesCheckedAt = now();
+    if (!me?.signedIn) return ownDevices;
+    const listed = Array.isArray(me.deviceList) ? me.deviceList : (me.devices || []).map((key) => ({ key, added: 0 }));
+    const others = listed.filter((d) => d && d.key !== identity.publicKey && isPublicKey(d.key));
+    const keys = new Set(others.map((d) => d.key));
+    const known = new Set((await all('SELECT key FROM chat_devices')).map((r) => r.key));
+    const offer = await hasHistory();
+    const fresh = [];
+    for (const d of others) {
+      if (known.has(d.key)) continue;
+      await run('INSERT OR IGNORE INTO chat_devices (key, added, state) VALUES (?, ?, ?)', [d.key, Number(d.added) || 0, offer ? 'new' : 'known']);
+      fresh.push(d.key);
+    }
+    for (const key of known) {
+      if (keys.has(key)) continue;
+      // (taken out of the account: forget it, and what was waiting for it)
+      await run('DELETE FROM chat_devices WHERE key = ?', [key]);
+      await run('DELETE FROM chat_sync_out WHERE device = ?', [key]);
+    }
+    ownDevices = [...keys];
+    if (fresh.length && deviceLabel) await queueSync({ t: 'hello', label: deviceLabel }, fresh);
+    return ownDevices;
+  }
+
+  /**
+   * Queues a sync envelope for my other devices (all of them, or `devices`)
+   * and tries to send right away; what can't go now goes with the next mail
+   * check. Never throws: the change itself has already happened here.
+   */
+  async function queueSync(body, devices = ownDevices) {
+    if (!devices.length) return;
+    const text = JSON.stringify(body);
+    for (const d of devices) await run('INSERT INTO chat_sync_out (device, body) VALUES (?, ?)', [d, text]);
+    await flushSync().catch(() => {});
+  }
+
+  const syncContact = async (id) => {
+    const c = await first('SELECT * FROM chat_contacts WHERE id = ?', [id]);
+    if (c) await queueSync({ t: 'contact', c });
+  };
+  const syncContactGone = (nickname) => queueSync({ t: 'contact', c: { nickname }, deleted: true });
+  const syncGroup = async (id) => {
+    const g = await first('SELECT * FROM chat_groups WHERE id = ?', [id]);
+    if (g) await queueSync({ t: 'group', g, keys: await all('SELECT * FROM chat_group_keys WHERE grp = ?', [id]) });
+  };
+
+  let flushRun = null;
+  /** Sends what's waiting for my other devices (one run at a time, in order). */
+  function flushSync() {
+    if (!flushRun) flushRun = sendQueued().finally(() => { flushRun = null; });
+    return flushRun;
+  }
+  async function sendQueued() {
+    for (;;) {
+      const batch = await all('SELECT * FROM chat_sync_out ORDER BY id LIMIT 10');
+      if (!batch.length) return;
+      const live = batch.filter((b) => ownDevices.includes(b.device));
+      for (const b of batch) if (!ownDevices.includes(b.device)) await run('DELETE FROM chat_sync_out WHERE id = ?', [b.id]);
+      if (!live.length) continue;
+      const items = live.flatMap((b) => sealDirect({ from: identity, toDevices: [b.device], type: 'sync', body: JSON.parse(b.body) }));
+      await postman.self(items);
+      for (const b of live) await run('DELETE FROM chat_sync_out WHERE id = ?', [b.id]);
+    }
+  }
+
+  /** What a new device gets: everything but this device's own key and sign-in. */
+  async function historyData() {
+    const contacts = await all('SELECT * FROM chat_contacts ORDER BY id');
+    const nameOf = new Map(contacts.map((c) => [c.id, c.nickname]));
+    return {
+      kind: 'history',
+      version: 1,
+      contacts,
+      // (by the contact's nickname: the other device numbers its contacts itself)
+      messages: (await all('SELECT * FROM chat_messages ORDER BY id'))
+        .filter((m) => nameOf.has(m.contact))
+        .map((m) => ({ peer: nameOf.get(m.contact), mine: m.mine, text: m.text, sent_at: m.sent_at, received_at: m.received_at })),
+      groups: await all('SELECT * FROM chat_groups'),
+      groupKeys: await all('SELECT * FROM chat_group_keys'),
+      groupPosts: await all('SELECT * FROM chat_group_posts ORDER BY id'),
+      groupReactions: await all('SELECT * FROM chat_group_reactions'),
+      groupPolls: await all('SELECT * FROM chat_group_polls'),
+      groupPollVotes: await all('SELECT * FROM chat_group_poll_votes'),
+      voteHistory: await all('SELECT * FROM chat_vote_history'),
+      groupLast: await all('SELECT * FROM chat_group_last'),
+      groupNames: await all('SELECT * FROM chat_group_names'),
+    };
+  }
+
+  /**
+   * Copies all contacts and history to one of my other devices (after the
+   * player said yes on this one). Sent in parts; what doesn't go now goes
+   * with the next mail checks. → { parts }
+   */
+  async function copyHistoryTo(key) {
+    await refreshDevices({ force: true });
+    if (!ownDevices.includes(key)) throw new Error('That device is no longer linked to your chat.');
+    const text = JSON.stringify(await historyData());
+    const total = Math.max(1, Math.ceil(text.length / SYNC_PART_CHARS));
+    if (total > SYNC_MAX_PARTS) throw new Error('Your chat history is too big to copy in one go.');
+    const transfer = randomCode().slice(0, 16);
+    for (let part = 0; part < total; part += 1) {
+      const data = text.slice(part * SYNC_PART_CHARS, (part + 1) * SYNC_PART_CHARS);
+      await run('INSERT INTO chat_sync_out (device, body) VALUES (?, ?)', [key, JSON.stringify({ t: 'history', transfer, part, total, data })]);
+    }
+    await run("UPDATE chat_devices SET state = 'known' WHERE key = ?", [key]);
+    await flushSync().catch(() => {});
+    return { parts: total };
+  }
+
+  /** "Not now": the new device isn't offered the history again. */
+  async function dismissNewDevice(key) {
+    await run("UPDATE chat_devices SET state = 'known' WHERE key = ?", [key]);
+  }
+
+  /** Takes one of my other devices out of the account (e.g. a lost phone, or "that's not mine"). */
+  async function removeDevice(key) {
+    await postman.removeDevice(key);
+    await run('DELETE FROM chat_devices WHERE key = ?', [key]);
+    await run('DELETE FROM chat_sync_out WHERE device = ?', [key]);
+    ownDevices = ownDevices.filter((d) => d !== key);
+  }
+
+  /**
+   * This device and my other ones: { thisDevice, label, others: [{ key, added,
+   * label, isNew }], copying: { received, total } | null (a history copy coming in) }
+   */
+  async function linkedDevices() {
+    await refreshDevices().catch(() => {});
+    const others = (await all('SELECT * FROM chat_devices ORDER BY added, key'))
+      .map((r) => ({ key: r.key, added: r.added, label: r.label || null, isNew: r.state === 'new' }));
+    const incoming = await first('SELECT total, COUNT(*) AS n FROM chat_sync_in GROUP BY transfer ORDER BY MIN(at) LIMIT 1');
+    return { thisDevice: identity.publicKey, label: deviceLabel || null, others, copying: incoming ? { received: incoming.n, total: incoming.total } : null };
+  }
+
+  const HEX32 = /^[0-9a-f]{32}$/;
+  const arr = (x) => (Array.isArray(x) ? x : []);
+  const codeOrNull = (c) => (HEX64.test(c || '') ? c : null);
+
+  /** One contact from another of my devices. `overwrite`: a live change (else only what's missing here is filled in). */
+  async function mergeContact(c, { overwrite = true } = {}) {
+    if (!c || typeof c.nickname !== 'string' || !c.nickname || !Object.values(STATUS).includes(c.status)) return null;
+    let devices = [];
+    try { devices = arr(typeof c.devices === 'string' ? JSON.parse(c.devices) : c.devices).filter(isPublicKey); } catch { devices = []; }
+    const local = await contactByName(c.nickname);
+    if (local && !overwrite) {
+      await run('UPDATE chat_contacts SET their_code = COALESCE(their_code, ?), my_code = COALESCE(my_code, ?) WHERE id = ?',
+        [codeOrNull(c.their_code), codeOrNull(c.my_code), local.id]);
+      return local.id;
+    }
+    if (local) {
+      await run('UPDATE chat_contacts SET devices = ?, their_code = ?, my_code = ?, status = ?, ended = ?, before_block = ?, last_at = MAX(last_at, ?) WHERE id = ?',
+        [JSON.stringify(devices), codeOrNull(c.their_code), codeOrNull(c.my_code), c.status, c.ended ? 1 : 0,
+          Object.values(STATUS).includes(c.before_block) ? c.before_block : null, Number(c.last_at) || 0, local.id]);
+      return local.id;
+    }
+    const r = await run(
+      `INSERT INTO chat_contacts (nickname, devices, their_code, my_code, status, created, last_at, unread, ended, before_block)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+      [c.nickname, JSON.stringify(devices), codeOrNull(c.their_code), codeOrNull(c.my_code), c.status, Number(c.created) || now(),
+        Number(c.last_at) || now(), c.ended ? 1 : 0, Object.values(STATUS).includes(c.before_block) ? c.before_block : null],
+    );
+    return r.lastInsertRowId;
+  }
+
+  /** A 1:1 message, unless it's here already. */
+  async function mergeMessage(contactId, { mine, text, sentAt, receivedAt }) {
+    const clean = typeof text === 'string' ? cleanText(text) : '';
+    if (!clean || !Number.isFinite(sentAt)) return false;
+    if (await first('SELECT id FROM chat_messages WHERE contact = ? AND mine = ? AND text = ? AND sent_at = ?', [contactId, mine ? 1 : 0, clean, sentAt])) return false;
+    await run('INSERT INTO chat_messages (contact, mine, text, sent_at, received_at) VALUES (?, ?, ?, ?, ?)',
+      [contactId, mine ? 1 : 0, clean, sentAt, Number.isFinite(receivedAt) ? receivedAt : now()]);
+    return true;
+  }
+
+  /** Groups (with their keys) from another of my devices: added if missing; a key fills in a group waiting for one. */
+  async function mergeGroups(groups, keys) {
+    for (const g of arr(groups)) {
+      if (!HEX32.test(g?.id || '') || !Object.values(GROUP_STATUS).includes(g.status)) continue;
+      const key = HEX64.test(g.key || '') ? g.key : null;
+      const local = await first('SELECT * FROM chat_groups WHERE id = ?', [g.id]);
+      if (!local) {
+        await run(
+          `INSERT INTO chat_groups (id, name, description, owner, is_owner, status, key, epoch, code, last_seq, unread, pinned_text, pinned_at, joined_at, owner_account)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+          [g.id, String(g.name ?? ''), String(g.description ?? ''), g.owner ?? null, g.is_owner ? 1 : 0, key ? g.status : GROUP_STATUS.ASKING, key,
+            Number(g.epoch) || 1, codeOrNull(g.code), key ? Number(g.last_seq) || 0 : 0, g.pinned_text ?? null, g.pinned_at ?? null, Number(g.joined_at) || now(), g.owner_account ?? null],
+        );
+      } else if (key && g.status === GROUP_STATUS.MEMBER && (!local.key || (Number(g.epoch) || 1) > local.epoch)) {
+        await run('UPDATE chat_groups SET key = ?, epoch = ?, status = ?, code = NULL WHERE id = ?', [key, Number(g.epoch) || 1, GROUP_STATUS.MEMBER, g.id]);
+      }
+    }
+    for (const k of arr(keys)) {
+      if (!HEX32.test(k?.grp || '') || !HEX64.test(k.key || '')) continue;
+      await run('INSERT OR IGNORE INTO chat_group_keys (grp, epoch, key) VALUES (?, ?, ?)', [k.grp, Number(k.epoch) || 1, k.key]);
+    }
+  }
+
+  /** A history copy from another of my devices, merged with what's here (nothing here is lost). */
+  async function mergeHistory(data) {
+    const idOf = new Map();
+    for (const c of arr(data.contacts)) {
+      const id = await mergeContact(c, { overwrite: false });
+      if (id) idOf.set(nicknameKey(c.nickname), id);
+    }
+    for (const m of arr(data.messages)) {
+      const id = typeof m?.peer === 'string' ? idOf.get(nicknameKey(m.peer)) : null;
+      if (id) await mergeMessage(id, { mine: !!m.mine, text: m.text, sentAt: Number(m.sent_at), receivedAt: Number(m.received_at) });
+    }
+    for (const c of await all('SELECT id FROM chat_contacts')) {
+      const last = await first('SELECT MAX(received_at) AS t FROM chat_messages WHERE contact = ?', [c.id]);
+      if (last?.t) await run('UPDATE chat_contacts SET last_at = MAX(last_at, ?) WHERE id = ?', [last.t, c.id]);
+    }
+    await mergeGroups(data.groups, data.groupKeys);
+    const groupOk = (x) => HEX32.test(x?.grp || '');
+    for (const p of arr(data.groupPosts)) {
+      if (!groupOk(p) || typeof p.text !== 'string') continue;
+      await run('INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [p.grp, Number(p.seq) || 0, typeof p.pid === 'string' ? p.pid : null, String(p.author ?? ''), p.nickname ?? null, p.text,
+          Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine || isMe(p.author) ? 1 : 0]);
+    }
+    for (const p of arr(data.groupPolls)) {
+      if (!groupOk(p) || typeof p.pid !== 'string' || typeof p.question !== 'string' || typeof p.options !== 'string') continue;
+      await run(
+        `INSERT OR IGNORE INTO chat_group_polls (grp, pid, seq, creator, author, nickname, question, options, opened_at, ends_at, closed_at, mine)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [p.grp, p.pid, Number(p.seq) || 0, String(p.creator ?? ''), String(p.author ?? ''), p.nickname ?? null, p.question, p.options,
+          Number(p.opened_at) || 0, Number(p.ends_at) || 0, p.closed_at == null ? null : Number(p.closed_at), p.mine || isMe(p.author) ? 1 : 0],
+      );
+    }
+    for (const v of arr(data.groupPollVotes)) {
+      if (!groupOk(v) || typeof v.poll !== 'string' || typeof v.player !== 'string') continue;
+      await run('INSERT OR IGNORE INTO chat_group_poll_votes (grp, poll, player, choice, nickname, at, mine) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [v.grp, v.poll, v.player, v.choice == null ? null : Number(v.choice), v.nickname ?? null, Number(v.at) || 0, v.mine ? 1 : 0]);
+    }
+    for (const r of arr(data.groupReactions)) {
+      if (!groupOk(r) || typeof r.pid !== 'string' || typeof r.player !== 'string' || typeof r.value !== 'string') continue;
+      await run('INSERT OR IGNORE INTO chat_group_reactions (grp, pid, player, value, at, mine) VALUES (?, ?, ?, ?, ?, ?)',
+        [r.grp, r.pid, r.player, r.value, Number(r.at) || 0, r.mine ? 1 : 0]);
+    }
+    for (const h of arr(data.voteHistory)) {
+      if (!groupOk(h) || typeof h.id !== 'string' || typeof h.data !== 'string') continue;
+      await run('INSERT OR IGNORE INTO chat_vote_history (grp, id, opened_at, data) VALUES (?, ?, ?, ?)', [h.grp, h.id, Number(h.opened_at) || 0, h.data]);
+    }
+    for (const l of arr(data.groupLast)) {
+      if (!groupOk(l) || typeof l.author !== 'string') continue;
+      await run('INSERT OR IGNORE INTO chat_group_last (grp, author, at) VALUES (?, ?, ?)', [l.grp, l.author, Number(l.at) || 0]);
+    }
+    for (const n of arr(data.groupNames)) {
+      if (!groupOk(n) || typeof n.device !== 'string' || typeof n.nickname !== 'string') continue;
+      await run('INSERT OR IGNORE INTO chat_group_names (grp, device, nickname) VALUES (?, ?, ?)', [n.grp, n.device, n.nickname]);
+    }
+  }
+
+  /** A sync envelope from another of my devices. */
+  async function applySync(from, d) {
+    if (d.t === 'hello') {
+      if (typeof d.label === 'string') await run('UPDATE chat_devices SET label = ? WHERE key = ?', [cleanText(d.label).slice(0, 40), from]);
+      return 'synced';
+    }
+    if (d.t === 'history') {
+      const ok = typeof d.transfer === 'string' && d.transfer.length <= 64 && Number.isInteger(d.part) && Number.isInteger(d.total)
+        && d.total >= 1 && d.total <= SYNC_MAX_PARTS && d.part >= 0 && d.part < d.total && typeof d.data === 'string';
+      if (!ok) return 'damaged';
+      await run('INSERT OR IGNORE INTO chat_sync_in (transfer, part, total, data, at) VALUES (?, ?, ?, ?, ?)', [d.transfer, d.part, d.total, d.data, now()]);
+      const parts = await all('SELECT data FROM chat_sync_in WHERE transfer = ? ORDER BY part', [d.transfer]);
+      if (parts.length < d.total) return 'synced';
+      await run('DELETE FROM chat_sync_in WHERE transfer = ?', [d.transfer]);
+      let data = null;
+      try { data = JSON.parse(parts.map((x) => x.data).join('')); } catch { data = null; }
+      if (!data || data.kind !== 'history') return 'damaged';
+      await mergeHistory(data);
+      return 'history';
+    }
+    if (d.t === 'msg') {
+      const c = typeof d.peer === 'string' ? await contactByName(d.peer) : null;
+      if (!c) return 'ignored';
+      if (await mergeMessage(c.id, { mine: true, text: d.text, sentAt: Number(d.sentAt), receivedAt: Number(d.sentAt) })) {
+        await run('UPDATE chat_contacts SET last_at = MAX(last_at, ?), ended = 0 WHERE id = ?', [Number(d.sentAt), c.id]);
+      }
+      return 'synced';
+    }
+    if (d.t === 'contact') {
+      if (d.deleted) {
+        const local = typeof d.c?.nickname === 'string' ? await contactByName(d.c.nickname) : null;
+        if (local) {
+          await run('DELETE FROM chat_messages WHERE contact = ?', [local.id]);
+          await run('DELETE FROM chat_contacts WHERE id = ?', [local.id]);
+        }
+        return 'synced';
+      }
+      await mergeContact(d.c, { overwrite: true });
+      return 'synced';
+    }
+    if (d.t === 'group') {
+      await mergeGroups([d.g], d.keys);
+      groupsCache = null;
+      return 'synced';
+    }
+    return 'unknown type';
   }
 
   // --- groups ---------------------------------------------------------------
@@ -717,6 +1143,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     await run('INSERT INTO chat_groups (id, name, description, owner, is_owner, status, key, epoch, joined_at) VALUES (?, ?, ?, ?, 1, ?, ?, 1, ?)',
       [id, saved, description, await getMe('nickname'), GROUP_STATUS.MEMBER, key, now()]);
     await run('INSERT OR REPLACE INTO chat_group_keys (grp, epoch, key) VALUES (?, 1, ?)', [id, key]);
+    await syncGroup(id);
     return id;
   }
 
@@ -734,6 +1161,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
        ON CONFLICT (id) DO UPDATE SET status = excluded.status, code = excluded.code`,
       [id, g.name, g.description ?? '', g.owner ?? null, GROUP_STATUS.ASKING, code, now()],
     );
+    await syncGroup(id);
     return 'asking';
   }
 
@@ -820,7 +1248,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       const myAccount = await getMe('account');
       for (const { item, player } of acceptReactions(items, { postmanPublicKey: pk, seen })) {
         const r = item.post;
-        const mine = r.from === identity.publicKey || (myAccount && player === myAccount) ? 1 : 0;
+        const mine = isMe(r.from) || (myAccount && player === myAccount) ? 1 : 0;
         await run(
           `INSERT INTO chat_group_reactions (grp, pid, player, value, at, mine) VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT (grp, pid, player) DO UPDATE SET value = excluded.value, at = excluded.at WHERE excluded.at >= chat_group_reactions.at`,
@@ -848,7 +1276,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       // (Older than two days can't count any more.)
       await run('DELETE FROM chat_group_recent WHERE grp = ? AND at < ?', [g.id, now() - 2 * POST_WINDOW]);
       for (const item of shown) {
-        const mine = item.post.from === identity.publicKey;
+        const mine = isMe(item.post.from);
         if (item.post.kind === 'poll') {
           const p = item.post;
           const badge = checkBadge(p.badge, { postmanPublicKey: pk, holder: p.from, at: item.receivedAt });
@@ -879,7 +1307,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
           continue;
         }
         if (x.option !== null && x.option >= JSON.parse(poll.options).length) continue;
-        const mine = x.from === identity.publicKey || (myAccount && player === myAccount) ? 1 : 0;
+        const mine = isMe(x.from) || (myAccount && player === myAccount) ? 1 : 0;
         await run(
           `INSERT INTO chat_group_poll_votes (grp, poll, player, choice, nickname, at, mine) VALUES (?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (grp, poll, player) DO UPDATE SET choice = excluded.choice, nickname = excluded.nickname, at = excluded.at
@@ -1230,7 +1658,7 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
       throw new Error("The chat in this backup can't be read.");
     }
     const wipe = async () => {
-      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES]) await run(`DELETE FROM ${table}`);
+      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES, ...DEVICE_TABLES]) await run(`DELETE FROM ${table}`);
     };
     await wipe();
     try {
@@ -1325,7 +1753,8 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     leaving = true;
     try {
       if (mailRun) await mailRun.catch(() => {});
-      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES]) await run(`DELETE FROM ${table}`);
+      for (const table of ['chat_messages', 'chat_contacts', 'chat_seen', 'chat_me', ...GROUP_TABLES, ...DEVICE_TABLES]) await run(`DELETE FROM ${table}`);
+      ownDevices = [];
       identity = createIdentity();
       await setMe('identity', identity);
       postman = createPostmanClient({ baseUrl: postmanUrl, identity, fetchFn, now });
@@ -1377,5 +1806,10 @@ export async function createMessenger({ db, postmanUrl, fetchFn, now = () => Dat
     sendMessage,
     checkMail,
     leave,
+    // linked devices (27 Oct 2026)
+    linkedDevices,
+    copyHistoryTo,
+    dismissNewDevice,
+    removeDevice,
   };
 }

@@ -717,7 +717,17 @@ picture (`HubEmojiImage.js` draws the SVG with react-native-svg in the app).
 The app gets secure random numbers for the chat's encryption from
 `src/crypto/setupRandom.js` (expo-crypto, imported first in `index.js`).
 The chat backup (Wallets > Export) is website-only for now: it needs the
-browser's WebCrypto (`chatBackup.js` is a stub in the app). The screen
+browser's WebCrypto (`chatBackup.js` is a stub in the app).
+Linked devices (27 Oct 2026): signing in with the same wallet on another
+device (website, phone; up to 5) makes it part of the same chat account.
+The devices keep each other up to date with sealed `sync` envelopes sent
+only to the account's own other devices (postman `POST /self`): what I
+write in 1:1 chats, contact changes, groups I start or join, and once - after
+a yes on an existing device ("New device in your chat" card) - the whole
+history, in parts. A new device never gets history without that yes. "Your
+devices" at the bottom of the chat lists them, with "Take out" (postman
+`POST /me/devices/remove`). Details: `chat/src/messenger.js` (section
+"linked devices") and `chat/tests/linked.test.mjs`. The screen
 holds no chat logic: `chat/src/messenger.js` does everything (sign-in with
 a wallet's "sign a text", nickname, directory, contact requests
 with drop codes, accept / decline / block / unblock / remove, 1:1 messages)

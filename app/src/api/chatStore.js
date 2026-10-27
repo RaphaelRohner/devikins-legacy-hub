@@ -7,9 +7,10 @@
  * getMessenger().
  */
 
+import { Platform } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 import { createMessenger } from '../../chat/src/messenger.js';
-import { POSTMAN_URL } from '../constants/chat';
+import { POSTMAN_URL, DEVICES_CHECK_EVERY_MS } from '../constants/chat';
 
 export const CHAT_DATABASE_FILE_NAME = 'chat.db';
 
@@ -19,7 +20,8 @@ export function getMessenger() {
   if (!messengerPromise) {
     messengerPromise = (async () => {
       const db = await SQLite.openDatabaseAsync(CHAT_DATABASE_FILE_NAME);
-      return createMessenger({ db, postmanUrl: POSTMAN_URL });
+      // (the kind of device, shown on the player's other linked devices)
+      return createMessenger({ db, postmanUrl: POSTMAN_URL, deviceLabel: Platform.OS === 'web' ? 'Website' : 'Android app', devicesCheckEveryMs: DEVICES_CHECK_EVERY_MS });
     })().catch((e) => {
       messengerPromise = null;
       throw e;

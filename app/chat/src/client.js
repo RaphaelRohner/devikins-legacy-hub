@@ -49,6 +49,9 @@ export function createPostmanClient({ baseUrl, identity, fetchFn = (...a) => fet
     drop: (code, items) => call('POST', '/drop', { code, items }, { signed: false }),
     devicesFor: (code) => call('POST', '/drop/devices', { code }, { signed: false }),
     mail: () => call('GET', '/mail'),
+    // Linked devices (27 Oct 2026): envelopes for this player's OWN other devices, and taking one out.
+    self: (items) => call('POST', '/self', { items }),
+    removeDevice: (key) => call('POST', '/me/devices/remove', { key }),
     mailDone: (ids) => call('POST', '/mail/done', { ids }),
     leave: () => call('POST', '/leave', {}),
     groups: () => call('GET', '/groups'),

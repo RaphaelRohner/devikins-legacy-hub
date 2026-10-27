@@ -35,6 +35,9 @@ import ChatMessages from './ChatMessages';
 import { MAX_TEXT_LENGTH, nicknameKey } from '../../chat/src/rules.js';
 
 
+/** A linked device as people know it: its kind ("Website", "Android app"), told by the device itself. */
+const deviceName = (d) => d.label || 'Another device';
+
 function minutesUntil(ms) {
   const min = Math.ceil((ms - Date.now()) / 60000);
   if (min >= 120) return `${Math.floor(min / 60)} h ${min % 60} min`;
@@ -64,6 +67,8 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
   const [groupVotes, setGroupVotes] = useState(null);
   // Polls of the open group (25 Oct 2026; kept in this browser)
   const [groupPolls, setGroupPolls] = useState([]);
+  // Linked devices (27 Oct 2026): my other devices, new ones, a history copy coming in
+  const [devices, setDevices] = useState(null);
   const openIdRef = useRef(null);
   openIdRef.current = openId;
   const openGroupRef = useRef(null);
@@ -86,6 +91,11 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
         // minute - or right after an action (to keep the postman's requests low).
         setGroups(await m.listGroups({ maxAgeMs: freshGroups ? 0 : 6 * MAIL_CHECK_EVERY_MS }));
         setCreateInfo(await m.groupCreateInfo());
+      } catch {
+        // (shown again with the next check)
+      }
+      try {
+        setDevices(await m.linkedDevices());
       } catch {
         // (shown again with the next check)
       }
@@ -502,6 +512,42 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
         {mailProblem ? <Text style={[styles.note, styles.pad, { color: colors.cancelText }]}>{mailProblem}</Text> : null}
         {errorLine ? <View style={styles.pad}>{errorLine}</View> : null}
 
+        {/* Linked devices (27 Oct 2026): a device signed in with the same wallet -
+            copy the history to it? (never without this yes) */}
+        {(devices?.others || []).filter((d) => d.isNew).map((d) => (
+          <View key={d.key}>
+            {card(
+              <View style={{ gap: 8 }} testID="chat-new-device">
+                <Text style={[styles.section, { color: colors.text }]}>New device in your chat</Text>
+                <Text style={[styles.note, { color: colors.text }]}>
+                  {deviceName(d)} signed in with your wallet{d.added ? ` on ${new Date(d.added).toLocaleDateString()}` : ''}. Copy your
+                  contacts and chat history to it? It goes there sealed, like your messages.
+                </Text>
+                <View style={styles.row}>
+                  {button('Copy history', () => act(() => messenger.copyHistoryTo(d.key)), { testID: 'chat-copy-history' })}
+                  {button('Not now', () => act(() => messenger.dismissNewDevice(d.key)), { quiet: true })}
+                </View>
+                <TouchableOpacity
+                  onPress={() => confirm(
+                    'Not your device?',
+                    'It is taken out of your chat and gets nothing more. To sign in, someone had to sign the chat\'s sign-in text with your wallet: if that wasn\'t you, keep your wallet safe.',
+                    'Take it out',
+                    () => act(() => messenger.removeDevice(d.key)),
+                  )}
+                  testID="chat-not-my-device"
+                >
+                  <Text style={[styles.note, { color: colors.cancelText, textDecorationLine: 'underline' }]}>Not mine – take it out</Text>
+                </TouchableOpacity>
+              </View>,
+            )}
+          </View>
+        ))}
+        {devices?.copying ? (
+          <Text style={[styles.note, styles.pad, { color: colors.secondaryText }]} testID="chat-copying">
+            Receiving your chat history from your other device: {devices.copying.received} of {devices.copying.total} parts…
+          </Text>
+        ) : null}
+
         {incoming.length > 0 ? card(
           <>
             <Text style={[styles.section, { color: colors.text }]}>Contact requests</Text>
@@ -588,14 +634,36 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
         <View style={styles.pad}>
           <Text style={[styles.note, { color: colors.secondaryText }]}>
             Signed in until {new Date(status.verifiedUntil).toLocaleDateString()} (checked weekly). Your chat history is
-            kept only in {CHAT_HERE}.
+            kept only on your own devices. To chat on another device too (website or Android app), sign in there with the
+            same wallet: this device then offers to copy your history to it.
           </Text>
+          <Text style={[styles.note, { color: colors.secondaryText, marginTop: 8 }]} testID="chat-devices">
+            Your devices: this one{devices?.label ? ` (${devices.label})` : ''}
+            {(devices?.others || []).length ? '' : ' only'}
+          </Text>
+          {(devices?.others || []).map((d) => (
+            <View key={d.key} style={styles.row} testID="chat-device">
+              <Text style={[styles.note, { color: colors.text, flex: 1 }]}>
+                {deviceName(d)}{d.added ? ` · added ${new Date(d.added).toLocaleDateString()}` : ''}
+              </Text>
+              <TouchableOpacity
+                onPress={() => confirm(
+                  `Take ${deviceName(d)} out of your chat?`,
+                  'It gets no more messages and its chat stops working. Its history stays there until the chat is left on it.',
+                  'Take it out',
+                  () => act(() => messenger.removeDevice(d.key)),
+                )}
+              >
+                <Text style={[styles.note, { color: colors.cancelText, textDecorationLine: 'underline' }]}>Take out</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
           <TouchableOpacity
             onPress={() => Alert.alert(
               `Leave the chat in ${CHAT_HERE}?`,
               'Your contacts and messages here are deleted.\n\n'
                 + `"Only ${CHAT_HERE}": the chat keeps working in the other browser where you brought it with a backup.\n\n`
-                + '"Leave the chat": the postman forgets this chat key everywhere, and your nickname is freed if no other browser has this chat. You can sign in again later.',
+                + '"Leave the chat": this device is taken out of your chat at the postman; your other devices keep working. If it was your only one, your nickname is freed. You can sign in again later.',
               [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Leave the chat', style: 'destructive', onPress: () => act(() => messenger.leave()) },
