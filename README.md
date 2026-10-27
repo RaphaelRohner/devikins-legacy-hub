@@ -63,7 +63,9 @@ players.
 ## Limitations
 
 - **Android app** as an APK from Releases, not the Play Store: you'll need
-  to allow installs from unknown sources. Other systems: use the website.
+  to allow installs from unknown sources. Built for ARM phones (32- and
+  64-bit, i.e. practically all phones), not for x86 emulators or
+  Chromebooks. Other systems: use the website.
 - **The chat backup is website-only for now:** in the Android app, the
   chat lives only on that phone. On iPhone, the Klever app's browser should
   work for the website's chat, but it hasn't been tested yet.
