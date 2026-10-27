@@ -59,6 +59,10 @@ players.
   Klever app's own browser on Android.
 - Android app: you sign in through the **KLV Signer** app (version 0.1.3 or
   newer), so your key stays in one place.
+- **Linked devices:** use the chat on several devices (website, phone; up
+  to 5) as one account. Sign in with the same wallet, or link a device by
+  **QR code** (no wallet needed on it). Your devices stay in sync, and a new
+  one gets your history once you say yes on one you already use.
 
 ## Limitations
 
@@ -66,12 +70,12 @@ players.
   to allow installs from unknown sources. Built for ARM phones (32- and
   64-bit, i.e. practically all phones), not for x86 emulators or
   Chromebooks. Other systems: use the website.
-- **The chat backup is website-only for now:** in the Android app, the
-  chat lives only on that phone. On iPhone, the Klever app's browser should
-  work for the website's chat, but it hasn't been tested yet.
+- **The chat backup is website-only for now** (in the Android app, link
+  the phone to another device instead). On iPhone, the Klever app's browser
+  should work for the website's chat, but it hasn't been tested yet.
 - **The chat is a beta** on one small server: expect the odd rough edge.
-  The same chat open in two browsers at once can split the messages
-  between them (linked devices are planned).
+  A chat brought into a second browser with a backup (instead of linking
+  it) can split the messages between the two: link devices instead.
 - **No Devikin "Level"**: it lives in the game studio's own backend, out of
   reach.
 - **Pictures** come from the game studio's server and can lag behind an
