@@ -67,6 +67,7 @@ import {
 } from '../api/withdrawalTracker';
 import { kleverscanNftUrl } from '../constants/schema';
 import { openKleverscan } from '../api/openKleverscan';
+import { MY_WALLETS_SET_KEY } from '../constants/idList';
 
 // Where withdrawal problems are reported (Klever's help centre).
 const SUPPORT_URL = 'https://support.klever.org/';
@@ -153,7 +154,7 @@ const CHIP_HELP = {
   all: 'All: every NFT the other chips above let through.',
   requested: 'Requested: NFTs you marked as requested that haven\'t arrived yet (Overdue ones included). One marked in red sits in someone else\'s wallet - worth a look.',
   overdue: 'Overdue: marked as requested, but not arrived within the time set in step 1. These are the ones for a support ticket.',
-  arrived: 'Arrived: NFTs in your receiving wallet ("Receive in" in step 1) or in another of your wallets (any wallet set), and NFTs that arrived once and were sent on since.',
+  arrived: 'Arrived: NFTs in your receiving wallet ("Receive in" in step 1) or in another wallet of your "My wallets" set, and NFTs that arrived once and were sent on since.',
   'not-requested': "Not requested: NFTs on the list you haven't marked as requested and that haven't arrived - the Hub only tells you where they are.",
 };
 // Kind chips use the key 'all' too; they get no explanation.
@@ -249,7 +250,8 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
   const [now, setNow] = useState(Date.now());
   const [pickerFor, setPickerFor] = useState(null); // 'from' | 'to' | null
   const [myWallets, setMyWallets] = useState(null); // null = not loaded yet
-  // Every wallet of every set (28 Oct 2026): a requested NFT in any of them has arrived.
+  // The wallets of the set marked "My wallets" (Raphael, 28 Oct 2026: not every set - other
+  // sets can be other people's): a requested NFT in any of them has arrived.
   const [ownWallets, setOwnWallets] = useState([]);
   const cancelRef = useRef(false);
   // True when step 1 was filled in from the wallet names (shown as a note).
@@ -312,7 +314,13 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
       setOverdueMinutes(minutes);
       setOverdueDraft(String(minutes));
       setLastCheck(last ? Number(last) : null);
-      setOwnWallets(await getWalletsFromAllSets().catch(() => []));
+      try {
+        const mySetId = await getGlobalSetting(MY_WALLETS_SET_KEY);
+        const all = mySetId ? await getWalletsFromAllSets() : [];
+        setOwnWallets(all.filter((w) => String(w.setId) === String(mySetId)));
+      } catch (e) {
+        setOwnWallets([]);
+      }
       await reload();
       setLoaded(true);
     })();

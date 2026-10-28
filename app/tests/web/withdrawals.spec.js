@@ -455,7 +455,7 @@ test('the buttons for ticked rows explain themselves; "Undo request" undoes the 
   await expect(page.getByText('Not requested (2)', { exact: true })).toBeVisible();
 });
 
-test('NFTs in any of my wallets count as arrived, and an arrived NFT sent on is never overdue (28 Oct 2026)', async ({ page }) => {
+test('NFTs in a wallet of my "My wallets" set count as arrived, and an arrived NFT sent on is never overdue (28 Oct 2026)', async ({ page }) => {
   const start = new Date('2026-10-28T12:00:00Z');
   await page.clock.install({ time: start });
   const FRIEND = fakeAddress('f');
@@ -471,6 +471,8 @@ test('NFTs in any of my wallets count as arrived, and an arrived NFT sent on is 
   await page.getByText('Add', { exact: true }).click();
   await nameNewWallet(page);
   await expect(page.getByText(FRIEND).first()).toBeVisible();
+  // Only the set marked "My wallets" counts as mine (Raphael, 28 Oct 2026).
+  await page.getByText('My wallets', { exact: true }).locator('..').locator('input').click();
   await page.getByText('‹').first().click();
   await openMenuEntry(page, 'Withdrawals');
   await page.getByPlaceholder('klv1… (in-game wallet)').fill(IN_GAME);
@@ -497,4 +499,25 @@ test('NFTs in any of my wallets count as arrived, and an arrived NFT sent on is 
   await expect(row(page, 'Weapon #1450')).toContainText('Overdue');
   await expect(page.getByText('Overdue (1)')).toBeVisible();
   await expect(page.getByText('Arrived (2)')).toBeVisible();
+});
+
+test('a wallet in a set that is not marked "My wallets" does not count as mine', async ({ page }) => {
+  const OTHER = fakeAddress('h');
+  fake.chain.holders.set('weapon:1442', OTHER);
+  await openHub(page);
+  await openMenuEntry(page, 'Wallets');
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(OTHER);
+  await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
+  await expect(page.getByText(OTHER).first()).toBeVisible();
+  await page.getByText('‹').first().click();
+  await openMenuEntry(page, 'Withdrawals');
+  await page.getByPlaceholder('klv1… (in-game wallet)').fill(IN_GAME);
+  await page.getByPlaceholder('klv1… (receiving wallet)').fill(RECEIVING);
+  await page.getByText('Save', { exact: true }).click();
+  await page.locator('textarea').fill('W1442');
+  await page.getByText('Add to the list', { exact: true }).click();
+  await page.getByText('Check', { exact: true }).click();
+  await expect(row(page, 'Weapon #1442')).toContainText('In another wallet');
+  await expect(page.getByText('Arrived (0)')).toBeVisible();
 });

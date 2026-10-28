@@ -77,6 +77,7 @@ export default function WalletOverviewView({ wallets, ownerAddresses, includeIdL
         wallets,
         rowsByKind: data.rowsByKind,
         listItems: data.listItems,
+        listCountsAsMine: !!includeIdList,
         previousCheck: data.check,
         fromAddress: data.fromAddress,
         toAddress: data.toAddress,

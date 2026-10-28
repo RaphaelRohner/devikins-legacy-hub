@@ -167,7 +167,7 @@ export function buildOverview({ wallets, rowsByKind, listItems = [], includeList
  *   newFound     NFTs found new in your own wallets (not fetched yet)
  *   stopped      true if Stop was pressed (whatever was found is kept)
  */
-export async function runOverviewCheck({ wallets = [], rowsByKind, listItems = [], previousCheck, fromAddress, toAddress, knownHashes, onProgress, shouldCancel }) {
+export async function runOverviewCheck({ wallets = [], rowsByKind, listItems = [], listCountsAsMine = false, previousCheck, fromAddress, toAddress, knownHashes, onProgress, shouldCancel }) {
   const ownNfts = [];
   const before = previousCheck?.holders || {};
   for (const kind of KINDS) {
@@ -238,7 +238,8 @@ export async function runOverviewCheck({ wallets = [], rowsByKind, listItems = [
       toAddress,
       full: true,
       knownHashes,
-      ownAddresses: [...ownAddresses],
+      // (only when this set is "My wallets": other sets can be other people's)
+      ownAddresses: listCountsAsMine ? [...ownAddresses] : [],
       shouldCancel,
       onProgress: (p) => (p.phase === 'lookups' || p.phase === 'waiting') && onProgress?.({ current: ownNfts.length + p.current, total, waiting: p.phase === 'waiting' }),
     });
