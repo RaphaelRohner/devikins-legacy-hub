@@ -33,6 +33,8 @@ export default function WalletOverviewView({ wallets, ownerAddresses, includeIdL
   const { colors } = useTheme();
   const [data, setData] = useState(null);
   const [checking, setChecking] = useState(false);
+  // The "Check on the chain" box sits at the top, folded to one line (Raphael, 28 Oct 2026).
+  const [checkOpen, setCheckOpen] = useState(false);
   const [progress, setProgress] = useState('');
   const [message, setMessage] = useState('');
   // NFTs the last "Check now" found new in your wallets (their details come with a Fetch/Update)
@@ -126,6 +128,67 @@ export default function WalletOverviewView({ wallets, ownerAddresses, includeIdL
           <ActivityIndicator color={colors.primary} />
         ) : (
           <>
+            <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.surface }]} testID="overview-check-box">
+              <TouchableOpacity
+                style={styles.inlineRow}
+                onPress={() => setCheckOpen((o) => !o)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: checkOpen }}
+                testID="overview-check-toggle"
+              >
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.walletLabel, { color: colors.text }]}>Check on the chain</Text>
+                  <Text style={[styles.small, { color: colors.secondaryText }]} numberOfLines={1}>
+                    {checking ? progress || 'Checking…' : lastCheck ? `Last check: ${formatTime(lastCheck)}` : 'Not checked yet: places from your last Fetch/Update'}
+                  </Text>
+                </View>
+                <Text style={[styles.walletLabel, { color: colors.primary }]}>{checkOpen ? '▾' : '▸'}</Text>
+              </TouchableOpacity>
+              {checkOpen ? (
+                <>
+                  <Text style={[styles.note, { color: colors.text }]}>
+                    {lastCheck
+                      ? `Last looked up on the chain: ${formatTime(lastCheck)}. NFTs added since then are shown where the last Fetch/Update found them.`
+                      : 'These are the places the Hub knows from your last Fetch/Update. "Check now" looks every NFT up on the chain.'}
+                  </Text>
+                  {checking ? (
+                    <View style={styles.inlineRow}>
+                      <ActivityIndicator color={colors.primary} />
+                      <Text style={[styles.note, { color: colors.text, flex: 1 }]} testID="overview-progress">{progress || 'Starting…'}</Text>
+                      <TouchableOpacity
+                        style={[styles.smallButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                        onPress={() => {
+                          cancelRef.current = true;
+                        }}
+                      >
+                        <Text style={[styles.smallButtonText, { color: colors.text }]}>Stop</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity style={[styles.button, { backgroundColor: colors.primary }]} onPress={checkNow} testID="overview-check">
+                      <Text style={[styles.buttonText, { color: colors.primaryText }]}>Check now</Text>
+                    </TouchableOpacity>
+                  )}
+                  <Text style={[styles.small, { color: colors.secondaryText }]}>
+                    NFTs still where they were are confirmed quickly; NFTs that moved are found more slowly (Klever allows 30 of those lookups a minute). It also updates the Withdrawals tracker.
+                  </Text>
+                  {message ? <Text style={[styles.note, { color: colors.text }]}>{message}</Text> : null}
+                  {newFound > 0 && !checking ? (
+                    <View style={styles.inlineRow} testID="overview-new">
+                      <Text style={[styles.note, { color: colors.text, flex: 1 }]}>
+                        {newFound} new NFT{newFound === 1 ? '' : 's'} found in your wallets - counted below. Their pictures and details come with a Fetch/Update.
+                      </Text>
+                      {onFetchNow ? (
+                        <TouchableOpacity style={[styles.smallButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]} onPress={onFetchNow} testID="overview-fetch">
+                          <Text style={[styles.smallButtonText, { color: colors.text }]}>Fetch now</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
+            </View>
+
             <Text style={[styles.note, { color: colors.secondaryText }]}>
               {setName ? `Wallet set "${setName}". ` : ''}
               {includeIdList ? 'Your wallets, and where the NFTs on your Withdrawals list are. ' : 'The wallets of this set. '}
@@ -178,47 +241,6 @@ export default function WalletOverviewView({ wallets, ownerAddresses, includeIdL
               </Text>
             ) : null}
 
-            <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-              <Text style={[styles.note, { color: colors.text }]}>
-                {lastCheck
-                  ? `Last looked up on the chain: ${formatTime(lastCheck)}. NFTs added since then are shown where the last Fetch/Update found them.`
-                  : 'These are the places the Hub knows from your last Fetch/Update. "Check now" looks every NFT up on the chain.'}
-              </Text>
-              {checking ? (
-                <View style={styles.inlineRow}>
-                  <ActivityIndicator color={colors.primary} />
-                  <Text style={[styles.note, { color: colors.text, flex: 1 }]} testID="overview-progress">{progress || 'Starting…'}</Text>
-                  <TouchableOpacity
-                    style={[styles.smallButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
-                    onPress={() => {
-                      cancelRef.current = true;
-                    }}
-                  >
-                    <Text style={[styles.smallButtonText, { color: colors.text }]}>Stop</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity style={[styles.button, { backgroundColor: colors.primary }]} onPress={checkNow} testID="overview-check">
-                  <Text style={[styles.buttonText, { color: colors.primaryText }]}>Check now</Text>
-                </TouchableOpacity>
-              )}
-              <Text style={[styles.small, { color: colors.secondaryText }]}>
-                NFTs still where they were are confirmed quickly; NFTs that moved are found more slowly (Klever allows 30 of those lookups a minute). It also updates the Withdrawals tracker.
-              </Text>
-              {message ? <Text style={[styles.note, { color: colors.text }]}>{message}</Text> : null}
-              {newFound > 0 && !checking ? (
-                <View style={styles.inlineRow} testID="overview-new">
-                  <Text style={[styles.note, { color: colors.text, flex: 1 }]}>
-                    {newFound} new NFT{newFound === 1 ? '' : 's'} found in your wallets - counted above. Their pictures and details come with a Fetch/Update.
-                  </Text>
-                  {onFetchNow ? (
-                    <TouchableOpacity style={[styles.smallButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]} onPress={onFetchNow} testID="overview-fetch">
-                      <Text style={[styles.smallButtonText, { color: colors.text }]}>Fetch now</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-              ) : null}
-            </View>
           </>
         )}
       </ScrollView>

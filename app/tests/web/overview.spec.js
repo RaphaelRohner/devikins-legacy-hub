@@ -69,6 +69,10 @@ test('the overview counts per wallet, opens one wallet in Browse, and "Check now
   fake.chain.holders.set('devikin:105', TEST_WALLET);
   fake.extraNfts.set('devikin:105', { name: 'Newbie #105', attributes: { Rarity: 'Common', Ancestry: 'Faery', 'Life Stage': 'Adult', 'Procreations Left': 3 } });
   await openMenuEntry(page, 'Where are my NFTs?');
+  // The check box sits at the top, folded: open it first (28 Oct 2026).
+  await expect(page.getByTestId('overview-check-toggle')).toContainText('Last check:', { timeout: 15_000 });
+  await expect(page.getByTestId('overview-check')).toHaveCount(0);
+  await page.getByTestId('overview-check-toggle').click();
   await page.getByTestId('overview-check').click();
   await expect(page.getByText(/Last looked up on the chain:/)).toBeVisible({ timeout: 60_000 });
   await expect(rowOf(page, 'Another wallet')).toContainText(/1\s*0\s*0/);
