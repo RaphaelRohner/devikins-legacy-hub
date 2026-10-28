@@ -2,7 +2,7 @@
   "expo": {
     "name": "Devi Hub",
     "slug": "devikins-legacy-hub",
-    "version": "4.4.2",
+    "version": "4.5.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
