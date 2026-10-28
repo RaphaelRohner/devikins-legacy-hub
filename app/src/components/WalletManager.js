@@ -75,6 +75,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import useKeepFocusedInputVisible from '../hooks/useKeepFocusedInputVisible';
+import { useWebKeyboardRoom } from '../web/keyboardRoom';
 import { isValidKleverAddress } from '../utils/kleverAddress';
 import {
   View,
@@ -177,6 +178,8 @@ export default function WalletManager({
   // The field you type in stays in view when the keyboard opens (Android app, 26 Oct 2026).
   const listScrollRef = useRef(null);
   useKeepFocusedInputVisible(listScrollRef);
+  // (the naming pop-up on the website on a phone: above the keyboard - src/web/keyboardRoom.js, 28 Oct 2026)
+  const keyboardRoom = useWebKeyboardRoom();
   const [editAddressInput, setEditAddressInput] = useState('');
   // The optional friendly name (e.g. "Main", "Trading") - edited
   // alongside the address, and shown next to the Edit/Delete buttons
@@ -1615,7 +1618,7 @@ export default function WalletManager({
       {/* "What's this wallet?" - asked right after adding one (14 Oct 2026). */}
       <Modal visible={!!namingWallet} transparent animationType="fade" onRequestClose={() => finishNaming(null)}>
         {/* (a pop-up isn't inside the app's keyboard handling: it moves up by itself, 26 Oct 2026) */}
-        <KeyboardAvoidingView style={styles.namingBackdrop} behavior={IS_WEB ? undefined : 'padding'}>
+        <KeyboardAvoidingView style={[styles.namingBackdrop, keyboardRoom ? { paddingBottom: keyboardRoom } : null]} behavior={IS_WEB ? undefined : 'padding'}>
           <View style={[styles.namingCard, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="naming-box">
             <Text style={[styles.namingTitle, { color: colors.text }]}>What's this wallet?</Text>
             <Text style={[styles.namingAddress, { color: colors.secondaryText }]} numberOfLines={1} ellipsizeMode="middle">

@@ -29,6 +29,7 @@ import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'r
 import { useTheme } from '../context/ThemeContext';
 import ChatView from './ChatView';
 import { setChatDockOpener, whenHubReady, setChatUnread } from '../web/chatDock';
+import { useWebKeyboardRoom } from '../web/keyboardRoom';
 
 // Remembered in this browser once the chat is set up here (signed in), so
 // it can start in the background with the Hub next time.
@@ -72,6 +73,7 @@ export default function ChatDock() {
   }, []);
 
   const narrow = width < NARROW;
+  const keyboardRoom = useWebKeyboardRoom();
   const isOpen = mode !== 'closed';
   const full = mode === 'full' || narrow;
 
@@ -85,6 +87,8 @@ export default function ChatDock() {
             styles.window,
             full ? styles.full : styles.floating,
             { backgroundColor: colors.background, borderColor: colors.border },
+            // (a phone's keyboard: the chat window ends above it - src/web/keyboardRoom.js)
+            keyboardRoom ? { bottom: (full ? 0 : 16) + keyboardRoom, maxHeight: `calc(100vh - ${(full ? 0 : 32) + keyboardRoom}px)` } : null,
             !isOpen && styles.hidden,
           ]}
         >

@@ -38,44 +38,24 @@ import { useTheme } from '../context/ThemeContext';
 import useNftImage from '../hooks/useNftImage';
 import NftCard from './NftCard';
 import useKeepFocusedInputVisible from '../hooks/useKeepFocusedInputVisible';
+import { useWebKeyboardRoom } from '../web/keyboardRoom';
 
 /**
  * The keyboard's height while it's open (Android app). A pop-up window
  * (Modal) isn't shrunk with the rest of the app when the keyboard opens, so
  * it makes room itself (28 Oct 2026: the comment field was under the keyboard).
  */
-function useKeyboardHeight(typing = false) {
+function useKeyboardHeight() {
   const [height, setHeight] = useState(0);
-  // Website on a phone (28 Oct 2026, the Klever app's K5 browser): the keyboard covers the
-  // page without shrinking it. The browser's "visual viewport" says how much is covered.
-  const [covered, setCovered] = useState(0);
-  const [startHeight] = useState(() => (typeof window !== 'undefined' ? window.innerHeight : 0));
+  // (the website on a phone: src/web/keyboardRoom.js - 28 Oct 2026, the K5 browser)
+  const webRoom = useWebKeyboardRoom();
   useEffect(() => {
     if (Platform.OS === 'web') return undefined;
     const show = Keyboard.addListener('keyboardDidShow', (e) => setHeight(e?.endCoordinates?.height || 0));
     const hide = Keyboard.addListener('keyboardDidHide', () => setHeight(0));
     return () => { show.remove(); hide.remove(); };
   }, []);
-  useEffect(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined' || !window.visualViewport) return undefined;
-    const vv = window.visualViewport;
-    const measure = () => {
-      const c = window.innerHeight - vv.height - vv.offsetTop;
-      setCovered(c > 80 ? Math.round(c) : 0);
-    };
-    vv.addEventListener('resize', measure);
-    vv.addEventListener('scroll', measure);
-    measure();
-    return () => { vv.removeEventListener('resize', measure); vv.removeEventListener('scroll', measure); };
-  }, []);
-  if (Platform.OS !== 'web') return height;
-  if (covered) return covered;
-  // Some in-app browsers say nothing at all: while typing on a touch screen whose page
-  // didn't shrink either, count on the keyboard taking about the lower 42 %.
-  if (typeof window === 'undefined' || !typing) return 0;
-  const touch = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 && window.innerWidth < 900;
-  const shrunk = window.innerHeight < startHeight - 100;
-  return touch && !shrunk ? Math.round(window.innerHeight * 0.42) : 0;
+  return Platform.OS === 'web' ? webRoom : height;
 }
 import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER, gameNameOf } from '../constants/schema';
 import { POSTMAN_URL, MAIL_CHECK_EVERY_MS } from '../constants/chat';
@@ -573,14 +553,9 @@ function NftPanel({ entry, held, albumKey, comments, viewer, onChanged, onClose 
   const [showDisputed, setShowDisputed] = useState(false);
   const [editing, setEditing] = useState(null); // { id, text } - my comment being changed
   const { item, traits } = entry;
-  const [typing, setTyping] = useState(false);
-  const keyboard = useKeyboardHeight(typing);
-  // (typing: the comments scroll down to the field, above the keyboard)
-  const onFieldFocus = () => {
-    setTyping(true);
-    setTimeout(() => panelScroll.current?.scrollToEnd?.({ animated: true }), 250);
-  };
-  const onFieldBlur = () => setTyping(false);
+  const keyboard = useKeyboardHeight();
+  // (the new-comment field: the comments scroll down to it, above the keyboard)
+  const onFieldFocus = () => setTimeout(() => panelScroll.current?.scrollToEnd?.({ animated: true }), 250);
   const panelScroll = useRef(null);
   useKeepFocusedInputVisible(panelScroll);
 
@@ -656,8 +631,6 @@ function NftPanel({ entry, held, albumKey, comments, viewer, onChanged, onClose 
                       value={editing.text}
                       maxLength={200}
                       onChangeText={(t) => setEditing({ id: c.id, text: t })}
-                      onFocus={() => setTyping(true)}
-                      onBlur={onFieldBlur}
                       testID="album-comment-edit-input"
                     />
                     <Text style={[styles.small, { color: colors.secondaryText }]}>Saving starts the confirmations again (they were for the old text).</Text>
@@ -735,7 +708,6 @@ function NftPanel({ entry, held, albumKey, comments, viewer, onChanged, onClose 
                   maxLength={200}
                   onChangeText={setDraft}
                   onFocus={onFieldFocus}
-                  onBlur={onFieldBlur}
                   testID="album-comment-input"
                 />
                 <TouchableOpacity

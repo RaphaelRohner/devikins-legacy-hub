@@ -13,9 +13,12 @@ import { useEffect, useState } from 'react';
 import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { MIN_PASSWORD_LENGTH } from '../api/chatBackup';
+import { useWebKeyboardRoom } from '../web/keyboardRoom';
 
 export default function ChatBackupPasswordBox({ ask, onAnswer }) {
   const { colors } = useTheme();
+  // (the website on a phone: above the keyboard too - src/web/keyboardRoom.js, 28 Oct 2026)
+  const keyboardRoom = useWebKeyboardRoom();
   const [password, setPassword] = useState('');
   const [repeat, setRepeat] = useState('');
   const [problem, setProblem] = useState('');
@@ -65,7 +68,7 @@ export default function ChatBackupPasswordBox({ ask, onAnswer }) {
   return (
     <Modal visible transparent animationType="fade" onRequestClose={() => onAnswer(null)}>
       {/* (moves up with the keyboard on phones, 26 Oct 2026) */}
-      <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'web' ? undefined : 'padding'}>
+      <KeyboardAvoidingView style={[styles.backdrop, keyboardRoom ? { paddingBottom: keyboardRoom } : null]} behavior={Platform.OS === 'web' ? undefined : 'padding'}>
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="chat-backup-box">
           <Text style={[styles.title, { color: colors.text }]}>{isExport ? 'Include your chat?' : 'Bring your chat back?'}</Text>
           <Text style={[styles.text, { color: colors.text }]}>

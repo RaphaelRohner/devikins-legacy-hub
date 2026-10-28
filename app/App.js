@@ -110,6 +110,7 @@ import ShortcutsHelp from './src/components/ShortcutsHelp';
 import ChatDock from './src/components/ChatDock';
 import { openChatDock, setHubReady, useChatUnread, setAppScreen, setChatScreenOpener } from './src/web/chatDock';
 import { useKeyboardShortcuts, showShortcutsHelp } from './src/web/shortcuts';
+import { useWebKeyboardRoom } from './src/web/keyboardRoom';
 import GettingStartedCard, { loadGuideState, setGuideHidden, GUIDE_KEYS } from './src/components/GettingStartedCard';
 import { countVisit } from './src/api/usage';
 import SortPickerModal from './src/components/SortPickerModal';
@@ -161,7 +162,8 @@ function KleverscanLayer() {
 // (Raphael and a friend, 26 Oct 2026). One KeyboardAvoidingView around the whole
 // app shrinks every screen by the keyboard's height instead; scrolling screens
 // then keep the field you type in visible. Android only: the iPhone screens
-// already do this themselves, and the website doesn't need it.
+// already do this themselves. The website on a phone (e.g. the Klever app's K5
+// browser) gets the same through WebKeyboardRoom below (28 Oct 2026).
 const KEYBOARD_ROOM = Platform.OS === 'android' ? 'padding' : undefined;
 
 // Android's own Back / Home / Recent buttons at the bottom follow the Hub's
@@ -175,13 +177,22 @@ function SystemButtons() {
   return <NavigationBar style={isDark ? 'light' : 'dark'} />;
 }
 
+/** Website on a phone: the Hub ends above the on-screen keyboard (src/web/keyboardRoom.js). */
+function WebKeyboardRoom({ children }) {
+  const room = useWebKeyboardRoom({ scrollField: true });
+  if (Platform.OS !== 'web') return children;
+  return <View style={{ flex: 1, paddingBottom: room }}>{children}</View>;
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
         <SystemButtons />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={KEYBOARD_ROOM} enabled={!!KEYBOARD_ROOM}>
-          <AppContent />
+          <WebKeyboardRoom>
+            <AppContent />
+          </WebKeyboardRoom>
         </KeyboardAvoidingView>
         <KleverscanLayer />
         <ShortcutsHelp />
