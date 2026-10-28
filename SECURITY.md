@@ -42,7 +42,10 @@ SECURITY.md covers how keys are protected).
   contains the wallet address, so someone determined can find it and look
   it up on Kleverscan; the Hub says so before you publish. It isn't linked to your chat nickname unless
   you switch that on. Every viewer's Hub checks the album's signatures and
-  whether each NFT is still in the wallet.
+  whether each NFT is still in the wallet. Comments on NFTs are public and
+  show the writer's chat nickname. Messages to an album's owner are sealed
+  like the chat; the postman knows which player writes to which album, but
+  not who owns it.
 
 ## What we check
 

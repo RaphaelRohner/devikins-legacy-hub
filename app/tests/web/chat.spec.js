@@ -732,3 +732,96 @@ test('Collectors Albums with a big wallet: picker by kind with "show more", sect
     postman.stop();
   }
 });
+
+/** Alice, signed in to the chat, publishes an album with Testy (Devikin 101) and the Fine Test Hammer (weapon 201). */
+async function aliceWithAlbum(browser, postman, title) {
+  const wallet = await postman.newWallet(3);
+  const alice = await openPlayer(browser, postman, wallet);
+  await signInAs(alice.page, 'Alice');
+  await alice.page.getByTestId('chat-dock-minimise').click();
+  for (const id of ['devikin:101', 'weapon:201']) alice.fake.chain.holders.set(id, wallet.address);
+  await openMenuEntry(alice.page, 'Wallets');
+  await alice.page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(wallet.address);
+  await alice.page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(alice.page);
+  await goBack(alice.page);
+  await openMenuEntry(alice.page, 'Fetch/Update');
+  await expect.poll(() => new Set(alice.fake.requests.filter((u) => /devikins\.com\/.+\.png$/.test(u))).size, { timeout: 60_000 }).toBeGreaterThanOrEqual(2);
+  await expect(alice.page.getByText(/^\d+%$/)).toHaveCount(0, { timeout: 60_000 });
+  await openMenuEntry(alice.page, 'Collectors Albums');
+  await alice.page.getByTestId('albums-mine').click();
+  await alice.page.getByTestId('album-new').click();
+  await alice.page.getByTestId('album-sign').click();
+  await alice.page.getByTestId('album-title-input').fill(title);
+  await alice.page.getByTestId('album-pick').filter({ hasText: '#101' }).click();
+  await alice.page.getByTestId('album-pick-kind-weapon').click();
+  await alice.page.getByTestId('album-pick').filter({ hasText: '#201' }).click();
+  await alice.page.getByTestId('album-publish').click();
+  await expect(alice.page.getByTestId('album-published')).toBeVisible();
+  return { alice, wallet };
+}
+
+test('Collectors Albums: comments with confirm votes, hiding in my album, and the album mailbox with an anonymous owner', async ({ browser }) => {
+  test.setTimeout(240_000);
+  const postman = await startPostman();
+  try {
+    const { alice, wallet } = await aliceWithAlbum(browser, postman, 'Talk to me');
+    const bob = await openPlayer(browser, postman, await postman.newWallet(5));
+    await signInAs(bob.page, 'Bob');
+    await bob.page.getByTestId('chat-dock-minimise').click();
+    for (const id of ['devikin:101', 'weapon:201']) bob.fake.chain.holders.set(id, wallet.address);
+
+    // Bob comments on Testy.
+    await openMenuEntry(bob.page, 'Collectors Albums');
+    await bob.page.getByTestId('album-row').filter({ hasText: 'Talk to me' }).click();
+    await bob.page.getByTestId('album-item').filter({ hasText: 'Testy the Brave' }).click();
+    await expect(bob.page.getByTestId('album-panel')).toBeVisible();
+    await bob.page.getByTestId('album-comment-input').fill('From the May 2025 event');
+    await bob.page.getByTestId('album-comment-send').click();
+    await expect(bob.page.getByTestId('album-comment')).toContainText('From the May 2025 event');
+    await expect(bob.page.getByTestId('album-comment')).toContainText('Bob');
+    // (no voting on one's own comment; deleting it is possible)
+    await expect(bob.page.getByTestId('album-comment-confirm')).toHaveCount(0);
+    await expect(bob.page.getByTestId('album-comment-delete')).toBeVisible();
+    await bob.page.getByTestId('album-panel-close').click();
+    await expect(bob.page.getByTestId('album-item').filter({ hasText: 'Testy the Brave' }).getByTestId('album-item-comments')).toContainText('💬 1 · From the May 2025 event');
+
+    // Bob writes to the owner.
+    await bob.page.getByTestId('album-message-owner').click();
+    await bob.page.getByTestId('album-talk-draft').fill('Would you sell Testy?');
+    await bob.page.getByTestId('album-talk-send').click();
+    await expect(bob.page.getByTestId('album-talk-message')).toHaveText([/Would you sell Testy\?/]);
+
+    // Alice sees the message (with Bob's nickname) and answers under the album's name.
+    await goBack(alice.page); // (from "Published" back to My albums)
+    await goBack(alice.page);
+    await expect(alice.page.getByTestId('albums-mine')).toHaveText('My albums · 1 new message', { timeout: 20_000 });
+    await alice.page.getByTestId('albums-mine').click();
+    await alice.page.getByTestId('album-talk-row').filter({ hasText: 'Bob about "Talk to me"' }).click();
+    await expect(alice.page.getByTestId('album-talk-message')).toHaveText([/Would you sell Testy\?/]);
+    await alice.page.getByTestId('album-talk-draft').fill('Not for now, sorry');
+    await alice.page.getByTestId('album-talk-send').click();
+    await expect(bob.page.getByTestId('album-talk-message')).toHaveText([/Would you sell Testy\?/, /Not for now, sorry/], { timeout: 20_000 });
+    // Bob's side never names Alice.
+    await expect(bob.page.getByText('Alice')).toHaveCount(0);
+
+    // Alice confirms Bob's comment on her album, then hides it there.
+    await goBack(alice.page);
+    await alice.page.getByTestId('my-album').filter({ hasText: 'Talk to me' }).getByText('View').click();
+    await alice.page.getByTestId('album-item').filter({ hasText: 'Testy the Brave' }).click();
+    await alice.page.getByTestId('album-comment-confirm').click();
+    await expect(alice.page.getByTestId('album-comment-confirm')).toHaveText('✓ I can confirm (1)');
+    await alice.page.getByTestId('album-comment-hide').click();
+    await expect(alice.page.getByTestId('album-comment')).toContainText('hidden in your album');
+
+    // Bob's next visit: the comment isn't shown in this album any more.
+    await goBack(bob.page);
+    await goBack(bob.page);
+    await bob.page.getByTestId('album-row').filter({ hasText: 'Talk to me' }).click();
+    await expect(bob.page.getByTestId('album-item')).toHaveCount(2);
+    await expect(bob.page.getByTestId('album-item-comments')).toHaveCount(0);
+    for (const p of [alice, bob]) await p.context.close();
+  } finally {
+    postman.stop();
+  }
+});

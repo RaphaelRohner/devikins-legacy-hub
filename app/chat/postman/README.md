@@ -65,6 +65,17 @@ Keeps:
   the wallet still holds each NFT itself. Publishing needs a signed-in
   player (against spam), so in that moment the postman sees which device
   publishes which album (and forgets).
+- **Comments on NFTs** (28 Oct 2026), public on purpose: the NFT (kind and
+  number), the text, the writer's nickname and account number, when; and
+  per comment which accounts voted "I can confirm" / "not right". Which
+  comments an album's owner hid in their album (by album key). A player's
+  comments and votes go with their account.
+- **The album mailbox** (28 Oct 2026): conversations between a player and
+  the (anonymous) owner of an album: which account talks to which album key,
+  and sealed envelopes for the album key and the player's devices (it can't
+  read them), kept 30 days; whether the owner blocked that player for that
+  album. The owner is given the player's nickname and device keys (to
+  answer), never the other way round.
 
 Doesn't keep: wallet addresses (except the ones players put on their albums
 themselves), NFT counts, message contents (it can't read
@@ -107,7 +118,8 @@ that many. The daily posting allowance is the band's lower end.
 ## Limits against misuse (all per day, so the free plan can't be used up)
 
 - 1,500 actions per player (contact requests, drop-code changes, group posts;
-  publishing an album counts as 10);
+  publishing an album counts as 10; comments: 30 a day, 50 per NFT, 200
+  characters; the album mailbox: 10 new conversations a day);
 - 300 envelopes per drop code (one contact can't flood a mailbox; blocking
   = removing that code);
 - 3,000 envelopes per player to their own other devices (linked devices);
@@ -168,6 +180,15 @@ someone who intercepted it (no request today is harmful to repeat).
 | `POST /albums/delete` | the album's key | delete that album (the request is signed with the album's key, which only its owner's devices have) |
 | `GET /albums?before=` | anyone | the albums, newest first (50 at a time): key, title, name, how many NFTs, when |
 | `GET /albums/one?key=` | anyone | one album (to be checked by the reader) |
+| `GET /comments?album=` | anyone | the comments on that album's NFTs, with confirm / dispute counts and whether the owner hid them there |
+| `POST /comments/add` | signed-in | `{album, kind, nonce, text}` – a comment on an NFT in that album, under the player's nickname |
+| `POST /comments/vote` | signed-in | `{comment, vote}` – 1 I can confirm, -1 not right, 0 take back (not on one's own) |
+| `POST /comments/delete` | the writer | delete one's own comment |
+| `POST /albums/hide-comment` | the album's key | `{comment, hidden}` – hide a comment in that album |
+| `POST /albums/talk/send` | signed-in | `{album, items}` – sealed message to the album's owner (and copies for the player's devices) |
+| `GET /albums/talk?after=` | device or album key | sealed messages for this key; for the album key also the player's nickname and devices |
+| `POST /albums/talk/reply` | the album's key | `{thread, items}` – the owner's answer |
+| `POST /albums/talk/block` | the album's key | `{thread, blocked}` – no more messages from that player to this album |
 
 ## Putting it on Cloudflare (Raphael)
 

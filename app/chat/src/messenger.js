@@ -130,6 +130,15 @@ CREATE TABLE IF NOT EXISTS chat_sync_in (transfer TEXT NOT NULL, part INTEGER NO
 -- have it). event = the album as last published (NULL = made, not published yet); published = when.
 CREATE TABLE IF NOT EXISTS chat_albums (key TEXT PRIMARY KEY NOT NULL, secret TEXT NOT NULL, event TEXT, published INTEGER NOT NULL DEFAULT 0,
   created INTEGER NOT NULL);
+-- The album mailbox (28 Oct 2026): conversations with the owner of someone's album (side 'visitor') and with
+-- visitors of my albums (side 'owner'); devices = the visitor's devices (to answer them).
+CREATE TABLE IF NOT EXISTS chat_album_threads (album TEXT NOT NULL, side TEXT NOT NULL, thread TEXT NOT NULL, title TEXT, nickname TEXT,
+  devices TEXT, blocked INTEGER NOT NULL DEFAULT 0, unread INTEGER NOT NULL DEFAULT 0, last_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (album, side, thread));
+CREATE TABLE IF NOT EXISTS chat_album_talk (id INTEGER PRIMARY KEY AUTOINCREMENT, album TEXT NOT NULL, side TEXT NOT NULL, thread TEXT NOT NULL,
+  mine INTEGER NOT NULL, text TEXT NOT NULL, sent_at INTEGER NOT NULL, received_at INTEGER NOT NULL);
+-- My votes on comments (28 Oct 2026), to show which button I pressed.
+CREATE TABLE IF NOT EXISTS chat_comment_votes (comment INTEGER PRIMARY KEY NOT NULL, vote INTEGER NOT NULL);
 `;
 
 /** Group states on this device. */
@@ -149,7 +158,7 @@ const GROUP_FORMAT = 3; // 3 = polls (25 Oct 2026)
 const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_reactions', 'chat_group_polls',
   'chat_group_poll_votes', 'chat_vote_history', 'chat_group_names', 'chat_group_keys'];
 const DEVICE_TABLES = ['chat_devices', 'chat_sync_out', 'chat_sync_in'];
-const ALBUM_TABLES = ['chat_albums'];
+const ALBUM_TABLES = ['chat_albums', 'chat_album_threads', 'chat_album_talk', 'chat_comment_votes'];
 
 /** My published albums are published again (fresh date) when older than this: the postman keeps them 60 days after that. */
 export const ALBUM_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
@@ -744,6 +753,10 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     await flushSync().catch(() => {});
     if (failure) throw failure;
     if (!leaving) await refreshAlbums().catch(() => {});
+    if (!leaving && (await account()).account) {
+      const talk = await collectAlbumTalk().catch(() => 0);
+      if (talk) counts.albumTalk = talk;
+    }
     if (!leaving && (await first('SELECT id FROM chat_groups LIMIT 1'))) await syncGroups();
     return counts;
   }
@@ -1793,6 +1806,8 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       await createPostmanClient({ baseUrl: postmanUrl, identity: { publicKey: r.key, secretKey: r.secret }, fetchFn, now }).deleteAlbum();
     }
     await run('DELETE FROM chat_albums WHERE key = ?', [key]);
+    await run("DELETE FROM chat_album_talk WHERE album = ? AND side = 'owner'", [key]);
+    await run("DELETE FROM chat_album_threads WHERE album = ? AND side = 'owner'", [key]);
     await queueSync({ t: 'album', key, deleted: true });
   }
 
@@ -1824,6 +1839,167 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       n += 1;
     }
     return n;
+  }
+
+  // --- Comments on NFTs (28 Oct 2026) ----------------------------------------
+  // Reading them needs no sign-in (client.js publicAlbums.comments); these
+  // are the signed-in player's actions.
+
+  const albumClient = (r) => createPostmanClient({ baseUrl: postmanUrl, identity: { publicKey: r.key, secretKey: r.secret }, fetchFn, now });
+
+  /** A comment on one NFT of an album (shown under my chat nickname). */
+  async function commentOnNft(album, kind, nonce, text) {
+    return postman.addComment({ album, kind, nonce, text });
+  }
+
+  /** 1 = I can confirm, -1 = not right, 0 = take my vote back. */
+  async function voteOnComment(comment, vote) {
+    await postman.voteComment(comment, vote);
+    if (vote === 0) await run('DELETE FROM chat_comment_votes WHERE comment = ?', [comment]);
+    else await run('INSERT OR REPLACE INTO chat_comment_votes (comment, vote) VALUES (?, ?)', [comment, vote]);
+  }
+
+  /** My votes: { [commentId]: 1 | -1 } */
+  async function myCommentVotes() {
+    return Object.fromEntries((await all('SELECT comment, vote FROM chat_comment_votes')).map((r) => [r.comment, r.vote]));
+  }
+
+  async function deleteComment(comment) {
+    await postman.deleteComment(comment);
+  }
+
+  /** The owner hides (or shows again) a comment in one of MY albums. */
+  async function hideCommentInAlbum(albumKey, comment, hidden) {
+    const r = await first('SELECT * FROM chat_albums WHERE key = ?', [albumKey]);
+    if (!r) throw new Error('This album is no longer on this device.');
+    await albumClient(r).hideComment(comment, hidden);
+  }
+
+  /** Is this album one of mine (so its page can offer hiding comments / the inbox)? */
+  async function isMyAlbum(albumKey) {
+    return !!(await first('SELECT key FROM chat_albums WHERE key = ?', [albumKey]));
+  }
+
+  // --- The album mailbox (28 Oct 2026) ------------------------------------------
+  // I write to "the owner of album X" (sealed for the album's key, and for my
+  // other devices); the owner answers under the album's name (sealed with the
+  // album key, for my devices and for their own other devices). The owner sees
+  // my nickname; I don't learn who the owner is.
+
+  async function storeTalk({ album, side, thread, mine, text, sentAt }) {
+    const clean = cleanText(text || '');
+    if (!clean || !Number.isFinite(sentAt)) return false;
+    if (await first('SELECT id FROM chat_album_talk WHERE album = ? AND side = ? AND thread = ? AND mine = ? AND text = ? AND sent_at = ?',
+      [album, side, thread, mine ? 1 : 0, clean, sentAt])) return false;
+    await run('INSERT INTO chat_album_talk (album, side, thread, mine, text, sent_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [album, side, thread, mine ? 1 : 0, clean, sentAt, now()]);
+    await run(`UPDATE chat_album_threads SET last_at = MAX(last_at, ?), unread = unread + ? WHERE album = ? AND side = ? AND thread = ?`,
+      [sentAt, mine ? 0 : 1, album, side, thread]);
+    return true;
+  }
+
+  async function ensureThread({ album, side, thread, title = null, nickname = null, devices = null, blocked = null }) {
+    await run('INSERT OR IGNORE INTO chat_album_threads (album, side, thread, title, nickname, devices) VALUES (?, ?, ?, ?, ?, ?)',
+      [album, side, thread, title, nickname, devices ? JSON.stringify(devices) : null]);
+    if (title) await run('UPDATE chat_album_threads SET title = ? WHERE album = ? AND side = ? AND thread = ?', [title, album, side, thread]);
+    if (nickname) await run('UPDATE chat_album_threads SET nickname = ? WHERE album = ? AND side = ? AND thread = ?', [nickname, album, side, thread]);
+    if (devices) await run('UPDATE chat_album_threads SET devices = ? WHERE album = ? AND side = ? AND thread = ?', [JSON.stringify(devices), album, side, thread]);
+    if (blocked !== null) await run('UPDATE chat_album_threads SET blocked = ? WHERE album = ? AND side = ? AND thread = ?', [blocked ? 1 : 0, album, side, thread]);
+  }
+
+  /** Writing to the owner of someone's album. `title`: the album's title (kept to show the conversation). */
+  async function messageAlbumOwner(albumKey, title, text) {
+    if (!isPublicKey(albumKey)) throw new Error('Not an album.');
+    if (await isMyAlbum(albumKey)) throw new Error('This is your own album.');
+    const clean = cleanText(text || '');
+    if (!clean) throw new Error('Nothing to send.');
+    await refreshDevices().catch(() => {});
+    const sentAt = now();
+    const items = sealDirect({ from: identity, toDevices: [albumKey], ownDevices, type: 'album-talk', body: { album: albumKey, text: clean, sentAt, title } });
+    const { thread } = await postman.albumTalkSend(albumKey, items);
+    await ensureThread({ album: albumKey, side: 'visitor', thread, title });
+    await storeTalk({ album: albumKey, side: 'visitor', thread, mine: true, text: clean, sentAt });
+    return thread;
+  }
+
+  /** Answering a visitor of one of MY albums (under the album's name). */
+  async function replyAsAlbum(albumKey, thread, text) {
+    const r = await first('SELECT * FROM chat_albums WHERE key = ?', [albumKey]);
+    const th = await first("SELECT * FROM chat_album_threads WHERE album = ? AND side = 'owner' AND thread = ?", [albumKey, thread]);
+    if (!r || !th) throw new Error('This conversation is no longer on this device.');
+    const clean = cleanText(text || '');
+    if (!clean) throw new Error('Nothing to send.');
+    const devices = JSON.parse(th.devices || '[]').filter(isPublicKey);
+    if (!devices.length) throw new Error("This player can't be reached any more.");
+    const sentAt = now();
+    const items = sealDirect({ from: { publicKey: r.key, secretKey: r.secret }, toDevices: devices, ownDevices: [r.key], type: 'album-talk', body: { album: albumKey, text: clean, sentAt } });
+    await albumClient(r).albumTalkReply(thread, items);
+    await storeTalk({ album: albumKey, side: 'owner', thread, mine: true, text: clean, sentAt });
+  }
+
+  /** The owner stops (or allows again) messages from one visitor to this album. */
+  async function blockAlbumVisitor(albumKey, thread, blocked) {
+    const r = await first('SELECT * FROM chat_albums WHERE key = ?', [albumKey]);
+    if (!r) throw new Error('This album is no longer on this device.');
+    await albumClient(r).albumTalkBlock(thread, blocked);
+    await ensureThread({ album: albumKey, side: 'owner', thread, blocked });
+  }
+
+  /** New album messages: for this device (as a visitor) and for each of my albums (as the owner). → how many new */
+  async function collectAlbumTalk() {
+    let added = 0;
+    const take = async (client, key, ident, side) => {
+      const afterKey = `talkAfter:${key}`;
+      const { items } = await client.albumTalk((await getMe(afterKey)) || 0);
+      let last = (await getMe(afterKey)) || 0;
+      for (const it of items || []) {
+        last = Math.max(last, Number(it.id) || 0);
+        let opened = null;
+        try { opened = openDirect(it.envelope, ident); } catch { opened = null; }
+        const d = opened?.type === 'album-talk' ? opened.data || {} : null;
+        if (!d || d.album !== it.album || typeof d.text !== 'string') continue;
+        if (side === 'visitor') {
+          // From the album's owner, or a copy of what I wrote on another of my devices.
+          const mine = opened.from !== it.album;
+          if (mine && !ownDevices.includes(opened.from)) continue;
+          await ensureThread({ album: it.album, side, thread: it.thread, title: typeof d.title === 'string' ? cleanText(d.title).slice(0, 60) : null });
+          if (await storeTalk({ album: it.album, side, thread: it.thread, mine, text: d.text, sentAt: Number(d.sentAt) })) added += mine ? 0 : 1;
+        } else {
+          // From a visitor (one of their devices), or my own answer (from another of my devices).
+          const mine = opened.from === key;
+          if (!mine && !(it.devices || []).includes(opened.from)) continue;
+          await ensureThread({ album: key, side, thread: it.thread, nickname: it.nickname, devices: it.devices, blocked: it.blocked });
+          if (await storeTalk({ album: key, side, thread: it.thread, mine, text: d.text, sentAt: Number(d.sentAt) })) added += mine ? 0 : 1;
+        }
+      }
+      if (last) await setMe(afterKey, last);
+    };
+    await take(postman, identity.publicKey, identity, 'visitor');
+    for (const r of await all('SELECT * FROM chat_albums WHERE event IS NOT NULL')) {
+      await take(albumClient(r), r.key, { publicKey: r.key, secretKey: r.secret }, 'owner').catch(() => {});
+    }
+    return added;
+  }
+
+  /** My album conversations, newest first: [{ album, side, thread, title, nickname, blocked, unread, lastAt }] */
+  async function albumConversations() {
+    const titles = Object.fromEntries((await myAlbums()).map((a) => [a.key, a.album?.title || null]));
+    return (await all('SELECT * FROM chat_album_threads ORDER BY last_at DESC')).map((t) => ({
+      album: t.album, side: t.side, thread: t.thread, title: t.side === 'owner' ? titles[t.album] || t.title : t.title,
+      nickname: t.nickname, blocked: !!t.blocked, unread: t.unread, lastAt: t.last_at,
+    }));
+  }
+
+  /** One conversation's messages (oldest first); marks it read. */
+  async function albumMessages(album, side, thread) {
+    await run('UPDATE chat_album_threads SET unread = 0 WHERE album = ? AND side = ? AND thread = ?', [album, side, thread]);
+    return (await all('SELECT * FROM chat_album_talk WHERE album = ? AND side = ? AND thread = ? ORDER BY sent_at, id', [album, side, thread]))
+      .map((m) => ({ id: m.id, mine: !!m.mine, text: m.text, sentAt: m.sent_at }));
+  }
+
+  /** My conversation with the owner of this album, if there is one (its thread id). */
+  async function albumThreadWith(album) {
+    return (await first("SELECT thread FROM chat_album_threads WHERE album = ? AND side = 'visitor'", [album]))?.thread ?? null;
   }
 
   async function hasChat() {
@@ -2031,5 +2207,19 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     publishAlbum,
     deleteAlbum,
     refreshAlbums,
+    // comments and the album mailbox (28 Oct 2026)
+    commentOnNft,
+    voteOnComment,
+    myCommentVotes,
+    deleteComment,
+    hideCommentInAlbum,
+    isMyAlbum,
+    messageAlbumOwner,
+    replyAsAlbum,
+    blockAlbumVisitor,
+    collectAlbumTalk,
+    albumConversations,
+    albumMessages,
+    albumThreadWith,
   };
 }

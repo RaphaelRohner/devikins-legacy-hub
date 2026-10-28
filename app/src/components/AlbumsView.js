@@ -13,6 +13,10 @@
  *     address IS visible (that's the proof), so the Hub says so first and
  *     suggests a separate showcase wallet.
  *   - Comments from visitors (and holders confirming them) come later.
+ * 28 Oct 2026 (later): comments on NFTs by signed-in holders, who confirm or
+ * dispute them ("✓ I can confirm" / "✗ not right"); the album's owner can
+ * hide one in their album. "Message the owner": the owner answers under the
+ * album's name and stays anonymous (album mailbox, messenger.js).
  * 28 Oct 2026 (Raphael): sections chosen by the owner, filters and sorting
  * for visitors, the picker by kind with "show more", pictures without
  * waiting for Moonlabs' data server, and no wallet / numbers / Kleverscan
@@ -28,12 +32,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Switch, Alert, Platform, useWindowDimensions,
+  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Switch, Alert, Platform, useWindowDimensions, Modal,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import useNftImage from '../hooks/useNftImage';
 import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER, gameNameOf } from '../constants/schema';
-import { POSTMAN_URL } from '../constants/chat';
+import { POSTMAN_URL, MAIL_CHECK_EVERY_MS } from '../constants/chat';
 import { publicAlbums } from '../../chat/src/client.js';
 import {
   MAX_ALBUM_ITEMS, MAX_ALBUM_TITLE, MAX_ALBUM_DESCRIPTION, MAX_ALBUM_NOTE, MAX_ALBUM_SECTION, albumPictureUrl, pictureFolderOf,
@@ -68,11 +72,14 @@ async function runLimited(jobs, n, isStopped) {
 
 export default function AlbumsView({ onClose }) {
   const { colors } = useTheme();
-  // 'list' | 'album' | 'mine' | 'edit'
+  // 'list' | 'album' | 'mine' | 'edit' | 'talk'
   const [view, setView] = useState('list');
   const [openKey, setOpenKey] = useState(null);
   const [editKey, setEditKey] = useState(null);
   const [backTo, setBackTo] = useState('list');
+  // An album conversation: { album, side, thread, title, nickname } and where Back goes.
+  const [talk, setTalk] = useState(null);
+  const openTalk = (t, from) => { setTalk({ ...t, back: from }); setView('talk'); };
 
   const header = (title, onBack) => (
     <View style={styles.topRow}>
@@ -83,11 +90,19 @@ export default function AlbumsView({ onClose }) {
     </View>
   );
 
+  if (view === 'talk') {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        {header(talk.side === 'owner' ? `${talk.nickname || 'A player'} · ${talk.title || 'your album'}` : `Owner of "${talk.title || 'an album'}"`, () => setView(talk.back))}
+        <AlbumTalk talk={talk} onThread={(thread) => setTalk((t) => ({ ...t, thread }))} />
+      </View>
+    );
+  }
   if (view === 'album') {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {header('Collectors Album', () => setView(backTo))}
-        <AlbumDetail albumKey={openKey} />
+        <AlbumDetail albumKey={openKey} onTalk={(t) => openTalk(t, 'album')} />
       </View>
     );
   }
@@ -98,6 +113,7 @@ export default function AlbumsView({ onClose }) {
         <MyAlbums
           onOpen={(key) => { setOpenKey(key); setBackTo('mine'); setView('album'); }}
           onEdit={(key) => { setEditKey(key); setView('edit'); }}
+          onTalk={(t) => openTalk(t, 'mine')}
         />
       </View>
     );
@@ -126,6 +142,19 @@ export default function AlbumsView({ onClose }) {
 function AlbumList({ onOpen, onMine }) {
   const { colors } = useTheme();
   const [albums, setAlbums] = useState(null);
+  const [unread, setUnread] = useState(0);
+  // New album messages (only for players signed in to the chat).
+  useEffect(() => {
+    let stopped = false;
+    (async () => {
+      const m = await getMessenger();
+      if ((await m.status()).state !== 'ready') return;
+      await m.collectAlbumTalk().catch(() => {});
+      const n = (await m.albumConversations()).reduce((sum, t) => sum + t.unread, 0);
+      if (!stopped) setUnread(n);
+    })().catch(() => {});
+    return () => { stopped = true; };
+  }, []);
   const [more, setMore] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -153,7 +182,7 @@ function AlbumList({ onOpen, onMine }) {
           it's theirs, and the Hub asks Klever whether each NFT is still in it.
         </Text>
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.primary, alignSelf: 'flex-start' }]} onPress={onMine} testID="albums-mine">
-          <Text style={[styles.buttonText, { color: colors.primaryText }]}>My albums</Text>
+          <Text style={[styles.buttonText, { color: colors.primaryText }]}>{unread ? `My albums · ${unread} new message${unread === 1 ? '' : 's'}` : 'My albums'}</Text>
         </TouchableOpacity>
       </View>
       {error ? <Text style={[styles.note, styles.pad, { color: colors.text }]}>{error}</Text> : null}
@@ -219,7 +248,7 @@ const rarityRank = (r) => RARITY_ORDER.indexOf(r);
  * numbers and Kleverscan links - so casual visitors can't look the holder up
  * in one click. (It isn't hidden from someone determined: the data is public.)
  */
-function AlbumDetail({ albumKey }) {
+function AlbumDetail({ albumKey, onTalk }) {
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
   const [album, setAlbum] = useState(null);
@@ -232,6 +261,23 @@ function AlbumDetail({ albumKey }) {
   const [rarityF, setRarityF] = useState(null);
   const [ancestryF, setAncestryF] = useState(null);
   const [sort, setSort] = useState('album');
+  // Comments on the album's NFTs (everyone reads them), and what the viewer may do:
+  // { ready (signed in to the chat), nickname, mine (my album), votes: { id: 1 | -1 } }
+  const [comments, setComments] = useState([]);
+  const [viewer, setViewer] = useState({ ready: false, nickname: null, mine: false, votes: {} });
+  const [openId, setOpenId] = useState(null);
+
+  const loadComments = useCallback(async () => {
+    try { setComments(await reader().comments(albumKey)); } catch { /* (shown without comments) */ }
+  }, [albumKey]);
+  const loadViewer = useCallback(async () => {
+    try {
+      const m = await getMessenger();
+      const st = await m.status();
+      setViewer({ ready: st.state === 'ready', nickname: st.nickname, mine: await m.isMyAlbum(albumKey), votes: await m.myCommentVotes() });
+    } catch { /* (a visitor without the chat: read only) */ }
+  }, [albumKey]);
+  useEffect(() => { loadComments(); loadViewer(); }, [loadComments, loadViewer]);
 
   useEffect(() => {
     let stopped = false;
@@ -329,6 +375,25 @@ function AlbumDetail({ albumKey }) {
             {gone} of these NFTs {gone === 1 ? 'is' : 'are'} no longer in the owner's wallet (shown faded).
           </Text>
         ) : null}
+        <Text style={[styles.note, { color: colors.secondaryText }]}>
+          Tap an NFT to see it bigger and read or add comments (seasons, events, anything worth knowing).
+        </Text>
+        {viewer.mine ? null : viewer.ready ? (
+          <TouchableOpacity
+            style={[styles.smallButton, { borderColor: colors.primary, alignSelf: 'flex-start' }]}
+            onPress={async () => {
+              const thread = await (await getMessenger()).albumThreadWith(albumKey);
+              onTalk({ album: albumKey, side: 'visitor', thread, title: album.title });
+            }}
+            testID="album-message-owner"
+          >
+            <Text style={{ color: colors.primary, fontWeight: '700' }}>✉ Message the owner</Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={[styles.small, { color: colors.secondaryText }]}>
+            Signed in to the chat, you can comment and write to the owner (who stays anonymous).
+          </Text>
+        )}
       </View>
 
       {album.items.length > 1 ? (
@@ -362,18 +427,50 @@ function AlbumDetail({ albumKey }) {
         <View key={g.title || '-'}>
           {g.title ? <Text style={[styles.section, { color: colors.text }]} testID="album-section">{g.title}</Text> : null}
           <View style={styles.grid}>
-            {g.entries.map((e) => <AlbumItem key={e.id} entry={e} held={held[e.id]} columns={columns} />)}
+            {g.entries.map((e) => (
+              <AlbumItem
+                key={e.id}
+                entry={e}
+                held={held[e.id]}
+                columns={columns}
+                comments={visibleComments(comments, e.item, viewer.mine)}
+                onPress={() => setOpenId(e.id)}
+              />
+            ))}
           </View>
         </View>
       ))}
+      {openId ? (
+        <NftPanel
+          entry={entries.find((e) => e.id === openId)}
+          held={held[openId]}
+          albumKey={albumKey}
+          comments={visibleComments(comments, entries.find((e) => e.id === openId).item, viewer.mine)}
+          viewer={viewer}
+          onChanged={async () => { await loadComments(); await loadViewer(); }}
+          onClose={() => setOpenId(null)}
+        />
+      ) : null}
     </ScrollView>
   );
 }
 
-function AlbumItem({ entry, held, columns }) {
+/**
+ * The comments on one NFT as this viewer sees them: hidden ones only for
+ * the album's owner (marked); best confirmed first; `disputed` = more
+ * "not right" than confirmations (folded away on the screen).
+ */
+function visibleComments(all, item, isOwner) {
+  return all
+    .filter((c) => c.kind === item.kind && c.nonce === item.nonce && (!c.hidden || isOwner))
+    .map((c) => ({ ...c, disputed: c.disputes > c.confirms }))
+    .sort((a, b) => (b.confirms - b.disputes) - (a.confirms - a.disputes) || a.at - b.at);
+}
+
+/** An album NFT's picture: stored copy > straight from Moonlabs' picture server > the address in Moonlabs' data. */
+function NftPicture({ entry, style }) {
   const { colors } = useTheme();
-  const { item, row, metadata, traits, name } = entry;
-  // The picture: stored copy > straight from Moonlabs' picture server > the address in Moonlabs' data.
+  const { item, row, metadata } = entry;
   const direct = albumPictureUrl(item);
   const [directFailed, setDirectFailed] = useState(false);
   const source = row || (direct && !directFailed ? { image: direct } : metadata?.image ? { image: metadata.image } : null);
@@ -382,37 +479,283 @@ function AlbumItem({ entry, held, columns }) {
     if (imageLoadFailed && !row && direct && !directFailed && metadata?.image && metadata.image !== direct) setDirectFailed(true);
   }, [imageLoadFailed, row, direct, directFailed, metadata]);
   const loading = !imageSource && metadata === null && !row;
-  const kindWord = item.kind === 'devikin' ? traits.ancestry : traits.type;
-  const title = name || [traits.rarity, kindWord, SINGULAR[item.kind]].filter(Boolean).join(' ');
+  return imageSource && !imageLoadFailed ? (
+    <Image source={{ uri: imageSource }} style={style} resizeMode="contain" onError={onImageError} />
+  ) : (
+    <View style={[style, { backgroundColor: colors.placeholderBackground, alignItems: 'center', justifyContent: 'center' }]}>
+      {loading ? <ActivityIndicator color={colors.primary} /> : <Text style={{ color: colors.placeholderText, fontSize: 12 }}>No picture</Text>}
+    </View>
+  );
+}
+
+const nftTitle = ({ item, traits, name }) => name
+  || [traits.rarity, item.kind === 'devikin' ? traits.ancestry : traits.type, SINGULAR[item.kind]].filter(Boolean).join(' ');
+const heldText = (held) => (held === true ? '✓ in the owner\'s wallet' : held === false ? 'no longer in the owner\'s wallet'
+  : held === null ? "couldn't check the wallet" : 'checking the wallet…');
+
+function AlbumItem({ entry, held, columns, comments, onPress }) {
+  const { colors } = useTheme();
+  const { item, traits } = entry;
   const details = [COLLECTIONS[item.kind].label, traits.rarity, item.kind === 'devikin' ? traits.ancestry : traits.type].filter(Boolean);
+  const top = comments.find((c) => !c.disputed && !c.hidden);
   return (
-    <View
+    <TouchableOpacity
       testID="album-item"
+      onPress={onPress}
       style={[styles.item, { width: `${100 / columns - 2}%`, backgroundColor: colors.surface, borderColor: colors.border }, held === false && { opacity: 0.45 }]}
     >
-      {imageSource && !imageLoadFailed ? (
-        <Image source={{ uri: imageSource }} style={styles.itemImage} resizeMode="contain" onError={onImageError} />
-      ) : (
-        <View style={[styles.itemImage, { backgroundColor: colors.placeholderBackground, alignItems: 'center', justifyContent: 'center' }]}>
-          {loading ? <ActivityIndicator color={colors.primary} /> : <Text style={{ color: colors.placeholderText, fontSize: 12 }}>No picture</Text>}
-        </View>
-      )}
-      <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1}>{title}</Text>
+      <NftPicture entry={entry} style={styles.itemImage} />
+      <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1}>{nftTitle(entry)}</Text>
       <Text style={[styles.small, { color: colors.secondaryText }]} numberOfLines={2}>{details.join(' · ')}</Text>
-      <Text style={[styles.small, { color: held === false ? colors.text : colors.secondaryText }]} testID="album-item-held">
-        {held === true ? '✓ in the owner\'s wallet' : held === false ? 'no longer in the owner\'s wallet' : held === null ? "couldn't check the wallet" : 'checking the wallet…'}
-      </Text>
+      <Text style={[styles.small, { color: held === false ? colors.text : colors.secondaryText }]} testID="album-item-held">{heldText(held)}</Text>
       {item.note ? <Text style={[styles.small, { color: colors.text, fontStyle: 'italic' }]}>{item.note}</Text> : null}
-    </View>
+      {comments.length ? (
+        <Text style={[styles.small, { color: colors.secondaryText }]} numberOfLines={2} testID="album-item-comments">
+          💬 {comments.length}{top ? ` · ${top.text}${top.confirms ? ` (✓ ${top.confirms})` : ''}` : ''}
+        </Text>
+      ) : null}
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * One NFT of an album, bigger, with its comments. Signed-in players comment
+ * and vote (✓ I can confirm / ✗ not right; not on their own); writers delete
+ * their own; the album's owner hides a comment in their album.
+ */
+function NftPanel({ entry, held, albumKey, comments, viewer, onChanged, onClose }) {
+  const { colors } = useTheme();
+  const { width } = useWindowDimensions();
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [showDisputed, setShowDisputed] = useState(false);
+  const { item, traits } = entry;
+
+  async function act(fn) {
+    setBusy(true);
+    setError('');
+    try {
+      await fn(await getMessenger());
+      await onChanged();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const shown = comments.filter((c) => !c.disputed || showDisputed);
+  const disputedCount = comments.filter((c) => c.disputed).length;
+  const facts = Object.entries(traits || {})
+    .filter(([k, v]) => v !== null && v !== undefined && v !== '' && TRAIT_COLUMNS[item.kind]?.[k] && TRAIT_COLUMNS[item.kind][k].filterable !== false)
+    .slice(0, 12)
+    .map(([k, v]) => `${k.replace(/_/g, ' ').replace(/^./, (x) => x.toUpperCase())}: ${v}`);
+  const vote = (c, v) => act((m) => m.voteOnComment(c.id, viewer.votes[c.id] === v ? 0 : v));
+
+  return (
+    <Modal transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.backdrop}>
+        <View style={[styles.panel, { backgroundColor: colors.background, borderColor: colors.border, width: Math.min(width - 24, 640) }]} testID="album-panel">
+          <ScrollView contentContainerStyle={{ gap: 10, padding: 14 }} keyboardShouldPersistTaps="handled">
+            <View style={styles.pickRow}>
+              <Text style={[styles.albumTitle, { color: colors.text, flex: 1 }]}>{nftTitle(entry)}</Text>
+              <TouchableOpacity onPress={onClose} accessibilityLabel="Close" testID="album-panel-close">
+                <Text style={{ color: colors.primary, fontSize: 20, fontWeight: '700' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <NftPicture entry={entry} style={styles.panelImage} />
+            <Text style={[styles.note, { color: colors.secondaryText }]}>{COLLECTIONS[item.kind].label} · {heldText(held)}</Text>
+            {facts.length ? <Text style={[styles.small, { color: colors.secondaryText }]}>{facts.join(' · ')}</Text> : null}
+            {item.note ? <Text style={[styles.text, { color: colors.text, fontStyle: 'italic' }]}>Owner's note: {item.note}</Text> : null}
+
+            <Text style={[styles.section, { color: colors.text, marginHorizontal: 0 }]}>Comments</Text>
+            <Text style={[styles.small, { color: colors.secondaryText }]}>
+              Comments belong to this NFT, so they stay when it changes hands. Holders confirm what they know.
+            </Text>
+            {shown.map((c) => (
+              <View key={c.id} testID="album-comment" style={[styles.comment, { borderColor: colors.border }, c.hidden && { opacity: 0.5 }]}>
+                <Text style={[styles.text, { color: colors.text }]}>{c.text}</Text>
+                <Text style={[styles.small, { color: colors.secondaryText }]}>
+                  {c.nickname} · {dateText(c.at)}{c.hidden ? ' · hidden in your album' : ''}{c.disputed ? ' · disputed' : ''}
+                </Text>
+                <View style={styles.chipRow}>
+                  {viewer.ready && c.nickname !== viewer.nickname ? (
+                    <>
+                      <TouchableOpacity disabled={busy} onPress={() => vote(c, 1)} testID="album-comment-confirm"
+                        style={[styles.chip, { borderColor: viewer.votes[c.id] === 1 ? colors.primary : colors.border }]}>
+                        <Text style={{ color: viewer.votes[c.id] === 1 ? colors.primary : colors.text, fontSize: 13 }}>✓ I can confirm ({c.confirms})</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity disabled={busy} onPress={() => vote(c, -1)} testID="album-comment-dispute"
+                        style={[styles.chip, { borderColor: viewer.votes[c.id] === -1 ? colors.primary : colors.border }]}>
+                        <Text style={{ color: viewer.votes[c.id] === -1 ? colors.primary : colors.text, fontSize: 13 }}>✗ not right ({c.disputes})</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <Text style={[styles.small, { color: colors.secondaryText }]} testID="album-comment-votes">✓ {c.confirms} · ✗ {c.disputes}</Text>
+                  )}
+                  {viewer.ready && c.nickname === viewer.nickname ? (
+                    <TouchableOpacity disabled={busy} onPress={() => act((m) => m.deleteComment(c.id))} style={[styles.chip, { borderColor: colors.border }]} testID="album-comment-delete">
+                      <Text style={{ color: colors.text, fontSize: 13 }}>Delete</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  {viewer.mine ? (
+                    <TouchableOpacity disabled={busy} onPress={() => act((m) => m.hideCommentInAlbum(albumKey, c.id, !c.hidden))} style={[styles.chip, { borderColor: colors.border }]} testID="album-comment-hide">
+                      <Text style={{ color: colors.text, fontSize: 13 }}>{c.hidden ? 'Show in my album' : 'Hide in my album'}</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+            ))}
+            {!comments.length ? <Text style={[styles.small, { color: colors.secondaryText }]}>No comments yet.</Text> : null}
+            {disputedCount && !showDisputed ? (
+              <TouchableOpacity onPress={() => setShowDisputed(true)} testID="album-comments-disputed">
+                <Text style={[styles.small, { color: colors.primary }]}>Show {disputedCount} disputed comment{disputedCount === 1 ? '' : 's'}</Text>
+              </TouchableOpacity>
+            ) : null}
+            {viewer.ready ? (
+              <>
+                <TextInput
+                  style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                  placeholder="What do you know about it? e.g. From the May 2025 event"
+                  placeholderTextColor={colors.secondaryText}
+                  value={draft}
+                  maxLength={200}
+                  onChangeText={setDraft}
+                  testID="album-comment-input"
+                />
+                <TouchableOpacity
+                  disabled={busy || !draft.trim()}
+                  onPress={() => act(async (m) => { await m.commentOnNft(albumKey, item.kind, item.nonce, draft); setDraft(''); })}
+                  style={[styles.button, { backgroundColor: colors.primary, alignSelf: 'flex-start' }, (busy || !draft.trim()) && { opacity: 0.5 }]}
+                  testID="album-comment-send"
+                >
+                  <Text style={[styles.buttonText, { color: colors.primaryText }]}>Comment as {viewer.nickname}</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <Text style={[styles.small, { color: colors.secondaryText }]}>To comment or confirm, sign in to the chat (holders only).</Text>
+            )}
+            {error ? <Text style={[styles.note, { color: colors.text }]} testID="album-comment-error">{error}</Text> : null}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/**
+ * A conversation of the album mailbox: as a visitor with the album's
+ * (anonymous) owner, or as the owner with one visitor (who can be blocked).
+ */
+function AlbumTalk({ talk, onThread }) {
+  const { colors } = useTheme();
+  const [messages, setMessages] = useState([]);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [blocked, setBlocked] = useState(false);
+
+  const load = useCallback(async () => {
+    const m = await getMessenger();
+    await m.collectAlbumTalk().catch(() => {});
+    if (!talk.thread) return;
+    setMessages(await m.albumMessages(talk.album, talk.side, talk.thread));
+    const t = (await m.albumConversations()).find((x) => x.album === talk.album && x.side === talk.side && x.thread === talk.thread);
+    setBlocked(!!t?.blocked);
+  }, [talk.album, talk.side, talk.thread]);
+  useEffect(() => {
+    load().catch((e) => setError(e.message));
+    const timer = setInterval(() => load().catch(() => {}), MAIL_CHECK_EVERY_MS);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  async function send() {
+    setBusy(true);
+    setError('');
+    try {
+      const m = await getMessenger();
+      if (talk.side === 'owner') await m.replyAsAlbum(talk.album, talk.thread, draft);
+      else {
+        const thread = await m.messageAlbumOwner(talk.album, talk.title, draft);
+        if (thread !== talk.thread) onThread(thread);
+      }
+      setDraft('');
+      if (talk.thread) await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleBlock() {
+    try {
+      await (await getMessenger()).blockAlbumVisitor(talk.album, talk.thread, !blocked);
+      setBlocked(!blocked);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  return (
+    <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.note, { color: colors.secondaryText }]}>
+          {talk.side === 'owner'
+            ? `${talk.nickname || 'This player'} wrote about your album. You answer under the album's name: they don't learn who you are.`
+            : "The album's owner stays anonymous; they see your chat nickname. Messages are sealed like the chat."}
+        </Text>
+        {talk.side === 'owner' ? (
+          <TouchableOpacity onPress={toggleBlock} style={[styles.smallButton, { borderColor: colors.border, alignSelf: 'flex-start' }]} testID="album-talk-block">
+            <Text style={{ color: colors.text }}>{blocked ? 'Allow messages again' : 'Block (no more messages for this album)'}</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      {messages.map((msg) => (
+        <View
+          key={msg.id}
+          testID="album-talk-message"
+          style={[styles.bubble, msg.mine
+            ? { alignSelf: 'flex-end', backgroundColor: colors.chipBackground, borderColor: colors.primary }
+            : { alignSelf: 'flex-start', backgroundColor: colors.surface, borderColor: colors.border }]}
+        >
+          <Text style={[styles.text, { color: colors.text }]}>{msg.text}</Text>
+          <Text style={[styles.small, { color: colors.secondaryText }]}>{new Date(msg.sentAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</Text>
+        </View>
+      ))}
+      <View style={[styles.pad, { gap: 8 }]}>
+        <TextInput
+          style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface, minHeight: 60, textAlignVertical: 'top' }]}
+          placeholder={talk.side === 'owner' ? 'Your answer' : 'Your message to the owner'}
+          placeholderTextColor={colors.secondaryText}
+          value={draft}
+          multiline
+          maxLength={2000}
+          onChangeText={setDraft}
+          testID="album-talk-draft"
+        />
+        <TouchableOpacity
+          disabled={busy || !draft.trim()}
+          onPress={send}
+          style={[styles.button, { backgroundColor: colors.primary, alignSelf: 'flex-start' }, (busy || !draft.trim()) && { opacity: 0.5 }]}
+          testID="album-talk-send"
+        >
+          {busy ? <ActivityIndicator color={colors.primaryText} /> : <Text style={[styles.buttonText, { color: colors.primaryText }]}>Send</Text>}
+        </TouchableOpacity>
+        {error ? <Text style={[styles.note, { color: colors.text }]} testID="album-talk-error">{error}</Text> : null}
+      </View>
+    </ScrollView>
   );
 }
 
 // --- my albums -----------------------------------------------------------------------
 
-function MyAlbums({ onOpen, onEdit }) {
+function MyAlbums({ onOpen, onEdit, onTalk }) {
   const { colors } = useTheme();
   const [state, setState] = useState(null); // messenger status
   const [mine, setMine] = useState([]);
+  const [talks, setTalks] = useState([]); // album conversations (both sides)
   const [error, setError] = useState('');
   const [tick, setTick] = useState(0);
 
@@ -423,6 +766,9 @@ function MyAlbums({ onOpen, onEdit }) {
         const m = await getMessenger();
         const [s, list] = await Promise.all([m.status(), m.myAlbums()]);
         if (!stopped) { setState(s); setMine(list); }
+        if (s.state === 'ready') await m.collectAlbumTalk().catch(() => {});
+        const t = await m.albumConversations();
+        if (!stopped) setTalks(t);
       } catch (e) {
         if (!stopped) setError(e.message);
       }
@@ -453,6 +799,26 @@ function MyAlbums({ onOpen, onEdit }) {
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       {error ? <Text style={[styles.note, styles.pad, { color: colors.text }]}>{error}</Text> : null}
+      {talks.length ? (
+        <>
+          <Text style={[styles.section, { color: colors.text }]}>Messages</Text>
+          {talks.map((t) => (
+            <TouchableOpacity
+              key={`${t.album}/${t.side}/${t.thread}`}
+              testID="album-talk-row"
+              style={[styles.card, { backgroundColor: colors.surface, borderColor: t.unread ? colors.primary : colors.border }]}
+              onPress={() => onTalk(t)}
+            >
+              <Text style={[styles.text, { color: colors.text, fontWeight: t.unread ? '700' : '400' }]} numberOfLines={1}>
+                {t.side === 'owner' ? `${t.nickname || 'A player'} about "${t.title || 'your album'}"` : `To the owner of "${t.title || 'an album'}"`}
+                {t.unread ? ` · ${t.unread} new` : ''}
+              </Text>
+              {t.blocked ? <Text style={[styles.small, { color: colors.secondaryText }]}>Blocked</Text> : null}
+            </TouchableOpacity>
+          ))}
+          <Text style={[styles.section, { color: colors.text }]}>Albums</Text>
+        </>
+      ) : null}
       {!ready ? (
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={[styles.text, { color: colors.text }]}>
@@ -855,5 +1221,10 @@ const styles = StyleSheet.create({
   thumb: { width: 40, height: 40, borderRadius: 6 },
   chip: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 14, borderWidth: 1 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 12 },
+  panel: { maxHeight: '92%', borderWidth: 1, borderRadius: 14, overflow: 'hidden' },
+  panelImage: { width: '100%', maxWidth: 360, aspectRatio: 1, alignSelf: 'center', borderRadius: 8 },
+  comment: { borderWidth: 1, borderRadius: 10, padding: 10, gap: 6 },
+  bubble: { marginHorizontal: 12, marginBottom: 8, padding: 10, borderRadius: 12, borderWidth: 1, maxWidth: '80%', gap: 4 },
   filterBox: { marginHorizontal: 12, marginBottom: 10, paddingBottom: 10, gap: 8, borderBottomWidth: 1 },
 });

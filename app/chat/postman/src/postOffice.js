@@ -40,7 +40,7 @@ import { issueBadge, checkBadge, BADGE_DAYS } from '../../src/badge.js';
 import { isPublicKey } from '../../src/identity.js';
 import { checkAlbum } from '../../src/album.js';
 import {
-  contactRequestWait, DAY, MINUTE, MIN_POST_INTERVAL, nicknameKey,
+  contactRequestWait, DAY, MINUTE, MIN_POST_INTERVAL, nicknameKey, cleanText,
   GAME_ACCOUNT, votingThreshold, voteResult, voteDecidedEarly, canOpenVote, isPostingPaused, VOTE_DURATION, holdingBand, bandLabel,
 } from '../../src/rules.js';
 import { checkAuthHeader } from '../../src/httpAuth.js';
@@ -55,6 +55,12 @@ export const LINK_VALID_FOR = 5 * MINUTE;
 /** Collectors Albums (27 Oct 2026): kept this long after the owner's Hub last refreshed them; at most this many in all. */
 export const ALBUM_KEEP_DAYS = 60;
 export const MAX_ALBUMS = 5000;
+/** Comments on NFTs (28 Oct 2026): length, how many per NFT, how many a player may write per day. */
+export const MAX_COMMENT_CHARS = 200;
+export const MAX_COMMENTS_PER_NFT = 50;
+export const DAILY_COMMENTS_PER_PLAYER = 30;
+/** The album mailbox (28 Oct 2026): new conversations a player may start per day; messages are kept 30 days. */
+export const DAILY_ALBUM_THREADS_PER_PLAYER = 10;
 export const MAX_OPEN_SIGNINS = 3;
 export const MAX_DEVICES = 5;
 export const MAX_ENVELOPE_CHARS = 64 * 1024;
@@ -144,6 +150,19 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS albums (key TEXT PRIMARY KEY, event TEXT NOT NULL, title TEXT NOT NULL, name TEXT,
      count INTEGER NOT NULL, updated INTEGER NOT NULL, expires INTEGER NOT NULL)`,
   'CREATE INDEX IF NOT EXISTS albums_by_updated ON albums (updated)',
+  // Comments on NFTs (28 Oct 2026): by signed-in holders, under their nickname; one vote per player.
+  `CREATE TABLE IF NOT EXISTS comments (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, nonce INTEGER NOT NULL,
+     account TEXT NOT NULL, nickname TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL)`,
+  'CREATE INDEX IF NOT EXISTS comments_by_nft ON comments (kind, nonce)',
+  'CREATE TABLE IF NOT EXISTS comment_votes (comment INTEGER NOT NULL, account TEXT NOT NULL, vote INTEGER NOT NULL, PRIMARY KEY (comment, account))',
+  'CREATE TABLE IF NOT EXISTS album_hidden (album TEXT NOT NULL, comment INTEGER NOT NULL, PRIMARY KEY (album, comment))',
+  // The album mailbox (28 Oct 2026): a conversation between one player and the owner of one album
+  // (who stays anonymous); sealed envelopes, each for one key (the album's, or one of the player's devices).
+  `CREATE TABLE IF NOT EXISTS album_threads (id TEXT PRIMARY KEY, album TEXT NOT NULL, account TEXT NOT NULL,
+     blocked INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL, UNIQUE (album, account))`,
+  `CREATE TABLE IF NOT EXISTS album_talk (id INTEGER PRIMARY KEY AUTOINCREMENT, thread TEXT NOT NULL, to_key TEXT NOT NULL,
+     envelope TEXT NOT NULL, at INTEGER NOT NULL)`,
+  'CREATE INDEX IF NOT EXISTS album_talk_by_key ON album_talk (to_key, id)',
   // Bans are kept by wallet fingerprint, so leaving the chat and signing in again doesn't undo them.
   `CREATE TABLE IF NOT EXISTS group_bans (id INTEGER PRIMARY KEY AUTOINCREMENT, grp TEXT NOT NULL, player TEXT NOT NULL,
      nickname TEXT, at INTEGER NOT NULL, UNIQUE (grp, player))`,
@@ -227,6 +246,47 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     if (!account) refuse(403, 'Please sign in with your wallet first.');
     if (account.verified_until <= t) refuse(403, 'Please sign in with your wallet again (it is checked once a week).');
     return account;
+  }
+
+  /** Everything a player wrote about albums (comments, votes, album conversations) - when their account goes. */
+  function forgetAlbumActivity(accountId) {
+    for (const c of rows('SELECT id FROM comments WHERE account = ?', accountId)) {
+      run('DELETE FROM comment_votes WHERE comment = ?', c.id);
+      run('DELETE FROM album_hidden WHERE comment = ?', c.id);
+    }
+    run('DELETE FROM comments WHERE account = ?', accountId);
+    run('DELETE FROM comment_votes WHERE account = ?', accountId);
+    for (const th of rows('SELECT id FROM album_threads WHERE account = ?', accountId)) run('DELETE FROM album_talk WHERE thread = ?', th.id);
+    run('DELETE FROM album_threads WHERE account = ?', accountId);
+  }
+
+  /** An album and everything hanging on it (its conversations, the comments it hid). */
+  function deleteAlbum(key) {
+    for (const th of rows('SELECT id FROM album_threads WHERE album = ?', key)) run('DELETE FROM album_talk WHERE thread = ?', th.id);
+    run('DELETE FROM album_threads WHERE album = ?', key);
+    run('DELETE FROM album_hidden WHERE album = ?', key);
+    return rows('DELETE FROM albums WHERE key = ? RETURNING key', key).length > 0;
+  }
+
+  /** The NFTs in a published album: Set of "kind/nonce" (null if there's no such album). */
+  function albumItems(key, t) {
+    const a = row('SELECT event FROM albums WHERE key = ? AND expires > ?', key, t);
+    if (!a) return null;
+    try {
+      const items = JSON.parse(JSON.parse(a.event).content).items;
+      return new Set((Array.isArray(items) ? items : []).map((i) => `${i.kind}/${i.nonce}`));
+    } catch {
+      return new Set();
+    }
+  }
+
+  function checkSealedItems(items, allowed) {
+    if (!Array.isArray(items) || items.length === 0 || items.length > MAX_ITEMS_PER_SEND) refuse(400, 'Nothing to send.');
+    for (const it of items) {
+      if (!allowed.includes(it?.to)) refuse(400, 'An envelope is for someone outside this conversation.');
+      const text = stringify(it.envelope);
+      if (!text || text.length > MAX_ENVELOPE_CHARS) refuse(413, 'This envelope is too big.');
+    }
   }
 
   function stringify(value) {
@@ -643,7 +703,147 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     },
 
     /** Deleting an album: the request is signed with the ALBUM's key (only its owner has it). */
-    'POST /albums/delete': ({ device }) => ({ deleted: rows('DELETE FROM albums WHERE key = ? RETURNING key', device).length > 0 }),
+    'POST /albums/delete': ({ device }) => ({ deleted: deleteAlbum(device) }),
+
+    // --- Comments on NFTs (28 Oct 2026) -------------------------------------------
+    // Belong to the NFT (they stay when it changes hands and show in every
+    // album with it); written and voted on by signed-in holders, read by anyone.
+
+    /** The comments on an album's NFTs: { comments: [{ id, kind, nonce, nickname, text, at, confirms, disputes, hidden }] } */
+    'GET /comments': ({ query, t }) => {
+      const key = String(query.get('album') || '');
+      const items = albumItems(key, t);
+      if (!items) refuse(404, 'This album no longer exists.');
+      const out = [];
+      for (const id of items) {
+        const [kind, nonce] = id.split('/');
+        out.push(...rows(`SELECT c.id, c.kind, c.nonce, c.nickname, c.text, c.at,
+            (SELECT COUNT(*) FROM comment_votes v WHERE v.comment = c.id AND v.vote = 1) AS confirms,
+            (SELECT COUNT(*) FROM comment_votes v WHERE v.comment = c.id AND v.vote = -1) AS disputes,
+            EXISTS (SELECT 1 FROM album_hidden h WHERE h.album = ? AND h.comment = c.id) AS hidden
+          FROM comments c WHERE c.kind = ? AND c.nonce = ? ORDER BY c.at`, key, kind, Number(nonce)));
+      }
+      return { comments: out.map((c) => ({ ...c, hidden: !!c.hidden })) };
+    },
+
+    /** { album, kind, nonce, text } - a comment on an NFT that's in that album. */
+    'POST /comments/add': ({ device, body, t }) => {
+      const account = verifiedAccount(device, t);
+      if (!account.nickname) refuse(403, 'Please pick a chat nickname first.');
+      const items = albumItems(String(body.album || ''), t);
+      if (!items) refuse(404, 'This album no longer exists.');
+      if (!items.has(`${body.kind}/${body.nonce}`)) refuse(400, "That NFT isn't in this album.");
+      const text = cleanText(typeof body.text === 'string' ? body.text : '');
+      if (!text) refuse(400, 'The comment is empty.');
+      if ([...text].length > MAX_COMMENT_CHARS) refuse(413, `A comment can have at most ${MAX_COMMENT_CHARS} characters.`);
+      if (row('SELECT COUNT(*) AS n FROM comments WHERE kind = ? AND nonce = ?', body.kind, body.nonce).n >= MAX_COMMENTS_PER_NFT) {
+        refuse(507, 'This NFT has as many comments as it can hold.');
+      }
+      spend(`comments:${account.wallet_fp}`, DAILY_COMMENTS_PER_PLAYER, t);
+      spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
+      const id = row('INSERT INTO comments (kind, nonce, account, nickname, text, at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
+        body.kind, body.nonce, account.id, account.nickname, text, t).id;
+      return { id };
+    },
+
+    /** { comment, vote: 1 (I can confirm) | -1 (not right) | 0 (take my vote back) } - not on one's own. */
+    'POST /comments/vote': ({ device, body, t }) => {
+      const account = verifiedAccount(device, t);
+      const c = row('SELECT id, account FROM comments WHERE id = ?', Number(body.comment));
+      if (!c) refuse(404, 'This comment no longer exists.');
+      if (c.account === account.id) refuse(403, "You can't vote on your own comment.");
+      if (![1, -1, 0].includes(body.vote)) refuse(400, 'Damaged request.');
+      spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
+      if (body.vote === 0) run('DELETE FROM comment_votes WHERE comment = ? AND account = ?', c.id, account.id);
+      else run('INSERT INTO comment_votes (comment, account, vote) VALUES (?, ?, ?) ON CONFLICT (comment, account) DO UPDATE SET vote = excluded.vote', c.id, account.id, body.vote);
+      return { voted: body.vote };
+    },
+
+    /** { comment } - deleting one's own comment. */
+    'POST /comments/delete': ({ device, body, t }) => {
+      const account = verifiedAccount(device, t);
+      const c = row('SELECT id FROM comments WHERE id = ? AND account = ?', Number(body.comment), account.id);
+      if (!c) refuse(404, 'This comment no longer exists (or isn\'t yours).');
+      run('DELETE FROM comment_votes WHERE comment = ?', c.id);
+      run('DELETE FROM album_hidden WHERE comment = ?', c.id);
+      run('DELETE FROM comments WHERE id = ?', c.id);
+      return { deleted: true };
+    },
+
+    /** { comment, hidden } - the album's owner hides a comment in THEIR album (signed with the album key). */
+    'POST /albums/hide-comment': ({ device, body, t }) => {
+      if (!albumItems(device, t)) refuse(404, 'This album no longer exists.');
+      const id = Number(body.comment);
+      if (body.hidden) run('INSERT OR IGNORE INTO album_hidden (album, comment) VALUES (?, ?)', device, id);
+      else run('DELETE FROM album_hidden WHERE album = ? AND comment = ?', device, id);
+      return { hidden: !!body.hidden };
+    },
+
+    // --- The album mailbox (28 Oct 2026) -----------------------------------------
+    // A signed-in player writes to "the owner of album X"; the owner answers
+    // under the album's name (signed with the album key), so they stay
+    // anonymous. Envelopes are sealed for each key (the album's, and the
+    // player's devices); the postman can't read them, but it does know which
+    // player talks to which album.
+
+    /** Player: { album, items: [{ to, envelope }] } - for the album key and my own devices. */
+    'POST /albums/talk/send': ({ device, body, t }) => {
+      const account = verifiedAccount(device, t);
+      if (!account.nickname) refuse(403, 'Please pick a chat nickname first.');
+      const album = String(body.album || '');
+      if (!albumItems(album, t)) refuse(404, 'This album no longer exists.');
+      let th = row('SELECT * FROM album_threads WHERE album = ? AND account = ?', album, account.id);
+      if (th?.blocked) refuse(403, "The album's owner doesn't take messages from you.");
+      checkSealedItems(body.items, [album, ...devicesOf(account.id)]);
+      if (!th) {
+        spend(`threads:${account.wallet_fp}`, DAILY_ALBUM_THREADS_PER_PLAYER, t);
+        th = { id: randomHex(16) };
+        run('INSERT INTO album_threads (id, album, account, at) VALUES (?, ?, ?, ?)', th.id, album, account.id, t);
+      }
+      spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
+      for (const it of body.items) run('INSERT INTO album_talk (thread, to_key, envelope, at) VALUES (?, ?, ?, ?)', th.id, it.to, stringify(it.envelope), t);
+      run('UPDATE album_threads SET at = ? WHERE id = ?', t, th.id);
+      return { thread: th.id };
+    },
+
+    /**
+     * Messages for this key after number `after` (a player's device, or an
+     * album key: the owner's devices share it, so nothing is deleted on
+     * pickup - they go after 30 days): { items: [{ id, album, thread, envelope,
+     * nickname, devices }] } - nickname and devices only for the album's owner (to answer).
+     */
+    'GET /albums/talk': ({ device, query }) => {
+      const after = Number(query.get('after')) || 0;
+      const isAlbum = !!row('SELECT key FROM albums WHERE key = ?', device);
+      const found = rows(`SELECT m.id, m.envelope, th.id AS thread, th.album, th.account, th.blocked FROM album_talk m
+          JOIN album_threads th ON th.id = m.thread WHERE m.to_key = ? AND m.id > ? ORDER BY m.id LIMIT 200`, device, after);
+      return {
+        items: found.map((m) => {
+          const out = { id: m.id, album: m.album, thread: m.thread, envelope: JSON.parse(m.envelope) };
+          if (!isAlbum) return out;
+          const a = row('SELECT nickname FROM accounts WHERE id = ?', m.account);
+          return { ...out, nickname: a?.nickname ?? null, devices: devicesOf(m.account), blocked: !!m.blocked };
+        }),
+      };
+    },
+
+    /** Owner (album key): { thread, items } - an answer, for the player's devices and the album key (my other devices). */
+    'POST /albums/talk/reply': ({ device, body, t }) => {
+      const th = row('SELECT * FROM album_threads WHERE id = ? AND album = ?', String(body.thread || ''), device);
+      if (!th) refuse(404, 'This conversation no longer exists.');
+      checkSealedItems(body.items, [device, ...devicesOf(th.account)]);
+      for (const it of body.items) run('INSERT INTO album_talk (thread, to_key, envelope, at) VALUES (?, ?, ?, ?)', th.id, it.to, stringify(it.envelope), t);
+      run('UPDATE album_threads SET at = ? WHERE id = ?', t, th.id);
+      return { sent: true };
+    },
+
+    /** Owner (album key): { thread, blocked } - no more messages from that player to this album. */
+    'POST /albums/talk/block': ({ device, body }) => {
+      const th = row('SELECT id FROM album_threads WHERE id = ? AND album = ?', String(body.thread || ''), device);
+      if (!th) refuse(404, 'This conversation no longer exists.');
+      run('UPDATE album_threads SET blocked = ? WHERE id = ?', body.blocked ? 1 : 0, th.id);
+      return { blocked: !!body.blocked };
+    },
 
     /** The albums, newest first: { albums: [{ key, title, name, count, updated }] }; `before` = updated time for the next page. */
     'GET /albums': ({ query, t }) => {
@@ -1131,6 +1331,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       const account = accountOf(device);
       run('DELETE FROM devices WHERE key = ?', device);
       run('DELETE FROM mail WHERE device = ?', device);
+      run('DELETE FROM album_talk WHERE to_key = ?', device);
       run('DELETE FROM signins WHERE device = ?', device);
       let accountDeleted = false;
       if (account && devicesOf(account.id).length === 0) {
@@ -1139,6 +1340,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
         // (The contact-request pause and post times stay until they run out
         // by themselves, so leaving and coming back doesn't reset them.)
         run('DELETE FROM codes WHERE account = ?', account.id);
+        forgetAlbumActivity(account.id);
         run('DELETE FROM accounts WHERE id = ?', account.id);
         accountDeleted = true;
       }
@@ -1146,7 +1348,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     },
   };
 
-  const OPEN = new Set(['GET /hello', 'POST /drop', 'POST /drop/devices', 'GET /albums', 'GET /albums/one']);
+  const OPEN = new Set(['GET /hello', 'POST /drop', 'POST /drop/devices', 'GET /albums', 'GET /albums/one', 'GET /comments']);
 
   /**
    * handle — one request. → { status, body }
@@ -1188,7 +1390,9 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     run('DELETE FROM posts WHERE at < ?', cutoff);
     run('DELETE FROM signins WHERE expires <= ?', t);
     run('DELETE FROM proofs WHERE expires <= ?', t);
-    run('DELETE FROM albums WHERE expires <= ?', t);
+    for (const a of rows('SELECT key FROM albums WHERE expires <= ?', t)) deleteAlbum(a.key);
+    run('DELETE FROM album_talk WHERE at < ?', cutoff);
+    run('DELETE FROM album_threads WHERE at < ? AND blocked = 0', cutoff);
     run('DELETE FROM requests WHERE at < ?', t - DAY);
     run('DELETE FROM lastpost WHERE at < ?', t - DAY);
     run('DELETE FROM budget WHERE day < ?', Math.floor(t / DAY) - 1);
@@ -1204,6 +1408,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       run('DELETE FROM codes WHERE account = ?', gone.id);
       run('DELETE FROM group_joins WHERE account = ?', gone.id);
       for (const m of rows('SELECT grp FROM group_members WHERE account = ?', gone.id)) removeMember(m.grp, gone.id);
+      forgetAlbumActivity(gone.id);
       run('DELETE FROM accounts WHERE id = ?', gone.id);
     }
   }

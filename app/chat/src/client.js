@@ -82,6 +82,16 @@ export function createPostmanClient({ baseUrl, identity, fetchFn = (...a) => fet
     // (a signed-in holder, against spam); deleting with the ALBUM's key (see albumClient).
     publishAlbum: (album) => call('POST', '/albums/publish', { album }),
     deleteAlbum: () => call('POST', '/albums/delete', {}),
+    // Comments on NFTs (28 Oct 2026; hiding one: signed with the album key)
+    addComment: ({ album, kind, nonce, text }) => call('POST', '/comments/add', { album, kind, nonce, text }),
+    voteComment: (comment, vote) => call('POST', '/comments/vote', { comment, vote }),
+    deleteComment: (comment) => call('POST', '/comments/delete', { comment }),
+    hideComment: (comment, hidden) => call('POST', '/albums/hide-comment', { comment, hidden }),
+    // The album mailbox (28 Oct 2026; reply / block: signed with the album key)
+    albumTalkSend: (album, items) => call('POST', '/albums/talk/send', { album, items }),
+    albumTalk: (after = 0) => call('GET', `/albums/talk?after=${Number(after) || 0}`),
+    albumTalkReply: (thread, items) => call('POST', '/albums/talk/reply', { thread, items }),
+    albumTalkBlock: (thread, blocked) => call('POST', '/albums/talk/block', { thread, blocked }),
   };
 }
 
@@ -111,6 +121,11 @@ export function publicAlbums({ baseUrl, fetchFn = (...a) => fetch(...a) }) {
       const r = await get(`/albums${before ? `?before=${Number(before)}` : ''}`);
       const albums = (Array.isArray(r?.albums) ? r.albums : []).filter((a) => a && typeof a.key === 'string' && typeof a.title === 'string');
       return { albums, more: albums.length >= 50 };
+    },
+    /** The comments on an album's NFTs (see the postman's GET /comments). */
+    async comments(key) {
+      const r = await get(`/comments?album=${encodeURIComponent(key)}`);
+      return (Array.isArray(r?.comments) ? r.comments : []).filter((c) => c && Number.isInteger(c.id) && typeof c.text === 'string');
     },
     async one(key) {
       const r = await get(`/albums/one?key=${encodeURIComponent(key)}`);

@@ -351,13 +351,13 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
           {card(
             <>
               <Text style={[styles.text, { color: colors.text }]}>
-                Chat with other Devikins players: 1:1 for now, groups are coming. Only for wallets that hold at least one
+                Chat with other Devikins players, 1:1 and in open groups. Only for wallets that hold at least one
                 Devikin.
               </Text>
               <Text style={[styles.note, { color: colors.secondaryText }]}>
                 {`• Messages are sealed on your ${CHAT_DEVICE} and opened only on the other player's. The Hub's "postman" in between can't read them.\n`
                   + `• Your chat history is kept only in ${CHAT_HERE}.\n`
-                  + '• Your wallet address is never shown to other players.'}
+                  + '• The chat never shows your wallet address. Collectors Albums (and later the marketplace) can: you\'re asked first.'}
               </Text>
               {status.expired && status.linked ? (
                 <Text style={[styles.text, { color: colors.text, fontWeight: '700' }]}>

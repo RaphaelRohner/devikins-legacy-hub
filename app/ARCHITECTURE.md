@@ -808,3 +808,14 @@ Moonlabs' picture server (the album carries a Devikin's picture folder,
 wallet check shows on its own. The album screens don't show the wallet, the
 NFTs' numbers or Kleverscan links (against casual looking-up of holders; the
 data stays public, so this isn't protection against someone determined).
+
+Later on 28 Oct 2026: **comments** on NFTs (they belong to the NFT, so they
+show in every album with it and stay when it changes hands), written and
+voted on ("✓ I can confirm" / "✗ not right") by signed-in holders under
+their chat nickname, readable by anyone; the album's owner can hide one in
+their album; disputed ones are folded away. And the **album mailbox**:
+"Message the owner" seals a message for the album's key (`messenger.js`
+`messageAlbumOwner`); the owner's Hubs (which share the album key) fetch
+and answer under the album's name (`replyAsAlbum`), so the owner stays
+anonymous; the owner can block a player for that album. Tapping an NFT in
+an album opens it bigger with its comments (`NftPanel` in `AlbumsView.js`).

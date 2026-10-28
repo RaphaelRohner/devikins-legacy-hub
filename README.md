@@ -32,7 +32,10 @@ players.
   and browse other players' albums, also on the website without signing
   in, filtered by kind, rarity or ancestry. Each NFT is checked: the wallet
   proved it's the owner's, and the Hub asks Klever whether the NFT is still
-  in it. Anonymous unless you choose to show your chat nickname.
+  in it. Anonymous unless you choose to show your chat nickname. Holders
+  comment on NFTs ("from the May 2025 event") and confirm what others
+  wrote, and can write to an album's owner, who answers without revealing
+  who they are.
 - **Backups:** "Export all sets" saves everything to a file (the chat
   locked with a password of your choice).
 

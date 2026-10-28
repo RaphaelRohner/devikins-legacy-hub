@@ -198,3 +198,92 @@ test('leaving the chat on my last device takes my albums down', async () => {
   await p.leave();
   assert.equal((await reader(w).list()).albums.length, 0);
 });
+
+/** Alice's published album (ITEMS) and two more players. */
+async function albumWithVisitors() {
+  const w = world();
+  const { p, showcase, key, proof } = await playerWithAlbum(w);
+  await p.publishAlbum(key, { title: 'Yodas', wallet: showcase.address, proof, items: ITEMS });
+  const bob = await w.player('Bob', 3);
+  const cara = await w.player('Cara', 12);
+  return { w, alice: p, key, bob, cara };
+}
+
+test('comments (28 Oct 2026): holders comment on an NFT in an album, others confirm or dispute; anyone reads', async () => {
+  const { w, alice, key, bob, cara } = await albumWithVisitors();
+  const r = reader(w);
+  const { id } = await bob.commentOnNft(key, 'devikin', 123, 'From the May 2025 event');
+  await assert.rejects(bob.commentOnNft(key, 'devikin', 999, 'Not in the album'), /isn't in this album/);
+  await assert.rejects(bob.commentOnNft(key, 'devikin', 123, 'x'.repeat(201)), /at most 200/);
+  await assert.rejects(bob.voteOnComment(id, 1), /your own comment/);
+  await cara.voteOnComment(id, 1);
+  await alice.voteOnComment(id, 1);
+  let [c] = await r.comments(key);
+  assert.deepEqual([c.nickname, c.text, c.confirms, c.disputes, c.hidden], ['Bob', 'From the May 2025 event', 2, 0, false]);
+  // Changing one's mind: one vote per player.
+  await cara.voteOnComment(id, -1);
+  [c] = await r.comments(key);
+  assert.deepEqual([c.confirms, c.disputes], [1, 1]);
+  assert.deepEqual(await cara.myCommentVotes(), { [id]: -1 });
+  // A visitor without a chat can't write.
+  const blank = await w.blank();
+  await assert.rejects(blank.commentOnNft(key, 'devikin', 123, 'Hi'), /sign in/);
+  // The album's owner hides it in their album; shown again.
+  await alice.hideCommentInAlbum(key, id, true);
+  assert.equal((await r.comments(key))[0].hidden, true);
+  await alice.hideCommentInAlbum(key, id, false);
+  // Only the writer can delete it.
+  await assert.rejects(cara.deleteComment(id), /isn't yours/);
+  await bob.deleteComment(id);
+  assert.deepEqual(await r.comments(key), []);
+});
+
+test('comments belong to the NFT: they show in another album with it, and go with the writer\'s account', async () => {
+  const { w, key, bob } = await albumWithVisitors();
+  await bob.commentOnNft(key, 'weapon', 7, 'Best hammer of season 1');
+  // Another player's album with the same weapon (it changed hands).
+  const dave = await w.player('Dave', 5);
+  const showcase = wallet();
+  const { key: k2, proofText } = await dave.newAlbum();
+  await dave.publishAlbum(k2, { title: 'My weapons', wallet: showcase.address, proof: showcase.sign(proofText), items: [{ kind: 'weapon', nonce: 7 }] });
+  assert.deepEqual((await reader(w).comments(k2)).map((c) => c.text), ['Best hammer of season 1']);
+  await bob.leave();
+  assert.deepEqual(await reader(w).comments(k2), []);
+});
+
+test('the album mailbox (28 Oct 2026): a player writes to the anonymous owner, who answers under the album\'s name', async () => {
+  const { w, alice, key, bob, cara } = await albumWithVisitors();
+  await bob.messageAlbumOwner(key, 'Yodas', 'Would you sell the Yoda?');
+  await assert.rejects(alice.messageAlbumOwner(key, 'Yodas', 'Me?'), /your own album/);
+  assert.equal(await alice.collectAlbumTalk(), 1);
+  const [th] = await alice.albumConversations();
+  assert.deepEqual([th.side, th.nickname, th.title, th.unread], ['owner', 'Bob', 'Yodas', 1]);
+  assert.deepEqual((await alice.albumMessages(key, 'owner', th.thread)).map((m) => [m.mine, m.text]), [[false, 'Would you sell the Yoda?']]);
+  await alice.replyAsAlbum(key, th.thread, 'Not for now, sorry');
+  assert.equal(await bob.collectAlbumTalk(), 1);
+  const [bt] = await bob.albumConversations();
+  assert.deepEqual([bt.side, bt.title, bt.nickname, bt.unread], ['visitor', 'Yodas', null, 1]);
+  assert.deepEqual((await bob.albumMessages(key, 'visitor', bt.thread)).map((m) => [m.mine, m.text]), [[true, 'Would you sell the Yoda?'], [false, 'Not for now, sorry']]);
+  // Nothing in Bob's envelopes says who Alice is: the answer comes from the album's key, not her chat key.
+  const { items } = await bob.postman.albumTalk(0);
+  assert.ok(items.length >= 1 && items.every((i) => !('nickname' in i) && !('devices' in i)));
+  assert.ok(!JSON.stringify(items).includes(alice.identity.publicKey));
+  // Cara can't read Bob's conversation, and the postman refuses envelopes for strangers.
+  assert.equal(await cara.collectAlbumTalk(), 0);
+  const { sealDirect } = await import('../src/direct.js');
+  const stray = sealDirect({ from: JSON.parse((await cara.db.getAllAsync("SELECT v FROM chat_me WHERE k = 'identity'"))[0].v), toDevices: [bob.identity.publicKey], type: 'album-talk', body: { album: key, text: 'hi', sentAt: 1 } });
+  await assert.rejects(cara.postman.albumTalkSend(key, stray), /outside this conversation/);
+  // Alice blocks Bob for this album.
+  await alice.blockAlbumVisitor(key, th.thread, true);
+  await assert.rejects(bob.messageAlbumOwner(key, 'Yodas', 'Please?'), /doesn't take messages/);
+  // Alice's second device sees the conversation too (the album key is shared).
+  const phone = await w.player('Alice', 0, alice, 'Phone');
+  await alice.checkMail();
+  await alice.copyHistoryTo((await alice.linkedDevices()).others[0].key);
+  await phone.checkMail();
+  const pt = (await phone.albumConversations()).find((t) => t.side === 'owner');
+  assert.deepEqual((await phone.albumMessages(key, 'owner', pt.thread)).map((m) => [m.mine, m.text]), [[false, 'Would you sell the Yoda?'], [true, 'Not for now, sorry']]);
+  // Deleting the album ends its conversations.
+  await alice.deleteAlbum(key);
+  await assert.rejects(cara.messageAlbumOwner(key, 'Yodas', 'Hello'), /no longer exists/);
+});
