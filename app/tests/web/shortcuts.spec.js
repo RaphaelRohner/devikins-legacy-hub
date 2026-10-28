@@ -28,6 +28,14 @@ test('G then a letter jumps to a section; ? lists the shortcuts; typing in a box
   await expect(page.getByText('2 Weapons', { exact: true })).toBeVisible();
   await keys(page, 'g', 'o');
   await expect(page.getByText('Where are my NFTs?', { exact: true })).toBeVisible();
+  // (28 Oct 2026) G V: Collectors Albums; G H: Ask Devi. (A pretend postman with no albums yet.)
+  await page.route('https://devi-postman-test.raphaelrohner.workers.dev/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"albums":[]}' }));
+  await keys(page, 'g', 'v');
+  await expect(page.getByText('Collectors Albums', { exact: true }).first()).toBeVisible();
+  await keys(page, 'g', 'h');
+  await expect(page.getByPlaceholder('Ask Devi something...')).toBeVisible();
+  await page.getByText('☰').first().click().catch(() => {});
+  await page.keyboard.press('Escape');
   await keys(page, 'g', 'd');
   await expect(page.getByText('2 Devikins', { exact: true })).toBeVisible();
 
@@ -50,6 +58,8 @@ test('G then a letter jumps to a section; ? lists the shortcuts; typing in a box
   await expect(page.getByText('G D', { exact: true })).toBeVisible();
   await page.getByTestId('menu-shortcuts').click();
   await expect(page.getByTestId('shortcuts-help')).toContainText('Withdrawals');
+  await expect(page.getByTestId('shortcuts-help')).toContainText('Collectors Albums');
+  await expect(page.getByTestId('shortcuts-help')).toContainText('Ask Devi');
   await page.getByTestId('shortcuts-help-close').click();
   await expect(page.getByTestId('shortcuts-help')).toHaveCount(0);
   await page.keyboard.press('?');

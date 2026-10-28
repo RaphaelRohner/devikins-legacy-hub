@@ -28,9 +28,12 @@ export const SHORTCUTS = [
   { key: 'o', action: 'overview', label: 'Where are my NFTs? (overview)' },
   { key: 'c', action: 'chat', label: 'Chat' },
   { key: 'w', action: 'withdrawals', label: 'Withdrawals' },
+  { key: 'v', action: 'albums', label: 'Collectors Albums (V for void album)' },
   { key: 'b', action: 'breeding', label: 'Breeding Helper' },
   { key: 's', action: 'wallets', label: 'Wallets (Set Up)' },
   { key: 'f', action: 'fetch', label: 'Fetch/Update' },
+  // ('devi', not 'help': '?' is the shortcuts list; App.js opens Ask Devi for it. 28 Oct 2026)
+  { key: 'h', action: 'devi', label: 'Ask Devi (H for help)' },
 ];
 
 const GO_WINDOW_MS = 1500;

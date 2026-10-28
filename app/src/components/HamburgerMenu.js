@@ -182,6 +182,7 @@ export default function HamburgerMenu({
       key: 'help',
       label: 'Ask Devi',
       screen: 'help',
+      shortcut: 'devi',
       onPress: () => onSelectScreen('help'),
     },
     {

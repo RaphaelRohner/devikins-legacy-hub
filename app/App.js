@@ -1091,6 +1091,10 @@ Continue anyway?`
     }
     if (action === 'breeding') setBreedingStart(null);
     if (action === 'chat' && openChatDock()) return;
+    if (action === 'devi') {
+      goToScreen('help'); // (Ask Devi's screen)
+      return;
+    }
     goToScreen(action);
   });
 
