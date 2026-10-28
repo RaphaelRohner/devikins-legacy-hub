@@ -245,8 +245,14 @@ test('the chat goes into "Export all sets" with a password and comes back in a n
   await alice.page.getByText('‹').first().click();
   await alice.page.getByText('‹').first().click();
   await openMenuEntry(alice.page, 'Wallets');
+  // (✕ closes the box and makes no backup at all - 28 Oct 2026)
   await alice.page.getByText('Export all sets').click();
   const box = alice.page.getByTestId('chat-backup-box');
+  await expect(box).toContainText('Include your chat?');
+  await alice.page.getByTestId('chat-backup-cancel').click();
+  await expect(box).toHaveCount(0);
+  await expect(alice.page.getByText('Export all sets')).toBeVisible();
+  await alice.page.getByText('Export all sets').click();
   await expect(box).toContainText('Include your chat?');
   await alice.page.getByTestId('chat-backup-password').fill('my chat secret');
   await alice.page.getByTestId('chat-backup-repeat').fill('my chat secrex');

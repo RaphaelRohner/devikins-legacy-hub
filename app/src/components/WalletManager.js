@@ -111,7 +111,7 @@ import { IN_GAME_WALLET_NAME, MY_WALLET_NAME, JUST_LOOKING_NAME } from '../const
 import { GUIDE_KEYS } from './GettingStartedCard';
 import { useTheme } from '../context/ThemeContext';
 import QrScannerModal from './QrScannerModal';
-import ChatBackupPasswordBox from './ChatBackupPasswordBox';
+import ChatBackupPasswordBox, { CANCELLED as CHAT_BOX_CANCELLED } from './ChatBackupPasswordBox';
 import { hasChatToBackUp, makeChatBackupText, restoreChatBackupText } from '../api/chatBackup';
 // Website only: "Connect Klever Extension" reads the address of the
 // wallet open in the Klever browser extension and adds it here, so nobody
@@ -873,7 +873,8 @@ export default function WalletManager({
   }
 
   // The chat's password box (website; see ChatBackupPasswordBox.js).
-  // askChatPassword shows it and waits: → the password, or null.
+  // askChatPassword shows it and waits: → the password, null ("without the
+  // chat" / "skip the chat") or CHAT_BOX_CANCELLED (✕: export: no backup at all).
   const [chatPasswordAsk, setChatPasswordAsk] = useState(null);
   function askChatPassword(mode, error = '') {
     return new Promise((resolve) => setChatPasswordAsk({ mode, error, resolve }));
@@ -892,6 +893,7 @@ export default function WalletManager({
       let chatBackupText = null;
       if (await hasChatToBackUp()) {
         const password = await askChatPassword('export');
+        if (password === CHAT_BOX_CANCELLED) return; // (✕: no backup this time)
         if (password) {
           setExportProgressLabel('Locking the chat...');
           chatBackupText = await makeChatBackupText(password);
@@ -933,7 +935,7 @@ export default function WalletManager({
     let error = '';
     for (;;) {
       const password = await askChatPassword('import', error);
-      if (!password) return 'Chat: skipped (the backup still has it, for later).';
+      if (!password || password === CHAT_BOX_CANCELLED) return 'Chat: skipped (the backup still has it, for later).';
       try {
         setImportProgressLabel('Opening the chat...');
         const { nickname } = await restoreChatBackupText(chatFile.text, password);

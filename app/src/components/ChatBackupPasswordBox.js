@@ -15,6 +15,9 @@ import { useTheme } from '../context/ThemeContext';
 import { MIN_PASSWORD_LENGTH } from '../api/chatBackup';
 import { useWebKeyboardRoom } from '../web/keyboardRoom';
 
+/** The answer for "✕ Cancel" (28 Oct 2026, Raphael: the box had no way out): no export at all / skip the chat on import. */
+export const CANCELLED = 'cancelled';
+
 export default function ChatBackupPasswordBox({ ask, onAnswer }) {
   const { colors } = useTheme();
   // (the website on a phone: above the keyboard too - src/web/keyboardRoom.js, 28 Oct 2026)
@@ -66,11 +69,21 @@ export default function ChatBackupPasswordBox({ ask, onAnswer }) {
   );
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={() => onAnswer(null)}>
+    <Modal visible transparent animationType="fade" onRequestClose={() => onAnswer(CANCELLED)}>
       {/* (moves up with the keyboard on phones, 26 Oct 2026) */}
       <KeyboardAvoidingView style={[styles.backdrop, keyboardRoom ? { paddingBottom: keyboardRoom } : null]} behavior={Platform.OS === 'web' ? undefined : 'padding'}>
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="chat-backup-box">
-          <Text style={[styles.title, { color: colors.text }]}>{isExport ? 'Include your chat?' : 'Bring your chat back?'}</Text>
+          <View style={styles.titleRow}>
+            <Text style={[styles.title, { color: colors.text, flex: 1 }]}>{isExport ? 'Include your chat?' : 'Bring your chat back?'}</Text>
+            <TouchableOpacity
+              onPress={() => onAnswer(CANCELLED)}
+              accessibilityLabel={isExport ? 'Cancel the backup' : 'Close'}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              testID="chat-backup-cancel"
+            >
+              <Text style={[styles.close, { color: colors.primary }]}>✕</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={[styles.text, { color: colors.text }]}>
             {isExport
               ? 'This backup can also hold your chat (your chat key, contacts and messages), locked with a password you choose now.'
@@ -100,6 +113,8 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 16 },
   card: { width: '100%', maxWidth: 440, borderWidth: 1, borderRadius: 14, padding: 16, gap: 10 },
   title: { fontSize: 18, fontWeight: '700' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  close: { fontSize: 20, fontWeight: '700' },
   text: { fontSize: 15, lineHeight: 21 },
   note: { fontSize: 13, lineHeight: 18 },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15 },
