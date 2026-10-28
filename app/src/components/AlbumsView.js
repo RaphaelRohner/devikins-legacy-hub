@@ -32,10 +32,27 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Switch, Alert, Platform, useWindowDimensions, Modal,
+  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Switch, Alert, Platform, useWindowDimensions, Modal, Keyboard,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import useNftImage from '../hooks/useNftImage';
+import useKeepFocusedInputVisible from '../hooks/useKeepFocusedInputVisible';
+
+/**
+ * The keyboard's height while it's open (Android app). A pop-up window
+ * (Modal) isn't shrunk with the rest of the app when the keyboard opens, so
+ * it makes room itself (28 Oct 2026: the comment field was under the keyboard).
+ */
+function useKeyboardHeight() {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    if (Platform.OS === 'web') return undefined;
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setHeight(e?.endCoordinates?.height || 0));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  return height;
+}
 import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER, gameNameOf } from '../constants/schema';
 import { POSTMAN_URL, MAIL_CHECK_EVERY_MS } from '../constants/chat';
 import { publicAlbums } from '../../chat/src/client.js';
@@ -525,12 +542,15 @@ function AlbumItem({ entry, held, columns, comments, onPress }) {
  */
 function NftPanel({ entry, held, albumKey, comments, viewer, onChanged, onClose }) {
   const { colors } = useTheme();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showDisputed, setShowDisputed] = useState(false);
   const { item, traits } = entry;
+  const keyboard = useKeyboardHeight();
+  const panelScroll = useRef(null);
+  useKeepFocusedInputVisible(panelScroll);
 
   async function act(fn) {
     setBusy(true);
@@ -555,9 +575,13 @@ function NftPanel({ entry, held, albumKey, comments, viewer, onChanged, onClose 
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={[styles.panel, { backgroundColor: colors.background, borderColor: colors.border, width: Math.min(width - 24, 640) }]} testID="album-panel">
-          <ScrollView contentContainerStyle={{ gap: 10, padding: 14 }} keyboardShouldPersistTaps="handled">
+      <View style={[styles.backdrop, keyboard ? { paddingBottom: keyboard + 12, justifyContent: 'flex-end' } : null]}>
+        <View
+          style={[styles.panel, { backgroundColor: colors.background, borderColor: colors.border, width: Math.min(width - 24, 640) },
+            keyboard ? { maxHeight: Math.max(200, height - keyboard - 48) } : null]}
+          testID="album-panel"
+        >
+          <ScrollView ref={panelScroll} contentContainerStyle={{ gap: 10, padding: 14 }} keyboardShouldPersistTaps="handled">
             <View style={styles.pickRow}>
               <Text style={[styles.albumTitle, { color: colors.text, flex: 1 }]}>{nftTitle(entry)}</Text>
               <TouchableOpacity onPress={onClose} accessibilityLabel="Close" testID="album-panel-close">
@@ -655,6 +679,8 @@ function AlbumTalk({ talk, onThread }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [blocked, setBlocked] = useState(false);
+  const talkScroll = useRef(null);
+  useKeepFocusedInputVisible(talkScroll);
 
   const load = useCallback(async () => {
     const m = await getMessenger();
@@ -699,7 +725,7 @@ function AlbumTalk({ talk, onThread }) {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+    <ScrollView ref={talkScroll} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.note, { color: colors.secondaryText }]}>
           {talk.side === 'owner'
@@ -894,6 +920,8 @@ function AlbumEditor({ albumKey, onDone }) {
   const [error, setError] = useState('');
   const [published, setPublished] = useState(false);
   const started = useRef(false);
+  const editorScroll = useRef(null);
+  useKeepFocusedInputVisible(editorScroll);
 
   // An existing album: what it shows now.
   useEffect(() => {
@@ -1064,7 +1092,7 @@ function AlbumEditor({ albumKey, onDone }) {
     </TouchableOpacity>
   );
   return (
-    <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+    <ScrollView ref={editorScroll} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.note, { color: colors.secondaryText }]}>Wallet: {shortAddress(wallet)} (signed; visitors don't see it on the screen)</Text>
         <TextInput style={input} placeholder="Title" placeholderTextColor={colors.secondaryText} value={title} maxLength={MAX_ALBUM_TITLE} onChangeText={setTitle} testID="album-title-input" />
