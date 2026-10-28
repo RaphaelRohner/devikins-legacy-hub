@@ -797,3 +797,14 @@ name is theirs). Publishing needs the chat sign-in (against spam); the
 owner's Hub republishes weekly, and the postman forgets an album 60 days
 after its last update. Visitor comments (and holders confirming them) come
 later.
+
+28 Oct 2026: the owner can put NFTs into **sections** (headings like "May
+event 2025"); visitors can **filter** by kind, rarity and ancestry and sort
+(album order, rarest first, overall affinity). Pictures no longer wait for
+Moonlabs' data server: the Hub uses its own stored copy if it has that NFT
+(`getStoredNfts` in `database.js`), otherwise loads the picture straight from
+Moonlabs' picture server (the album carries a Devikin's picture folder,
+`albumPictureUrl` in `album.js`; nothing is copied to our servers), and the
+wallet check shows on its own. The album screens don't show the wallet, the
+NFTs' numbers or Kleverscan links (against casual looking-up of holders; the
+data stays public, so this isn't protection against someone determined).

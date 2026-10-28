@@ -1141,6 +1141,24 @@ export async function setNftStarRating(kind, nonce, starRating) {
  * which makes that grouping trivial there without needing anything
  * fancier than an equality check.
  */
+/**
+ * Collectors Albums (28 Oct 2026): the NFTs of one collection this Hub has
+ * already loaded (any wallet of the active set), by number - so an album
+ * shows the stored picture and traits right away instead of asking
+ * Moonlabs again. Only rows that loaded fine. -> [{ nonce, name, image,
+ * local_image_path, ...traits }]
+ */
+export async function getStoredNfts(kind, nonces) {
+  if (!TRAIT_COLUMNS[kind] || !nonces.length) return [];
+  const db = await getDatabase();
+  const ids = nonces.filter((n) => Number.isInteger(n)).slice(0, 500);
+  if (!ids.length) return [];
+  return db.getAllAsync(
+    `SELECT * FROM ${kind} WHERE status = 'ok' AND nonce IN (${ids.map(() => '?').join(', ')})`,
+    ids
+  );
+}
+
 export async function getNftHistory(kind, nonce) {
   const db = await getDatabase();
   return db.getAllAsync(

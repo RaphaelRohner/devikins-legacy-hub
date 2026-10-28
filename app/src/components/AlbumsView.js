@@ -13,6 +13,10 @@
  *     address IS visible (that's the proof), so the Hub says so first and
  *     suggests a separate showcase wallet.
  *   - Comments from visitors (and holders confirming them) come later.
+ * 28 Oct 2026 (Raphael): sections chosen by the owner, filters and sorting
+ * for visitors, the picker by kind with "show more", pictures without
+ * waiting for Moonlabs' data server, and no wallet / numbers / Kleverscan
+ * links on the album screens (against casual stalking of holders).
  *
  * The album itself (signing, checking) is in app/chat/src/album.js; the
  * postman keeps them (app/chat/postman); making one needs the chat sign-in
@@ -28,16 +32,17 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import useNftImage from '../hooks/useNftImage';
-import { COLLECTIONS, kleverscanNftUrl, gameNameOf } from '../constants/schema';
+import { COLLECTIONS, TRAIT_COLUMNS, RARITY_ORDER, gameNameOf } from '../constants/schema';
 import { POSTMAN_URL } from '../constants/chat';
 import { publicAlbums } from '../../chat/src/client.js';
-import { MAX_ALBUM_ITEMS, MAX_ALBUM_TITLE, MAX_ALBUM_DESCRIPTION, MAX_ALBUM_NOTE } from '../../chat/src/album.js';
+import {
+  MAX_ALBUM_ITEMS, MAX_ALBUM_TITLE, MAX_ALBUM_DESCRIPTION, MAX_ALBUM_NOTE, MAX_ALBUM_SECTION, albumPictureUrl, pictureFolderOf,
+} from '../../chat/src/album.js';
 import { fetchNftMetadata } from '../api/metadataApi';
 import { holdsNft } from '../api/withdrawalTracker';
 import { getMessenger } from '../api/chatStore';
 import { signChatText, CHAT_WALLET } from '../api/chatWallet';
-import { getWallets, queryNfts } from '../db/database';
-import { openKleverscan } from '../api/openKleverscan';
+import { getWallets, queryNfts, getStoredNfts } from '../db/database';
 import { openChatDock, openChatScreen } from '../web/chatDock';
 
 const IS_WEB = Platform.OS === 'web';
@@ -180,80 +185,206 @@ function AlbumList({ onOpen, onMine }) {
 
 // --- one album -----------------------------------------------------------------------
 
+const SINGULAR = { devikin: 'Devikin', weapon: 'Weapon', equipment: 'Equipment' };
+const SORTS = [
+  { key: 'album', label: 'Album order' },
+  { key: 'rarity', label: 'Rarest first' },
+  { key: 'affinity', label: 'Overall affinity', kind: 'devikin' },
+];
+
+/** An NFT's traits from Moonlabs' metadata, under the Hub's own column names (rarity, ancestry, type …). */
+function traitsFromMetadata(kind, metadata) {
+  const out = {};
+  const byType = {};
+  for (const [column, def] of Object.entries(TRAIT_COLUMNS[kind] || {})) for (const t of def.traitTypes) byType[t] = column;
+  for (const a of Array.isArray(metadata?.attributes) ? metadata.attributes : []) {
+    if (byType[a.trait_type]) out[byType[a.trait_type]] = a.value ?? null;
+  }
+  return out;
+}
+
+const rarityRank = (r) => RARITY_ORDER.indexOf(r);
+
 /**
- * One album, checked: its signature and the wallet's proof (publicAlbums.one),
- * then per NFT its picture and name (Moonlabs' metadata, like the rest of the
- * Hub) and whether the wallet still holds it (Klever's node).
+ * One album, checked (its signature and the wallet's proof, publicAlbums.one).
+ * Per NFT, three things load separately, each shown as soon as it's there
+ * (28 Oct 2026 - before, one slow answer held up the whole card):
+ *   - the picture: this Hub's stored copy if it has loaded that NFT itself,
+ *     otherwise straight from Moonlabs' picture server (album.js
+ *     albumPictureUrl), and only if that fails the address from Moonlabs' data;
+ *   - the traits (name, rarity, ancestry …): stored copy, else Moonlabs' data,
+ *     for the filters and sorting;
+ *   - whether the wallet still holds it (Klever's node).
+ * Deliberately NOT shown (Raphael, 28 Oct 2026): the wallet, the NFTs'
+ * numbers and Kleverscan links - so casual visitors can't look the holder up
+ * in one click. (It isn't hidden from someone determined: the data is public.)
  */
-function AlbumDetail({ albumKey, preview = null }) {
+function AlbumDetail({ albumKey }) {
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
-  const [album, setAlbum] = useState(preview);
+  const [album, setAlbum] = useState(null);
   const [error, setError] = useState('');
-  // `${kind}/${nonce}` -> { metadata, held: true | false | null (couldn't check) }
-  const [info, setInfo] = useState({});
+  // `${kind}/${nonce}` -> a stored row of this Hub, Moonlabs' metadata, true/false/null (held)
+  const [stored, setStored] = useState({});
+  const [meta, setMeta] = useState({});
+  const [held, setHeld] = useState({});
+  const [kindF, setKindF] = useState(null);
+  const [rarityF, setRarityF] = useState(null);
+  const [ancestryF, setAncestryF] = useState(null);
+  const [sort, setSort] = useState('album');
 
   useEffect(() => {
     let stopped = false;
     (async () => {
       try {
-        const a = preview || (await reader().one(albumKey));
+        const a = await reader().one(albumKey);
         if (stopped) return;
         setAlbum(a);
-        const jobs = a.items.map((i) => async () => {
-          const id = `${i.kind}/${i.nonce}`;
-          const [meta, held] = await Promise.all([
-            fetchNftMetadata(i.kind, i.nonce, () => stopped),
-            holdsNft(a.wallet, i.kind, i.nonce).catch(() => null),
-          ]);
-          if (!stopped) setInfo((old) => ({ ...old, [id]: { metadata: meta.outcome === 'ok' ? meta.metadata : null, held } }));
+        // What this Hub already has (e.g. the owner looking at their own album).
+        const mine = {};
+        for (const kind of KINDS) {
+          const nonces = a.items.filter((i) => i.kind === kind).map((i) => i.nonce);
+          const rows = await getStoredNfts(kind, nonces).catch(() => []);
+          for (const r of rows) mine[`${kind}/${r.nonce}`] = r;
+        }
+        if (stopped) return;
+        setStored(mine);
+        const holderJobs = a.items.map((i) => async () => {
+          const ok = await holdsNft(a.wallet, i.kind, i.nonce).catch(() => null);
+          if (!stopped) setHeld((old) => ({ ...old, [`${i.kind}/${i.nonce}`]: ok }));
         });
-        await runLimited(jobs, 3, () => stopped);
+        const metaJobs = a.items.filter((i) => !mine[`${i.kind}/${i.nonce}`]).map((i) => async () => {
+          const r = await fetchNftMetadata(i.kind, i.nonce, () => stopped);
+          if (!stopped) setMeta((old) => ({ ...old, [`${i.kind}/${i.nonce}`]: r.outcome === 'ok' ? r.metadata : false }));
+        });
+        await Promise.all([runLimited(holderJobs, 3, () => stopped), runLimited(metaJobs, 3, () => stopped)]);
       } catch (e) {
         if (!stopped) setError(e.message);
       }
     })();
     return () => { stopped = true; };
-  }, [albumKey, preview]);
+  }, [albumKey]);
+
+  // Each item with what's known so far: { item, id, row (stored), metadata, traits, name }
+  const entries = useMemo(() => (album?.items || []).map((item, index) => {
+    const id = `${item.kind}/${item.nonce}`;
+    const row = stored[id] || null;
+    const metadata = meta[id] || null;
+    const traits = row || traitsFromMetadata(item.kind, metadata);
+    const name = gameNameOf({ name: row?.name ?? metadata?.name, nonce: item.nonce });
+    return { item, id, index, row, metadata, traits, name };
+  }), [album, stored, meta]);
 
   if (error) return <Text style={[styles.note, styles.pad, { color: colors.text }]}>{error}</Text>;
   if (!album) return <ActivityIndicator style={styles.pad} color={colors.primary} />;
-  const gone = album.items.filter((i) => info[`${i.kind}/${i.nonce}`]?.held === false).length;
+
+  const kindsHere = KINDS.filter((k) => entries.some((e) => e.item.kind === k));
+  const raritiesHere = RARITY_ORDER.filter((r) => entries.some((e) => e.traits.rarity === r && (!kindF || e.item.kind === kindF)));
+  const ancestriesHere = [...new Set(entries.filter((e) => e.item.kind === 'devikin' && e.traits.ancestry).map((e) => e.traits.ancestry))].sort();
+  const shown = entries.filter((e) => (!kindF || e.item.kind === kindF)
+    && (!rarityF || e.traits.rarity === rarityF)
+    && (!ancestryF || (e.item.kind === 'devikin' && e.traits.ancestry === ancestryF)));
+  if (sort === 'rarity') shown.sort((a, b) => rarityRank(b.traits.rarity) - rarityRank(a.traits.rarity) || a.index - b.index);
+  if (sort === 'affinity') shown.sort((a, b) => (Number(b.traits.overall_affinity) || -1) - (Number(a.traits.overall_affinity) || -1) || a.index - b.index);
+  // Sections (in album order; NFTs without one first, without a heading).
+  const groups = [];
+  if (sort === 'album') {
+    for (const e of shown) {
+      const title = e.item.section || '';
+      let g = groups.find((x) => x.title === title);
+      if (!g) { g = { title, entries: [] }; if (title) groups.push(g); else groups.unshift(g); }
+      g.entries.push(e);
+    }
+  } else {
+    groups.push({ title: '', entries: shown });
+  }
+  const gone = entries.filter((e) => held[e.id] === false).length;
   const columns = width >= 900 ? 4 : width >= 600 ? 3 : 2;
+  const filtered = kindF || rarityF || ancestryF;
+
+  const chip = (label, active, onPress, testID) => (
+    <TouchableOpacity
+      key={label}
+      testID={testID}
+      onPress={onPress}
+      style={[styles.chip, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.chipBackground : 'transparent' }]}
+    >
+      <Text style={{ color: active ? colors.primary : colors.text, fontSize: 13, fontWeight: active ? '700' : '500' }}>{label}</Text>
+    </TouchableOpacity>
+  );
+
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.albumTitle, { color: colors.text }]} testID="album-title">{album.title}</Text>
         <Text style={[styles.note, { color: colors.secondaryText }]}>
-          {album.name ? `by ${album.name}` : 'Anonymous collector'} · updated {dateText(album.updatedAt)}
+          {album.name ? `by ${album.name}` : 'Anonymous collector'} · {album.items.length} NFT{album.items.length === 1 ? '' : 's'} · updated {dateText(album.updatedAt)}
         </Text>
         {album.description ? <Text style={[styles.text, { color: colors.text }]}>{album.description}</Text> : null}
         <Text style={[styles.note, { color: colors.secondaryText }]}>
-          Wallet (signed by its owner):{' '}
-          <Text style={{ textDecorationLine: 'underline' }} onPress={() => openKleverscan(`https://kleverscan.org/account/${album.wallet}`)}>
-            {shortAddress(album.wallet)}
-          </Text>
+          ✓ The owner proved with their wallet that these NFTs are theirs; the Hub checks that each one is still there.
         </Text>
         {gone ? (
           <Text style={[styles.note, { color: colors.text }]} testID="album-gone">
-            {gone} of these NFTs {gone === 1 ? 'is' : 'are'} no longer in this wallet (shown faded).
+            {gone} of these NFTs {gone === 1 ? 'is' : 'are'} no longer in the owner's wallet (shown faded).
           </Text>
         ) : null}
       </View>
-      <View style={styles.grid}>
-        {album.items.map((i) => (
-          <AlbumItem key={`${i.kind}/${i.nonce}`} item={i} info={info[`${i.kind}/${i.nonce}`]} columns={columns} />
-        ))}
-      </View>
+
+      {album.items.length > 1 ? (
+        <View style={[styles.filterBox, { borderColor: colors.border }]}>
+          {kindsHere.length > 1 ? (
+            <View style={styles.chipRow}>
+              {chip('All kinds', !kindF, () => { setKindF(null); setRarityF(null); setAncestryF(null); }, 'album-filter-kind-all')}
+              {kindsHere.map((k) => chip(COLLECTIONS[k].label, kindF === k, () => { setKindF(kindF === k ? null : k); setRarityF(null); setAncestryF(null); }, `album-filter-${k}`))}
+            </View>
+          ) : null}
+          {raritiesHere.length > 1 ? (
+            <View style={styles.chipRow}>
+              {raritiesHere.map((r) => chip(r, rarityF === r, () => setRarityF(rarityF === r ? null : r), `album-filter-rarity-${r}`))}
+            </View>
+          ) : null}
+          {ancestriesHere.length > 1 && kindF !== 'weapon' && kindF !== 'equipment' ? (
+            <View style={styles.chipRow}>
+              {ancestriesHere.map((a) => chip(a, ancestryF === a, () => setAncestryF(ancestryF === a ? null : a), `album-filter-ancestry-${a}`))}
+            </View>
+          ) : null}
+          <View style={styles.chipRow}>
+            {SORTS.filter((s) => !s.kind || kindsHere.includes(s.kind)).map((s) => chip(s.label, sort === s.key, () => setSort(s.key), `album-sort-${s.key}`))}
+          </View>
+          {filtered ? (
+            <Text style={[styles.small, { color: colors.secondaryText }]} testID="album-shown-count">Showing {shown.length} of {album.items.length}</Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      {groups.map((g) => (
+        <View key={g.title || '-'}>
+          {g.title ? <Text style={[styles.section, { color: colors.text }]} testID="album-section">{g.title}</Text> : null}
+          <View style={styles.grid}>
+            {g.entries.map((e) => <AlbumItem key={e.id} entry={e} held={held[e.id]} columns={columns} />)}
+          </View>
+        </View>
+      ))}
     </ScrollView>
   );
 }
 
-function AlbumItem({ item, info, columns }) {
+function AlbumItem({ entry, held, columns }) {
   const { colors } = useTheme();
-  const { imageSource, imageLoadFailed, onImageError } = useNftImage(info?.metadata ? { image: info.metadata.image } : null);
-  const name = info?.metadata ? gameNameOf({ name: info.metadata.name, nonce: item.nonce }) : null;
-  const held = info?.held;
+  const { item, row, metadata, traits, name } = entry;
+  // The picture: stored copy > straight from Moonlabs' picture server > the address in Moonlabs' data.
+  const direct = albumPictureUrl(item);
+  const [directFailed, setDirectFailed] = useState(false);
+  const source = row || (direct && !directFailed ? { image: direct } : metadata?.image ? { image: metadata.image } : null);
+  const { imageSource, imageLoadFailed, onImageError } = useNftImage(source);
+  useEffect(() => {
+    if (imageLoadFailed && !row && direct && !directFailed && metadata?.image && metadata.image !== direct) setDirectFailed(true);
+  }, [imageLoadFailed, row, direct, directFailed, metadata]);
+  const loading = !imageSource && metadata === null && !row;
+  const kindWord = item.kind === 'devikin' ? traits.ancestry : traits.type;
+  const title = name || [traits.rarity, kindWord, SINGULAR[item.kind]].filter(Boolean).join(' ');
+  const details = [COLLECTIONS[item.kind].label, traits.rarity, item.kind === 'devikin' ? traits.ancestry : traits.type].filter(Boolean);
   return (
     <View
       testID="album-item"
@@ -263,20 +394,15 @@ function AlbumItem({ item, info, columns }) {
         <Image source={{ uri: imageSource }} style={styles.itemImage} resizeMode="contain" onError={onImageError} />
       ) : (
         <View style={[styles.itemImage, { backgroundColor: colors.placeholderBackground, alignItems: 'center', justifyContent: 'center' }]}>
-          {info ? <Text style={{ color: colors.placeholderText, fontSize: 12 }}>No picture</Text> : <ActivityIndicator color={colors.primary} />}
+          {loading ? <ActivityIndicator color={colors.primary} /> : <Text style={{ color: colors.placeholderText, fontSize: 12 }}>No picture</Text>}
         </View>
       )}
-      <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1}>
-        {name ? `${name} ` : ''}#{item.nonce}
-      </Text>
-      <Text style={[styles.small, { color: colors.secondaryText }]}>
-        {COLLECTIONS[item.kind].label}
-        {held === true ? ' · ✓ in the wallet' : held === false ? ' · no longer in the wallet' : held === null ? " · couldn't check" : ''}
+      <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1}>{title}</Text>
+      <Text style={[styles.small, { color: colors.secondaryText }]} numberOfLines={2}>{details.join(' · ')}</Text>
+      <Text style={[styles.small, { color: held === false ? colors.text : colors.secondaryText }]} testID="album-item-held">
+        {held === true ? '✓ in the owner\'s wallet' : held === false ? 'no longer in the owner\'s wallet' : held === null ? "couldn't check the wallet" : 'checking the wallet…'}
       </Text>
       {item.note ? <Text style={[styles.small, { color: colors.text, fontStyle: 'italic' }]}>{item.note}</Text> : null}
-      <Text style={[styles.small, { color: colors.primary }]} onPress={() => openKleverscan(kleverscanNftUrl(item.kind, item.nonce))}>
-        Kleverscan
-      </Text>
     </View>
   );
 }
@@ -374,11 +500,13 @@ function MyAlbums({ onOpen, onEdit }) {
 
 // --- making / changing an album ---------------------------------------------------------
 
+const PICK_PAGE = 60;
+
 /**
  * New album: 1) the privacy note, 2) the wallet signs (that wallet becomes
  * the album's wallet - it must be one of the Hub's wallets, fetched, so its
- * NFTs can be picked), 3) title, notes, NFTs, publish. Existing album: the
- * same wallet and proof; everything else can change.
+ * NFTs can be picked), 3) title, NFTs with a note and a section each,
+ * publish. Existing album: the same wallet and proof; everything else can change.
  */
 function AlbumEditor({ albumKey, onDone }) {
   const { colors } = useTheme();
@@ -389,11 +517,13 @@ function AlbumEditor({ albumKey, onDone }) {
   const [description, setDescription] = useState('');
   const [showName, setShowName] = useState(false);
   const [nickname, setNickname] = useState(null);
-  // `${kind}/${nonce}` -> { kind, nonce, note }
+  // `${kind}/${nonce}` -> { kind, nonce, note, section, pic }
   const [picked, setPicked] = useState({});
   const [order, setOrder] = useState([]);
   const [owned, setOwned] = useState(null); // the wallet's NFTs from the Hub's own database
+  const [pickKind, setPickKind] = useState('devikin');
   const [search, setSearch] = useState('');
+  const [limit, setLimit] = useState(PICK_PAGE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [published, setPublished] = useState(false);
@@ -412,7 +542,7 @@ function AlbumEditor({ albumKey, onDone }) {
       setTitle(a.title);
       setDescription(a.description);
       setShowName(!!a.name);
-      setPicked(Object.fromEntries(a.items.map((i) => [`${i.kind}/${i.nonce}`, { ...i, note: i.note || '' }])));
+      setPicked(Object.fromEntries(a.items.map((i) => [`${i.kind}/${i.nonce}`, { ...i, note: i.note || '', section: i.section || '' }])));
       setOrder(a.items.map((i) => `${i.kind}/${i.nonce}`));
     })().catch((e) => setError(e.message));
   }, [albumKey]);
@@ -423,9 +553,14 @@ function AlbumEditor({ albumKey, onDone }) {
     (async () => {
       const rows = [];
       for (const kind of KINDS) {
-        for (const r of await queryNfts(kind, [wallet], {}, true)) rows.push({ kind, nonce: r.nonce, name: gameNameOf(r) || r.custom_name || null, nft: r });
+        for (const r of await queryNfts(kind, [wallet], {}, true)) {
+          rows.push({ kind, nonce: r.nonce, name: gameNameOf(r) || r.custom_name || null, rarity: r.rarity || null, nft: r });
+        }
       }
       setOwned(rows);
+      // (start on a kind the wallet actually has)
+      const first = KINDS.find((k) => rows.some((r) => r.kind === k));
+      if (first) setPickKind(first);
     })().catch((e) => setError(e.message));
   }, [wallet]);
 
@@ -433,8 +568,9 @@ function AlbumEditor({ albumKey, onDone }) {
   function startNew() {
     Alert.alert(
       'Albums are public',
-      'Everyone can see your album - also people without the Hub - including the wallet address it shows. '
-        + 'Anyone can look that wallet up on Kleverscan (everything in it, and its transfers).\n\n'
+      'Everyone can see your album - also people without the Hub. The Hub doesn\'t show your wallet address or the NFTs\' numbers, '
+        + 'but they are in the album\'s data, so someone determined can find the wallet and look it up on Kleverscan '
+        + '(everything in it, and its transfers).\n\n'
         + 'Your chat nickname is NOT shown, unless you switch it on.\n\n'
         + 'Tip: a separate "showcase" wallet keeps your main wallet private.',
       [
@@ -477,10 +613,11 @@ function AlbumEditor({ albumKey, onDone }) {
       setPicked(rest);
       setOrder((o) => o.filter((x) => x !== id));
     } else if (order.length < MAX_ALBUM_ITEMS) {
-      setPicked({ ...picked, [id]: { kind: row.kind, nonce: row.nonce, note: '' } });
+      setPicked({ ...picked, [id]: { kind: row.kind, nonce: row.nonce, note: '', section: '' } });
       setOrder((o) => [...o, id]);
     }
   }
+  const setField = (id, field, value) => setPicked((old) => ({ ...old, [id]: { ...old[id], [field]: value } }));
 
   async function publish() {
     setBusy(true);
@@ -489,7 +626,13 @@ function AlbumEditor({ albumKey, onDone }) {
       const m = await getMessenger();
       await m.publishAlbum(key, {
         title, description, showName, wallet, proof,
-        items: order.map((id) => ({ kind: picked[id].kind, nonce: picked[id].nonce, note: picked[id].note })),
+        items: order.map((id) => {
+          const p = picked[id];
+          // The picture's folder as this Hub has it (visitors load the picture straight from there).
+          const stored = ownedById[id]?.nft?.image;
+          const pic = stored ? pictureFolderOf(p.kind, p.nonce, stored) : p.pic;
+          return { kind: p.kind, nonce: p.nonce, note: p.note, section: p.section, pic: Number.isInteger(pic) ? pic : undefined };
+        }),
       });
       setPublished(true);
     } catch (e) {
@@ -499,15 +642,16 @@ function AlbumEditor({ albumKey, onDone }) {
     }
   }
 
-  const matches = useMemo(() => {
+  const ownedById = useMemo(() => Object.fromEntries((owned || []).map((r) => [`${r.kind}/${r.nonce}`, r])), [owned]);
+  const ofKind = useMemo(() => {
     if (!owned) return [];
     const q = search.trim().toLowerCase();
     return owned
-      .filter((r) => !picked[`${r.kind}/${r.nonce}`])
-      .filter((r) => !q || String(r.nonce).includes(q) || (r.name || '').toLowerCase().includes(q))
-      .slice(0, 60);
-  }, [owned, search, picked]);
-  const ownedById = useMemo(() => Object.fromEntries((owned || []).map((r) => [`${r.kind}/${r.nonce}`, r])), [owned]);
+      .filter((r) => r.kind === pickKind && !picked[`${r.kind}/${r.nonce}`])
+      .filter((r) => !q || String(r.nonce).includes(q) || (r.name || '').toLowerCase().includes(q) || (r.rarity || '').toLowerCase().includes(q));
+  }, [owned, search, picked, pickKind]);
+  useEffect(() => setLimit(PICK_PAGE), [pickKind, search]);
+  const sectionNames = [...new Set(order.map((id) => (picked[id]?.section || '').trim()).filter(Boolean))];
 
   if (published) {
     return (
@@ -543,10 +687,20 @@ function AlbumEditor({ albumKey, onDone }) {
   }
 
   const input = [styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }];
+  const chip = (label, active, onPress, testID) => (
+    <TouchableOpacity
+      key={label}
+      testID={testID}
+      onPress={onPress}
+      style={[styles.chip, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.chipBackground : 'transparent' }]}
+    >
+      <Text style={{ color: active ? colors.primary : colors.text, fontSize: 13, fontWeight: active ? '700' : '500' }}>{label}</Text>
+    </TouchableOpacity>
+  );
   return (
     <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.note, { color: colors.secondaryText }]}>Wallet: {shortAddress(wallet)} (signed)</Text>
+        <Text style={[styles.note, { color: colors.secondaryText }]}>Wallet: {shortAddress(wallet)} (signed; visitors don't see it on the screen)</Text>
         <TextInput style={input} placeholder="Title" placeholderTextColor={colors.secondaryText} value={title} maxLength={MAX_ALBUM_TITLE} onChangeText={setTitle} testID="album-title-input" />
         <TextInput
           style={[...input, { minHeight: 70, textAlignVertical: 'top' }]}
@@ -566,6 +720,11 @@ function AlbumEditor({ albumKey, onDone }) {
       </View>
 
       <Text style={[styles.section, { color: colors.text }]}>In the album ({order.length}/{MAX_ALBUM_ITEMS})</Text>
+      {order.length ? (
+        <Text style={[styles.note, styles.pad, { color: colors.secondaryText }]}>
+          Sections group your NFTs under headings, e.g. "May event 2025" or "Eldritch". NFTs without a section come first.
+        </Text>
+      ) : null}
       {order.map((id) => {
         const p = picked[id];
         const row = ownedById[id];
@@ -583,24 +742,48 @@ function AlbumEditor({ albumKey, onDone }) {
             </View>
             <TextInput
               style={input}
-              placeholder="Note (optional), e.g. May event 2025"
+              placeholder="Note (optional), e.g. Bonded Yoda"
               placeholderTextColor={colors.secondaryText}
               value={p.note}
               maxLength={MAX_ALBUM_NOTE}
-              onChangeText={(t) => setPicked((old) => ({ ...old, [id]: { ...old[id], note: t } }))}
+              onChangeText={(t) => setField(id, 'note', t)}
             />
+            <TextInput
+              style={input}
+              placeholder="Section (optional), e.g. May event 2025"
+              placeholderTextColor={colors.secondaryText}
+              value={p.section}
+              maxLength={MAX_ALBUM_SECTION}
+              onChangeText={(t) => setField(id, 'section', t)}
+              testID="album-section-input"
+            />
+            {sectionNames.filter((s) => s !== (p.section || '').trim()).length ? (
+              <View style={styles.chipRow}>
+                {sectionNames.filter((s) => s !== (p.section || '').trim()).map((s) => chip(s, false, () => setField(id, 'section', s), 'album-section-chip'))}
+              </View>
+            ) : null}
           </View>
         );
       })}
 
       <Text style={[styles.section, { color: colors.text }]}>Add from this wallet</Text>
-      <TextInput style={[...input, styles.pad]} placeholder="Search by name or ID" placeholderTextColor={colors.secondaryText} value={search} onChangeText={setSearch} testID="album-search" />
-      {owned && owned.length === 0 ? (
+      <View style={[styles.chipRow, styles.pad]}>
+        {KINDS.map((k) => chip(
+          `${COLLECTIONS[k].label} (${(owned || []).filter((r) => r.kind === k).length})`,
+          pickKind === k,
+          () => setPickKind(k),
+          `album-pick-kind-${k}`,
+        ))}
+      </View>
+      <TextInput style={[...input, styles.pad]} placeholder="Search by name, rarity or ID" placeholderTextColor={colors.secondaryText} value={search} onChangeText={setSearch} testID="album-search" />
+      {owned && ofKind.length === 0 ? (
         <Text style={[styles.note, styles.pad, { color: colors.secondaryText }]}>
-          The Hub has no NFTs loaded for this wallet. Add it under Wallets and load them (Fetch/Update).
+          {owned.some((r) => r.kind === pickKind)
+            ? 'Nothing more to add here.'
+            : `The Hub has no ${COLLECTIONS[pickKind].label} loaded for this wallet. If it holds some, load them under Wallets (Fetch/Update).`}
         </Text>
       ) : null}
-      {matches.map((r) => (
+      {ofKind.slice(0, limit).map((r) => (
         <TouchableOpacity
           key={`${r.kind}/${r.nonce}`}
           testID="album-pick"
@@ -609,11 +792,16 @@ function AlbumEditor({ albumKey, onDone }) {
         >
           <PickThumb nft={r.nft} />
           <Text style={[styles.text, { color: colors.text, flex: 1 }]} numberOfLines={1}>
-            {r.name ? `${r.name} ` : ''}#{r.nonce} · {COLLECTIONS[r.kind].label}
+            {r.name ? `${r.name} ` : ''}#{r.nonce}{r.rarity ? ` · ${r.rarity}` : ''}
           </Text>
           <Text style={{ color: colors.primary, fontWeight: '700' }}>＋</Text>
         </TouchableOpacity>
       ))}
+      {ofKind.length > limit ? (
+        <TouchableOpacity style={[styles.smallButton, styles.pad, { borderColor: colors.border, alignSelf: 'flex-start' }]} onPress={() => setLimit((l) => l + PICK_PAGE)} testID="album-pick-more">
+          <Text style={{ color: colors.text }}>Show more ({ofKind.length - limit} left)</Text>
+        </TouchableOpacity>
+      ) : null}
 
       {error ? <Text style={[styles.note, styles.pad, { color: colors.text }]} testID="album-error">{error}</Text> : null}
       <TouchableOpacity
@@ -665,4 +853,7 @@ const styles = StyleSheet.create({
   pickRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   pickLine: { marginHorizontal: 12, paddingVertical: 6, borderBottomWidth: 1 },
   thumb: { width: 40, height: 40, borderRadius: 6 },
+  chip: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 14, borderWidth: 1 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  filterBox: { marginHorizontal: 12, marginBottom: 10, paddingBottom: 10, gap: 8, borderBottomWidth: 1 },
 });

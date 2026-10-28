@@ -55,7 +55,8 @@ Keeps:
 - Times on waiting mail are rounded to the hour.
 - **Collectors Albums** (27 Oct 2026), public on purpose: each album is
   stored under its **own album key** only – title, description, the NFTs
-  shown (kind and number, with the owner's notes), the **wallet address**
+  shown (kind and number, with the owner's notes and sections, and a
+  Devikin's picture folder), the **wallet address**
   whose NFTs they are, that wallet's signature proving it, and the owner's
   nickname only if they chose to show it. No account number, no device next
   to it. The owner's Hub publishes it again weekly; an album not refreshed

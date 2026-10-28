@@ -6,6 +6,7 @@ import { generateKeyPairSync, signMessageSync, prepareKlvMessage } from '@klever
 import { bech32Encode } from '@klever/connect-encoding';
 import {
   createAlbumKey, albumProofText, isAlbumProof, sealAlbum, checkAlbum, cleanAlbum, MAX_ALBUM_ITEMS, publicAlbums, DAY,
+  albumPictureUrl, pictureFolderOf, MAX_ALBUM_SECTIONS,
 } from '../src/index.js';
 import { world, BASE } from './world.mjs';
 
@@ -50,6 +51,34 @@ test('an album is refused: no title, too many NFTs, an NFT twice, a long note', 
   assert.throws(() => cleanAlbum({ ...base, items: [{ kind: 'devikin', nonce: 1, note: 'x'.repeat(201) }] }), /note/);
   assert.throws(() => cleanAlbum({ ...base, items: [{ kind: 'pet', nonce: 1 }] }), /damaged/);
   assert.throws(() => cleanAlbum({ ...base, wallet: 'klv1nope' }), /Klever address/);
+});
+
+test('sections and picture folders (28 Oct 2026): kept in the signed album; damaged ones refused', () => {
+  const key = createAlbumKey();
+  const w = wallet();
+  const proof = w.sign(albumProofText(key.publicKey));
+  const items = [
+    { kind: 'devikin', nonce: 545848, note: 'Bonded Yoda', section: ' May event 2025 ', pic: 5 },
+    { kind: 'weapon', nonce: 7, section: 'Weapons', pic: 3 },
+    { kind: 'devikin', nonce: 9 },
+  ];
+  const c = checkAlbum(sealAlbum(key, { title: 'Grouped', wallet: w.address, proof, items }));
+  assert.equal(c.ok, true, c.problem);
+  assert.deepEqual(c.album.items, [
+    { kind: 'devikin', nonce: 545848, note: 'Bonded Yoda', section: 'May event 2025', pic: 5 },
+    { kind: 'weapon', nonce: 7, section: 'Weapons' }, // (weapons' pictures are always in folder 0)
+    { kind: 'devikin', nonce: 9 },
+  ]);
+  assert.equal(albumPictureUrl(c.album.items[0]), 'https://img.devikins.com/5/545848.png');
+  assert.equal(albumPictureUrl(c.album.items[1]), 'https://imgweapon.devikins.com/0/7.png');
+  assert.equal(albumPictureUrl(c.album.items[2]), null, "a Devikin's folder isn't known: the Hub asks Moonlabs' data");
+  assert.equal(pictureFolderOf('devikin', 545848, 'https://img.devikins.com/5/545848.png'), 5);
+  assert.equal(pictureFolderOf('devikin', 545848, 'https://img.devikins.com/5/111.png'), null, 'another NFT');
+  assert.equal(pictureFolderOf('devikin', 1, 'https://evil.example/5/1.png'), null);
+  assert.equal(pictureFolderOf('weapon', 1, 'https://img.devikins.com/0/1.png'), null, "a Devikin's server for a weapon");
+  const many = Array.from({ length: MAX_ALBUM_SECTIONS + 1 }, (_, i) => ({ kind: 'devikin', nonce: i + 1, section: `S${i}` }));
+  assert.throws(() => cleanAlbum({ title: 'A', wallet: w.address, proof, items: many }), /sections/);
+  assert.throws(() => cleanAlbum({ title: 'A', wallet: w.address, proof, items: [{ kind: 'devikin', nonce: 1, section: 'x'.repeat(41) }] }), /section name/);
 });
 
 /** A player with an album wallet (another wallet than the chat sign-in, like a showcase wallet). */

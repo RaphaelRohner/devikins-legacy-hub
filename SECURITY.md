@@ -37,9 +37,10 @@ SECURITY.md covers how keys are protected).
   addresses or logs, and doesn't store wallet addresses (only those of
   voters, briefly, until a vote is counted). Its README lists exactly what
   it keeps, including its honest limits.
-- **Collectors Albums are public.** An album shows the wallet address whose
-  NFTs it contains, so anyone can look that wallet up on Kleverscan; the Hub
-  says so before you publish. It isn't linked to your chat nickname unless
+- **Collectors Albums are public.** The album screens don't show the wallet
+  or the NFTs' numbers (against casual looking-up), but the album's data
+  contains the wallet address, so someone determined can find it and look
+  it up on Kleverscan; the Hub says so before you publish. It isn't linked to your chat nickname unless
   you switch that on. Every viewer's Hub checks the album's signatures and
   whether each NFT is still in the wallet.
 

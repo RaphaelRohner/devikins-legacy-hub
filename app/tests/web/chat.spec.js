@@ -570,10 +570,15 @@ test('Collectors Albums: a player publishes an album with notes; a visitor witho
     await alice.page.getByTestId('album-sign').click();
     await expect.poll(() => alice.dialogs.some((d) => /^Albums are public/.test(d) && /Kleverscan/.test(d))).toBe(true);
     await alice.page.getByTestId('album-title-input').fill('My first finds');
-    await expect(alice.page.getByTestId('album-pick')).toHaveCount(2);
+    // The picker shows one kind at a time: Devikins first, then Weapons.
+    await expect(alice.page.getByTestId('album-pick')).toHaveCount(1);
     await alice.page.getByTestId('album-pick').filter({ hasText: '#101' }).click();
+    await alice.page.getByTestId('album-pick-kind-weapon').click();
     await alice.page.getByTestId('album-pick').filter({ hasText: '#201' }).click();
     await alice.page.getByTestId('album-picked').filter({ hasText: '#101' }).getByPlaceholder(/Note/).fill('May event 2025 Bonded Yoda');
+    await alice.page.getByTestId('album-picked').filter({ hasText: '#101' }).getByTestId('album-section-input').fill('Events');
+    // (a section used once is offered on the other NFTs too)
+    await expect(alice.page.getByTestId('album-picked').filter({ hasText: '#201' }).getByTestId('album-section-chip')).toHaveText('Events');
     await alice.page.getByTestId('album-publish').click();
     await expect(alice.page.getByTestId('album-published')).toBeVisible();
 
@@ -588,15 +593,30 @@ test('Collectors Albums: a player publishes an album with notes; a visitor witho
     await expect(visitor.page.getByTestId('album-title')).toHaveText('My first finds');
     await expect(visitor.page.getByTestId('album-item')).toHaveCount(2);
     await expect(visitor.page.getByText('May event 2025 Bonded Yoda')).toBeVisible();
-    await expect(visitor.page.getByTestId('album-item').filter({ hasText: '✓ in the wallet' })).toHaveCount(2, { timeout: 20_000 });
-    await expect(visitor.page.getByText(wallet.address.slice(0, 10), { exact: false })).toBeVisible();
+    await expect(visitor.page.getByTestId('album-item').filter({ hasText: "✓ in the owner's wallet" })).toHaveCount(2, { timeout: 20_000 });
+    // Section heading, with Testy under it; the hammer (no section) first.
+    await expect(visitor.page.getByTestId('album-section')).toHaveText('Events');
+    await expect(visitor.page.getByTestId('album-item').filter({ hasText: 'Testy the Brave' })).toContainText('Rare');
+    // No wallet, no numbers, no Kleverscan links for visitors (28 Oct 2026).
+    await expect(visitor.page.getByText(wallet.address.slice(0, 10), { exact: false })).toHaveCount(0);
+    await expect(visitor.page.getByText('#101', { exact: false })).toHaveCount(0);
+    await expect(visitor.page.getByText('Kleverscan', { exact: true })).toHaveCount(0);
     await expect(visitor.page.getByText('Alice')).toHaveCount(0);
+    // Filters: only the weapons.
+    await visitor.page.getByTestId('album-filter-weapon').click();
+    await expect(visitor.page.getByTestId('album-item')).toHaveCount(1);
+    await expect(visitor.page.getByTestId('album-item')).toContainText('Fine Test Hammer');
+    await expect(visitor.page.getByTestId('album-shown-count')).toHaveText('Showing 1 of 2');
+    await visitor.page.getByTestId('album-filter-kind-all').click();
+    await expect(visitor.page.getByTestId('album-item')).toHaveCount(2);
+    // The hammer's picture came straight from Moonlabs' picture server (folder 0), without its data first.
+    expect(visitor.fake.requests.some((u) => u === 'https://imgweapon.devikins.com/0/201.png')).toBe(true);
 
     // Testy is sold: the next visit shows it faded, "no longer in the wallet".
     visitor.fake.chain.holders.set('devikin:101', 'klv1someoneelse');
     await goBack(visitor.page);
     await row.click();
-    await expect(visitor.page.getByTestId('album-gone')).toContainText('1 of these NFTs is no longer in this wallet', { timeout: 20_000 });
+    await expect(visitor.page.getByTestId('album-gone')).toContainText("1 of these NFTs is no longer in the owner's wallet", { timeout: 20_000 });
 
     // Alice deletes it: gone for everyone.
     await goBack(alice.page);

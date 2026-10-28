@@ -32,6 +32,40 @@ export const MAX_ALBUM_ITEMS = 100;
 export const MAX_ALBUM_TITLE = 60;
 export const MAX_ALBUM_DESCRIPTION = 500;
 export const MAX_ALBUM_NOTE = 200;
+/** Sections (28 Oct 2026): the owner groups the NFTs under headings ("May event 2025", "Eldritch"). */
+export const MAX_ALBUM_SECTION = 40;
+export const MAX_ALBUM_SECTIONS = 20;
+
+/**
+ * Pictures straight from Moonlabs' picture servers (28 Oct 2026): a
+ * visitor's Hub loads the picture directly instead of first asking
+ * Moonlabs' data server for the picture's address (the slow step).
+ * Weapons and Equipment always live under /0/; a Devikin's picture is in a
+ * numbered folder that can change as it grows, so the album carries that
+ * folder number (`pic`) as the owner's Hub last saw it. Nothing is copied:
+ * the picture still comes from Moonlabs.
+ */
+const PICTURE_HOSTS = {
+  devikin: 'https://img.devikins.com',
+  weapon: 'https://imgweapon.devikins.com',
+  equipment: 'https://imgequipment.devikins.com',
+};
+
+/** The picture's address for an album item, or null if it isn't known (an older album's Devikin). */
+export function albumPictureUrl({ kind, nonce, pic }) {
+  if (!PICTURE_HOSTS[kind] || !Number.isInteger(nonce)) return null;
+  const folder = kind === 'devikin' ? pic : 0;
+  if (!Number.isInteger(folder)) return null;
+  return `${PICTURE_HOSTS[kind]}/${folder}/${nonce}.png`;
+}
+
+/** The folder number in a stored picture address ("https://img.devikins.com/5/545848.png" -> 5), or null. */
+export function pictureFolderOf(kind, nonce, url) {
+  if (!PICTURE_HOSTS[kind]) return null;
+  const m = String(url || '').match(/^https:\/\/([a-z]+)\.devikins\.com\/(\d{1,3})\/(\d+)\.png$/);
+  if (!m || `https://${m[1]}.devikins.com` !== PICTURE_HOSTS[kind] || Number(m[3]) !== nonce) return null;
+  return Number(m[2]);
+}
 
 const ADDRESS = /^klv1[02-9ac-hj-np-z]{58}$/;
 
@@ -93,8 +127,17 @@ export function cleanAlbum({ title, description = '', name = null, wallet, proof
     seen.add(id);
     const note = cleanText(i.note || '');
     if ([...note].length > MAX_ALBUM_NOTE) throw new Error(`A note can have at most ${MAX_ALBUM_NOTE} characters.`);
-    return note ? { kind: i.kind, nonce: i.nonce, note } : { kind: i.kind, nonce: i.nonce };
+    const section = cleanText(i.section || '');
+    if ([...section].length > MAX_ALBUM_SECTION) throw new Error(`A section name can have at most ${MAX_ALBUM_SECTION} characters.`);
+    const out = { kind: i.kind, nonce: i.nonce };
+    if (note) out.note = note;
+    if (section) out.section = section;
+    if (i.kind === 'devikin' && Number.isInteger(i.pic) && i.pic >= 0 && i.pic <= 999) out.pic = i.pic;
+    return out;
   });
+  if (new Set(clean.map((i) => i.section).filter(Boolean)).size > MAX_ALBUM_SECTIONS) {
+    throw new Error(`An album can have at most ${MAX_ALBUM_SECTIONS} sections.`);
+  }
   return { title: t, description: d, name: n, wallet, proof, items: clean };
 }
 
