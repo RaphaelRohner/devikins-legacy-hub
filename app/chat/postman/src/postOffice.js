@@ -61,6 +61,8 @@ export const MAX_COMMENTS_PER_NFT = 50;
 export const DAILY_COMMENTS_PER_PLAYER = 30;
 /** The album mailbox (28 Oct 2026): new conversations a player may start per day; messages are kept 30 days. */
 export const DAILY_ALBUM_THREADS_PER_PLAYER = 10;
+/** Linked devices (28 Oct 2026): a device that hasn't checked its mail for this long is taken out of the account. */
+export const DEVICE_IDLE_DAYS = 60;
 export const MAX_OPEN_SIGNINS = 3;
 export const MAX_DEVICES = 5;
 export const MAX_ENVELOPE_CHARS = 64 * 1024;
@@ -201,7 +203,10 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
   for (const statement of SCHEMA) sql.exec(statement);
   // Columns added after a table first went live (stage 4: group keys renewed after a removal;
   // 23 Oct 2026: votes.closing = the result is already certain, count it now).
-  for (const [table, name, type] of [['groups', 'epoch', 'INTEGER NOT NULL DEFAULT 1'], ['groups', 'needs_rekey', 'INTEGER NOT NULL DEFAULT 0'], ['votes', 'closing', 'INTEGER NOT NULL DEFAULT 0'], ['groups', 'alone_since', 'INTEGER']]) {
+  // 28 Oct 2026: devices.seen = the day a device last checked its mail (rounded to the day), so a player
+  // sees which of their devices is still in use, and devices idle for DEVICE_IDLE_DAYS are taken out.
+  const hadSeen = sql.exec('PRAGMA table_info(devices)').toArray().some((c) => c.name === 'seen');
+  for (const [table, name, type] of [['groups', 'epoch', 'INTEGER NOT NULL DEFAULT 1'], ['groups', 'needs_rekey', 'INTEGER NOT NULL DEFAULT 0'], ['votes', 'closing', 'INTEGER NOT NULL DEFAULT 0'], ['groups', 'alone_since', 'INTEGER'], ['devices', 'seen', 'INTEGER']]) {
     if (!sql.exec(`PRAGMA table_info(${table})`).toArray().some((c) => c.name === name)) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
   }
   // groups.alone_since (24 Oct 2026): since when only the owner is in it
@@ -209,6 +214,8 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
   // from the first start with this rule.
   sql.exec(`UPDATE groups SET alone_since = ? WHERE alone_since IS NULL
     AND (SELECT COUNT(*) FROM group_members m WHERE m.grp = groups.id) = 1`, now()).toArray();
+  // (devices from before: counted as seen today, so none is taken out sooner than DEVICE_IDLE_DAYS from now)
+  if (!hadSeen) sql.exec('UPDATE devices SET seen = ?', Math.floor(now() / DAY) * DAY).toArray();
   const rows = (query, ...params) => sql.exec(query, ...params).toArray();
   const row = (query, ...params) => rows(query, ...params)[0];
   const run = (query, ...params) => { sql.exec(query, ...params).toArray(); };
@@ -246,6 +253,15 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     if (!account) refuse(403, 'Please sign in with your wallet first.');
     if (account.verified_until <= t) refuse(403, 'Please sign in with your wallet again (it is checked once a week).');
     return account;
+  }
+
+  /** One device taken out of its account (by the player, or idle too long): it and what waits for it. */
+  function forgetDevice(key) {
+    run('DELETE FROM devices WHERE key = ?', key);
+    run('DELETE FROM mail WHERE device = ?', key);
+    run('DELETE FROM album_talk WHERE to_key = ?', key);
+    run('DELETE FROM signins WHERE device = ?', key);
+    run('DELETE FROM proofs WHERE device = ?', key);
   }
 
   /** Everything a player wrote about albums (comments, votes, album conversations) - when their account goes. */
@@ -587,7 +603,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       }
       if (!current) {
         if (devicesOf(account.id).length >= MAX_DEVICES) refuse(409, `At most ${MAX_DEVICES} devices per player; remove one first.`);
-        run('INSERT INTO devices (key, account, added) VALUES (?, ?, ?)', device, account.id, t2);
+        run('INSERT INTO devices (key, account, added, seen) VALUES (?, ?, ?, ?)', device, account.id, t2, Math.floor(t2 / DAY) * DAY);
       }
       const badge = issueBadge(postman, { holder: device, nfts, now: t2, account: account.id });
       const verifiedUntil = Number(badge.tags.find((x) => x[0] === 'expiration')[1]) * 1000;
@@ -605,7 +621,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
         verifiedUntil: account.verified_until,
         devices: devicesOf(account.id),
         // (with the day each was added - for the list of linked devices)
-        deviceList: rows('SELECT key, added FROM devices WHERE account = ? ORDER BY added', account.id).map((d) => ({ key: d.key, added: d.added })),
+        deviceList: rows('SELECT key, added, seen FROM devices WHERE account = ? ORDER BY added', account.id).map((d) => ({ key: d.key, added: d.added, seen: d.seen ?? null })),
         nextRequestAt: nextRequestAt(account.wallet_fp, t),
       };
     },
@@ -658,7 +674,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       if (current && current.id !== account.id) refuse(409, 'This device already has a chat of its own. Leave the chat on it first.');
       if (!current) {
         if (devicesOf(account.id).length >= MAX_DEVICES) refuse(409, `At most ${MAX_DEVICES} devices per player; take one out first.`);
-        run('INSERT INTO devices (key, account, added) VALUES (?, ?, ?)', device, account.id, t);
+        run('INSERT INTO devices (key, account, added, seen) VALUES (?, ?, ?, ?)', device, account.id, t, Math.floor(t / DAY) * DAY);
       }
       const badge = issueBadge(postman, { holder: device, nfts: link.nfts, now: t, account: account.id, expiresAtSec: link.badge_until });
       return { account: account.id, nickname: account.nickname ?? null, nfts: link.nfts, badge, verifiedUntil: Math.min(account.verified_until, link.badge_until * 1000) };
@@ -866,10 +882,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       const key = body.key;
       if (key === device) refuse(400, 'To take this device out, leave the chat on it.');
       if (!isPublicKey(key) || !devicesOf(account.id).includes(key)) refuse(404, 'That is not one of your devices.');
-      run('DELETE FROM devices WHERE key = ?', key);
-      run('DELETE FROM mail WHERE device = ?', key);
-      run('DELETE FROM signins WHERE device = ?', key);
-      run('DELETE FROM proofs WHERE device = ?', key);
+      forgetDevice(key);
       return { removed: true };
     },
 
@@ -1374,6 +1387,10 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
         } catch (e) {
           refuse(401, e.message);
         }
+        // The day this device was last in use (only the day: "active today" is all the player's
+        // other devices see; idle for DEVICE_IDLE_DAYS = taken out, see cleanUp).
+        const today = Math.floor(t / DAY) * DAY;
+        run('UPDATE devices SET seen = ? WHERE key = ? AND (seen IS NULL OR seen < ?)', today, device, today);
       }
       return { status: 200, body: await route({ device, body, query: parsed.searchParams, t, host: parsed.host }) };
     } catch (e) {
@@ -1394,6 +1411,9 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
     run('DELETE FROM album_talk WHERE at < ?', cutoff);
     run('DELETE FROM album_threads WHERE at < ? AND blocked = 0', cutoff);
     run('DELETE FROM requests WHERE at < ?', t - DAY);
+    // Devices nobody has used for DEVICE_IDLE_DAYS (an old phone, a reinstalled app): out of the account.
+    // (The account itself stays while it has other devices; with none left it goes after 180 days as before.)
+    for (const d of rows('SELECT key FROM devices WHERE seen IS NOT NULL AND seen < ?', t - DEVICE_IDLE_DAYS * DAY)) forgetDevice(d.key);
     run('DELETE FROM lastpost WHERE at < ?', t - DAY);
     run('DELETE FROM budget WHERE day < ?', Math.floor(t / DAY) - 1);
     for (const j of rows('SELECT grp, account FROM group_joins WHERE at < ?', t - JOIN_WAIT_DAYS * DAY)) dropJoin(j.grp, j.account);

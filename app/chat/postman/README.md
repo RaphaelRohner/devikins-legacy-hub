@@ -35,8 +35,11 @@ Keeps:
   are one account. Envelopes a device sends to its player's *own* other
   devices (copies of what it wrote or changed, and once the history for a
   new device, in parts) wait like 1:1 envelopes and are deleted once picked
-  up; the postman can't read them. It keeps the day each device was added,
-  and a player can take one of their devices out (`/me/devices/remove`);
+  up; the postman can't read them. It keeps when each device was added and
+  the day it was last active (only the day, 28 Oct 2026: shown on the
+  player's other devices to tell them apart), and a player can take one of
+  their devices out (`/me/devices/remove`). A device not active for 60 days
+  is taken out by itself (an old phone, a reinstalled app);
 - **link codes** (QR codes to add a device without a wallet, 27 Oct 2026):
   only a fingerprint of the one-time code, which account it's for, and the
   Devikins count and end of the linking device's badge (so the new device

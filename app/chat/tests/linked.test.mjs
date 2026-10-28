@@ -315,3 +315,52 @@ test('a linked device stays signed in: the weekly wallet sign-in on another devi
   w.clock.t += 2 * 24 * 60 * MINUTE; // past the first week
   assert.equal((await phone.status()).state, 'ready');
 });
+
+test('answering "new device" on one device answers it on all of them; each device shows the day it was last active (28 Oct 2026)', async () => {
+  const w = world();
+  const { alice } = await chatting(w);
+  const phone = await w.player('Alice', 3, alice, 'Android app');
+  w.clock.t += 2 * MINUTE;
+  await alice.linkedDevices();
+  await alice.copyHistoryTo(phone.identity.publicKey);
+  await phone.checkMail();
+  // A third device: both the website and the phone (which has the history now) ask about it.
+  const laptop = await w.player('Alice', 3, alice, 'Laptop');
+  w.clock.t += 2 * MINUTE;
+  assert.equal((await alice.linkedDevices()).others.find((d) => d.key === laptop.identity.publicKey).isNew, true);
+  assert.equal((await phone.linkedDevices()).others.find((d) => d.key === laptop.identity.publicKey).isNew, true);
+  // "Not now" on the website: the phone stops asking too.
+  await alice.dismissNewDevice(laptop.identity.publicKey);
+  await phone.checkMail();
+  assert.equal((await phone.linkedDevices()).others.find((d) => d.key === laptop.identity.publicKey).isNew, false);
+
+  // Last active: the day each device last talked to the postman.
+  const day = (t) => Math.floor(t / (24 * 60 * MINUTE)) * 24 * 60 * MINUTE;
+  const today = day(w.clock.t);
+  w.clock.t += 3 * 24 * 60 * MINUTE;
+  await alice.checkMail();
+  w.clock.t += 2 * MINUTE;
+  const list = (await alice.linkedDevices()).others;
+  assert.equal(list.find((d) => d.key === phone.identity.publicKey).seen, today);
+  assert.equal(list.find((d) => d.key === laptop.identity.publicKey).seen, today);
+});
+
+test('a device nobody has used for 60 days is taken out of the account (an old phone, a reinstalled app)', async () => {
+  const w = world();
+  const { alice } = await chatting(w);
+  const oldPhone = await w.player('Alice', 3, alice, 'Old phone');
+  w.clock.t += 2 * MINUTE;
+  assert.equal((await alice.linkedDevices()).others.length, 1);
+  // Alice keeps using the website (it checks mail); the old phone is never opened again.
+  for (let i = 0; i < 61; i += 1) {
+    w.clock.t += 24 * 60 * MINUTE;
+    await alice.checkMail();
+    if (i % 7 === 0) await alice.setHoldings(3); // (the weekly wallet check)
+    w.office.cleanUp();
+  }
+  w.clock.t += 2 * MINUTE;
+  assert.equal((await alice.linkedDevices()).others.length, 0);
+  assert.equal((await alice.status()).state, 'ready');
+  // The old phone, opened again, simply has to sign in again.
+  assert.equal((await oldPhone.postman.me()).signedIn, false);
+});

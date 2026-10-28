@@ -39,6 +39,17 @@ import { MAX_TEXT_LENGTH, nicknameKey } from '../../chat/src/rules.js';
 
 /** A linked device as people know it: its kind ("Website", "Android app"), told by the device itself. */
 const deviceName = (d) => d.label || 'Another device';
+/**
+ * Telling devices apart (28 Oct 2026: two "Motorola moto g54 5G" after a
+ * reinstall): the day each was last active (from the postman, only the day),
+ * and the start of its chat key (shown on the device itself too).
+ */
+const keyTag = (key) => `key ${String(key || '').slice(0, 4)}`;
+function lastActive(d) {
+  if (!d.seen) return '';
+  const day = (t) => new Date(t).toDateString();
+  return day(d.seen) === day(Date.now()) ? 'active today' : `last active ${new Date(d.seen).toLocaleDateString()}`;
+}
 
 function minutesUntil(ms) {
   const min = Math.ceil((ms - Date.now()) / 60000);
@@ -567,8 +578,8 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
               <View style={{ gap: 8 }} testID="chat-new-device">
                 <Text style={[styles.section, { color: colors.text }]}>New device in your chat</Text>
                 <Text style={[styles.note, { color: colors.text }]}>
-                  {deviceName(d)} signed in with your wallet{d.added ? ` on ${new Date(d.added).toLocaleDateString()}` : ''}. Copy your
-                  contacts and chat history to it? It goes there sealed, like your messages.
+                  {deviceName(d)} ({keyTag(d.key)}{lastActive(d) ? `, ${lastActive(d)}` : ''}) signed in with your wallet{d.added ? ` on ${new Date(d.added).toLocaleDateString()}` : ''}. Copy your
+                  contacts and chat history to it? It goes there sealed, like your messages. (Your answer counts for all your devices.)
                 </Text>
                 <View style={styles.row}>
                   {button('Copy history', () => act(() => messenger.copyHistoryTo(d.key)), { testID: 'chat-copy-history' })}
@@ -702,13 +713,13 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
             </TouchableOpacity>
           )}
           <Text style={[styles.note, { color: colors.secondaryText, marginTop: 8 }]} testID="chat-devices">
-            Your devices: this one{devices?.label ? ` (${devices.label})` : ''}
+            Your devices: this one{devices?.label ? ` (${devices.label}, ${keyTag(devices.thisDevice)})` : ` (${keyTag(devices?.thisDevice)})`}
             {(devices?.others || []).length ? '' : ' only'}
           </Text>
           {(devices?.others || []).map((d) => (
             <View key={d.key} style={styles.row} testID="chat-device">
               <Text style={[styles.note, { color: colors.text, flex: 1 }]}>
-                {deviceName(d)}{d.added ? ` · added ${new Date(d.added).toLocaleDateString()}` : ''}
+                {deviceName(d)} · {keyTag(d.key)}{d.added ? ` · added ${new Date(d.added).toLocaleDateString()}` : ''}{lastActive(d) ? ` · ${lastActive(d)}` : ''}
               </Text>
               <TouchableOpacity
                 onPress={() => confirm(

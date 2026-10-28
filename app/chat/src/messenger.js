@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS chat_album_threads (album TEXT NOT NULL, side TEXT NO
   PRIMARY KEY (album, side, thread));
 CREATE TABLE IF NOT EXISTS chat_album_talk (id INTEGER PRIMARY KEY AUTOINCREMENT, album TEXT NOT NULL, side TEXT NOT NULL, thread TEXT NOT NULL,
   mine INTEGER NOT NULL, text TEXT NOT NULL, sent_at INTEGER NOT NULL, received_at INTEGER NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS chat_album_talk_once ON chat_album_talk (album, side, thread, mine, text, sent_at);
 -- My votes on comments (28 Oct 2026), to show which button I pressed.
 CREATE TABLE IF NOT EXISTS chat_comment_votes (comment INTEGER PRIMARY KEY NOT NULL, vote INTEGER NOT NULL);
 `;
@@ -208,6 +209,8 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
   const added = {
     chat_contacts: [['ended', 'INTEGER NOT NULL DEFAULT 0'], ['before_block', 'TEXT']],
     chat_groups: [['owner_account', 'TEXT'], ['paused_until', 'INTEGER NOT NULL DEFAULT 0']],
+    // (28 Oct 2026: the day each of my other devices last checked its mail, from the postman)
+    chat_devices: [['seen', 'INTEGER']],
   };
   for (const [table, cols] of Object.entries(added)) {
     const columns = new Set((await all(`PRAGMA table_info(${table})`)).map((c) => c.name));
@@ -810,8 +813,11 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     const offer = await hasHistory();
     const fresh = [];
     for (const d of others) {
-      if (known.has(d.key)) continue;
-      await run('INSERT OR IGNORE INTO chat_devices (key, added, state) VALUES (?, ?, ?)', [d.key, Number(d.added) || 0, offer ? 'new' : 'known']);
+      if (known.has(d.key)) {
+        await run('UPDATE chat_devices SET seen = ? WHERE key = ?', [Number(d.seen) || null, d.key]);
+        continue;
+      }
+      await run('INSERT OR IGNORE INTO chat_devices (key, added, state, seen) VALUES (?, ?, ?, ?)', [d.key, Number(d.added) || 0, offer ? 'new' : 'known', Number(d.seen) || null]);
       fresh.push(d.key);
     }
     for (const key of known) {
@@ -922,6 +928,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       await run('INSERT INTO chat_sync_out (device, body) VALUES (?, ?)', [key, JSON.stringify({ t: 'history', transfer, part, total, data })]);
     }
     await run("UPDATE chat_devices SET state = 'known' WHERE key = ?", [key]);
+    await tellDeviceAnswered(key);
     await flushSync().catch(() => {});
     return { parts: total };
   }
@@ -929,6 +936,13 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
   /** "Not now": the new device isn't offered the history again. */
   async function dismissNewDevice(key) {
     await run("UPDATE chat_devices SET state = 'known' WHERE key = ?", [key]);
+    await tellDeviceAnswered(key);
+  }
+
+  /** My other devices stop asking about this new device too (28 Oct 2026: the question came back on each one). */
+  async function tellDeviceAnswered(key) {
+    const others = ownDevices.filter((d) => d !== key);
+    if (others.length) await queueSync({ t: 'device-known', key }, others);
   }
 
   /** Takes one of my other devices out of the account (e.g. a lost phone, or "that's not mine"). */
@@ -946,7 +960,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
   async function linkedDevices() {
     await refreshDevices().catch(() => {});
     const others = (await all('SELECT * FROM chat_devices ORDER BY added, key'))
-      .map((r) => ({ key: r.key, added: r.added, label: r.label || null, isNew: r.state === 'new' }));
+      .map((r) => ({ key: r.key, added: r.added, seen: r.seen || null, label: r.label || null, isNew: r.state === 'new' }));
     const incoming = await first('SELECT total, COUNT(*) AS n FROM chat_sync_in GROUP BY transfer ORDER BY MIN(at) LIMIT 1');
     return { thisDevice: identity.publicKey, label: deviceLabel || null, others, copying: incoming ? { received: incoming.n, total: incoming.total } : null };
   }
@@ -1103,6 +1117,11 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       await setMe('badge', d.badge);
       await setMe('verifiedUntil', check.until);
       await setMe('nfts', check.nfts);
+      return 'synced';
+    }
+    if (d.t === 'device-known') {
+      // (another of my devices answered the "new device" question: copied, or not now)
+      if (typeof d.key === 'string') await run("UPDATE chat_devices SET state = 'known' WHERE key = ?", [d.key]);
       return 'synced';
     }
     if (d.t === 'hello') {
@@ -1889,10 +1908,10 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
   async function storeTalk({ album, side, thread, mine, text, sentAt }) {
     const clean = cleanText(text || '');
     if (!clean || !Number.isFinite(sentAt)) return false;
-    if (await first('SELECT id FROM chat_album_talk WHERE album = ? AND side = ? AND thread = ? AND mine = ? AND text = ? AND sent_at = ?',
-      [album, side, thread, mine ? 1 : 0, clean, sentAt])) return false;
-    await run('INSERT INTO chat_album_talk (album, side, thread, mine, text, sent_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    // (the database itself refuses a second copy: two mail checks at the same moment could both bring it)
+    const r = await run('INSERT OR IGNORE INTO chat_album_talk (album, side, thread, mine, text, sent_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [album, side, thread, mine ? 1 : 0, clean, sentAt, now()]);
+    if (!r.changes) return false;
     await run(`UPDATE chat_album_threads SET last_at = MAX(last_at, ?), unread = unread + ? WHERE album = ? AND side = ? AND thread = ?`,
       [sentAt, mine ? 0 : 1, album, side, thread]);
     return true;
@@ -1946,7 +1965,13 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
   }
 
   /** New album messages: for this device (as a visitor) and for each of my albums (as the owner). → how many new */
-  async function collectAlbumTalk() {
+  let talkRun = null;
+  function collectAlbumTalk() {
+    // (one run at a time: the album screen and the chat's mail check both ask)
+    if (!talkRun) talkRun = fetchAlbumTalk().finally(() => { talkRun = null; });
+    return talkRun;
+  }
+  async function fetchAlbumTalk() {
     let added = 0;
     const take = async (client, key, ident, side) => {
       const afterKey = `talkAfter:${key}`;
