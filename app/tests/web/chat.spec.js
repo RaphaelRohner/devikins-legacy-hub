@@ -777,6 +777,15 @@ test('Collectors Albums: comments with confirm votes, hiding in my album, and th
     await bob.page.getByTestId('album-row').filter({ hasText: 'Talk to me' }).click();
     await bob.page.getByTestId('album-item').filter({ hasText: 'Testy the Brave' }).click();
     await expect(bob.page.getByTestId('album-panel')).toBeVisible();
+    // Like the Browse details, without the ID or Kleverscan; the stats fold out on a tap.
+    const nftPart = bob.page.getByTestId('album-panel-nft');
+    await expect(nftPart).toContainText('Testy the Brave');
+    await expect(nftPart).not.toContainText('#101');
+    await expect(nftPart).not.toContainText('Kleverscan');
+    await expect(nftPart).not.toContainText('Faery');
+    await bob.page.getByTestId('album-stats-toggle').click();
+    await expect(nftPart).toContainText('Faery');
+    await expect(nftPart).not.toContainText('Save Name');
     await bob.page.getByTestId('album-comment-input').fill('From the May 2025 event');
     await bob.page.getByTestId('album-comment-send').click();
     await expect(bob.page.getByTestId('album-comment')).toContainText('From the May 2025 event');

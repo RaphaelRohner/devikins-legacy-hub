@@ -36,6 +36,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import useNftImage from '../hooks/useNftImage';
+import NftCard from './NftCard';
 import useKeepFocusedInputVisible from '../hooks/useKeepFocusedInputVisible';
 
 /**
@@ -567,32 +568,50 @@ function NftPanel({ entry, held, albumKey, comments, viewer, onChanged, onClose 
 
   const shown = comments.filter((c) => !c.disputed || showDisputed);
   const disputedCount = comments.filter((c) => c.disputed).length;
-  const facts = Object.entries(traits || {})
-    .filter(([k, v]) => v !== null && v !== undefined && v !== '' && TRAIT_COLUMNS[item.kind]?.[k] && TRAIT_COLUMNS[item.kind][k].filterable !== false)
-    .slice(0, 12)
-    .map(([k, v]) => `${k.replace(/_/g, ' ').replace(/^./, (x) => x.toUpperCase())}: ${v}`);
+  // The NFT as Browse shows it (NftCard, album mode: no ID, no Kleverscan,
+  // stats on a tap): this Hub's stored row, or one made from Moonlabs' data.
+  const cardRow = entry.row || {
+    nonce: item.nonce,
+    name: entry.metadata?.name || null,
+    image: entry.metadata?.image || albumPictureUrl(item),
+    status: entry.metadata === false ? 'unavailable' : 'ok',
+    ...traits,
+  };
+  // The NFT stays at the top; the comments scroll below it (Raphael, 28 Oct 2026).
+  // With the keyboard open (phone), the NFT part gets smaller.
+  const panelHeight = Math.min(height * 0.92, keyboard ? Math.max(260, height - keyboard - 48) : height * 0.92);
   const vote = (c, v) => act((m) => m.voteOnComment(c.id, viewer.votes[c.id] === v ? 0 : v));
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
       <View style={[styles.backdrop, keyboard ? { paddingBottom: keyboard + 12, justifyContent: 'flex-end' } : null]}>
         <View
-          style={[styles.panel, { backgroundColor: colors.background, borderColor: colors.border, width: Math.min(width - 24, 640) },
-            keyboard ? { maxHeight: Math.max(200, height - keyboard - 48) } : null]}
+          style={[styles.panel, { backgroundColor: colors.background, borderColor: colors.border, width: Math.min(width - 24, 640), height: panelHeight }]}
           testID="album-panel"
         >
-          <ScrollView ref={panelScroll} contentContainerStyle={{ gap: 10, padding: 14 }} keyboardShouldPersistTaps="handled">
-            <View style={styles.pickRow}>
-              <Text style={[styles.albumTitle, { color: colors.text, flex: 1 }]}>{nftTitle(entry)}</Text>
-              <TouchableOpacity onPress={onClose} accessibilityLabel="Close" testID="album-panel-close">
-                <Text style={{ color: colors.primary, fontSize: 20, fontWeight: '700' }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <NftPicture entry={entry} style={styles.panelImage} />
-            <Text style={[styles.note, { color: colors.secondaryText }]}>{COLLECTIONS[item.kind].label} · {heldText(held)}</Text>
-            {facts.length ? <Text style={[styles.small, { color: colors.secondaryText }]}>{facts.join(' · ')}</Text> : null}
-            {item.note ? <Text style={[styles.text, { color: colors.text, fontStyle: 'italic' }]}>Owner's note: {item.note}</Text> : null}
-
+          <View style={[styles.pickRow, { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 6 }]}>
+            <Text style={[styles.small, { color: colors.secondaryText, flex: 1 }]}>{COLLECTIONS[item.kind].label} in this album</Text>
+            <TouchableOpacity onPress={onClose} accessibilityLabel="Close" testID="album-panel-close">
+              <Text style={{ color: colors.primary, fontSize: 20, fontWeight: '700' }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ maxHeight: keyboard ? panelHeight * 0.3 : panelHeight * 0.55, flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 8 }} testID="album-panel-nft">
+            <NftCard
+              kind={item.kind}
+              nft={cardRow}
+              album={{
+                title: nftTitle(entry),
+                extra: (
+                  <>
+                    <Text style={[styles.note, { color: held === false ? colors.text : colors.secondaryText }]}>{heldText(held)}</Text>
+                    {item.note ? <Text style={[styles.note, { color: colors.text, fontStyle: 'italic' }]}>Owner's note: {item.note}</Text> : null}
+                  </>
+                ),
+              }}
+            />
+          </ScrollView>
+          <View style={[styles.panelDivider, { backgroundColor: colors.border }]} />
+          <ScrollView ref={panelScroll} style={{ flex: 1 }} contentContainerStyle={{ gap: 10, padding: 14 }} keyboardShouldPersistTaps="handled" testID="album-panel-comments">
             <Text style={[styles.section, { color: colors.text, marginHorizontal: 0 }]}>Comments</Text>
             <Text style={[styles.small, { color: colors.secondaryText }]}>
               Comments belong to this NFT, so they stay when it changes hands. Holders confirm what they know.
@@ -1251,7 +1270,7 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 12 },
   panel: { maxHeight: '92%', borderWidth: 1, borderRadius: 14, overflow: 'hidden' },
-  panelImage: { width: '100%', maxWidth: 360, aspectRatio: 1, alignSelf: 'center', borderRadius: 8 },
+  panelDivider: { height: StyleSheet.hairlineWidth * 2 },
   comment: { borderWidth: 1, borderRadius: 10, padding: 10, gap: 6 },
   bubble: { marginHorizontal: 12, marginBottom: 8, padding: 10, borderRadius: 12, borderWidth: 1, maxWidth: '80%', gap: 4 },
   filterBox: { marginHorizontal: 12, marginBottom: 10, paddingBottom: 10, gap: 8, borderBottomWidth: 1 },

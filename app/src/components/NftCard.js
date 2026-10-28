@@ -99,8 +99,31 @@ function humanizeColumnName(columnName) {
     .join(' ');
 }
 
-export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartners = null }) {
+/**
+ * `album` (28 Oct 2026, Collectors Albums): the same card for an NFT in
+ * someone's album - { title, extra (shown under the picture: wallet check,
+ * the owner's note) }. Then: no ID, no Kleverscan link, none of your own
+ * fields (name, rating, notes, delete), and the stats fold out on a tap
+ * ("Stats ▾") - Raphael: like the Browse details, without what helps to
+ * look the holder up.
+ */
+export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartners = null, album = null }) {
   const { colors } = useTheme();
+  const [statsOpen, setStatsOpen] = useState(false);
+  // In an album the stats sit behind a "Stats ▾" toggle; in Browse they're always there.
+  const fold = (node) => {
+    if (!album) return node;
+    return (
+      <>
+        <View style={[styles.separator, { backgroundColor: colors.border }]} />
+        <TouchableOpacity onPress={() => setStatsOpen((o) => !o)} accessibilityRole="button" accessibilityState={{ expanded: statsOpen }} testID="album-stats-toggle">
+          <Text style={{ color: colors.primary, fontSize: 15, fontWeight: '700' }}>{statsOpen ? 'Stats ▴' : 'Stats ▾'}</Text>
+        </TouchableOpacity>
+        {statsOpen ? node : null}
+      </>
+    );
+  };
+  const albumExtra = album?.extra ? <View style={{ marginTop: 10, gap: 4 }}>{album.extra}</View> : null;
 
   // The small ⓘ next to a game word (Genes, Affinities, Procreations
   // Left, ...): hovering (website) or tapping shows what it means, in a box
@@ -538,25 +561,25 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
           <View style={styles.devikinTopRight}>
             {/* One line, shrinking a long ID to fit instead of breaking it
                 (Raphael, 17 Oct 2026: "#1020243" broke after "#102024"). */}
-            <Text style={[styles.devikinId, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
-              #{nft.nonce}
+            <Text style={[styles.devikinId, { color: colors.text }, album ? { fontSize: 22, lineHeight: 28 } : null]} numberOfLines={album ? 3 : 1} adjustsFontSizeToFit={!album} minimumFontScale={0.6}>
+              {album ? album.title : `#${nft.nonce}`}
             </Text>
             {/* The Hub nickname (or the name from the game), and - when both
                 exist and differ - the game's name on its own smaller line,
                 so both stay readable on a phone. */}
-            {gameNameOf(nft) || nft.custom_name ? (
+            {!album && (gameNameOf(nft) || nft.custom_name) ? (
               <Text style={[styles.devikinSubLine, { color: colors.primary, fontWeight: '700' }]} numberOfLines={1}>
                 {nft.custom_name || gameNameOf(nft)}
               </Text>
             ) : null}
-            {nft.custom_name && gameNameOf(nft) && nft.custom_name !== gameNameOf(nft) ? (
+            {!album && nft.custom_name && gameNameOf(nft) && nft.custom_name !== gameNameOf(nft) ? (
               <Text style={[styles.devikinGameName, { color: colors.secondaryText }]} numberOfLines={1}>
                 in the game: {gameNameOf(nft)}
               </Text>
             ) : null}
             {/* Each stat stays on one line next to its ⓘ, shrinking a little
                 if the phone's column is narrow. */}
-            {hasTopStats && topStatKeys.map((key) => chipByKey[key] && (
+            {!album && hasTopStats && topStatKeys.map((key) => chipByKey[key] && (
               <View key={key} style={styles.labelRow}>
                 <Text
                   style={[styles.devikinSubLine, styles.devikinStatText, { color: colors.secondaryText }]}
@@ -569,11 +592,25 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
                 {infoIcon(key)}
               </View>
             ))}
-            {infoBox(topStatKeys)}
+            {album ? null : infoBox(topStatKeys)}
           </View>
         </View>
+        {albumExtra}
 
         {statusBadge}
+        {fold(
+          <>
+          {album && hasTopStats ? (
+            <View style={{ marginTop: 10 }}>
+              {topStatKeys.map((key) => chipByKey[key] && (
+                <View key={key} style={styles.labelRow}>
+                  <Text style={[styles.devikinSubLine, styles.devikinStatText, { color: colors.secondaryText }]}>{chipByKey[key].label}: {chipByKey[key].value}</Text>
+                  {infoIcon(key)}
+                </View>
+              ))}
+              {infoBox(topStatKeys)}
+            </View>
+          ) : null}
 
         {hasTriStats && (
           <>
@@ -672,9 +709,15 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
             ))}
           </View>
         )}
-        <View style={[styles.separator, { backgroundColor: colors.border }]} />
-        {nameAndRatingSection}
-        {deleteSection}
+          </>,
+        )}
+        {album ? null : (
+          <>
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
+            {nameAndRatingSection}
+            {deleteSection}
+          </>
+        )}
       </View>
         {fullscreenModal}
       </>
@@ -723,12 +766,15 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
         <View style={styles.headerRow}>
           {image}
           <View style={styles.headerText}>
-            <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{displayName}</Text>
-            <Text style={[styles.nonce, { color: colors.secondaryText }]}>#{nft.nonce}</Text>
+            <Text style={[styles.name, { color: colors.text }]} numberOfLines={2}>{album ? album.title : displayName}</Text>
+            {album ? null : <Text style={[styles.nonce, { color: colors.secondaryText }]}>#{nft.nonce}</Text>}
           </View>
         </View>
 
+        {albumExtra}
         {statusBadge}
+        {fold(
+          <>
 
         {hasTriStats && (
           <>
@@ -810,9 +856,15 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
             ))}
           </View>
         )}
-        <View style={[styles.separator, { backgroundColor: colors.border }]} />
-        {nameAndRatingSection}
-        {deleteSection}
+          </>,
+        )}
+        {album ? null : (
+          <>
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
+            {nameAndRatingSection}
+            {deleteSection}
+          </>
+        )}
       </View>
         {fullscreenModal}
       </>
@@ -863,12 +915,15 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
         <View style={styles.headerRow}>
           {image}
           <View style={styles.headerText}>
-            <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{displayName}</Text>
-            <Text style={[styles.nonce, { color: colors.secondaryText }]}>#{nft.nonce}</Text>
+            <Text style={[styles.name, { color: colors.text }]} numberOfLines={2}>{album ? album.title : displayName}</Text>
+            {album ? null : <Text style={[styles.nonce, { color: colors.secondaryText }]}>#{nft.nonce}</Text>}
           </View>
         </View>
 
+        {albumExtra}
         {statusBadge}
+        {fold(
+          <>
 
         {hasTriStats && (
           <>
@@ -950,9 +1005,15 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
             ))}
           </View>
         )}
-        <View style={[styles.separator, { backgroundColor: colors.border }]} />
-        {nameAndRatingSection}
-        {deleteSection}
+          </>,
+        )}
+        {album ? null : (
+          <>
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
+            {nameAndRatingSection}
+            {deleteSection}
+          </>
+        )}
       </View>
         {fullscreenModal}
       </>
@@ -970,8 +1031,8 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
         {image}
 
         <View style={styles.headerText}>
-          <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{displayName}</Text>
-          <Text style={[styles.nonce, { color: colors.secondaryText }]}>#{nft.nonce}</Text>
+          <Text style={[styles.name, { color: colors.text }]} numberOfLines={2}>{album ? album.title : displayName}</Text>
+          {album ? null : <Text style={[styles.nonce, { color: colors.secondaryText }]}>#{nft.nonce}</Text>}
           {statusBadge}
         </View>
       </View>
@@ -987,9 +1048,13 @@ export default function NftCard({ kind, nft, onNftUpdated, onFindBreedingPartner
           ))}
         </View>
       )}
-      <View style={[styles.separator, { backgroundColor: colors.border }]} />
-      {nameAndRatingSection}
-      {deleteSection}
+      {album ? null : (
+        <>
+          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+          {nameAndRatingSection}
+          {deleteSection}
+        </>
+      )}
     </View>
       {fullscreenModal}
     </>
