@@ -303,7 +303,7 @@ test('menu categories open and close, and the menu starts tidy each time', async
   await expect.poll(menuText).toMatch(/Set Up Getting started, Wallets, Fetch\/Update, Kleverscan ▸/);
   await expect.poll(menuText).toMatch(/Help Ask Devi, Feedback, About ▸/);
   await menu.getByText('Features', { exact: true }).click();
-  await expect.poll(menuText).toMatch(/Features ▾ Chat G C Talk to other players \(new\) Collectors Albums Show your NFTs, see other collections \(new\) Withdrawals G W Breeding Helper G B/);
+  await expect.poll(menuText).toMatch(/Features ▾ Chat G C Talk to other players \(new\) Collectors Albums G V Show your NFTs, see other collections \(new\) Withdrawals G W Breeding Helper G B/);
   await menu.getByText('Features', { exact: true }).click();
   await expect.poll(menuText).toMatch(/Features Chat, Collectors Albums, Withdrawals, Breeding Helper ▸ Help/);
   // Kleverscan sits at the end of Set Up, with a line saying what it's for.
