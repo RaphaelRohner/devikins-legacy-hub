@@ -126,25 +126,31 @@ export function parseIdList(text, defaultKind = null) {
 /**
  * One of: 'arrived', 'overdue', 'requested', 'requested-elsewhere', 'in-game', 'main',
  * 'elsewhere', 'not-found', 'unchecked'.
- *   arrived    - in the receiving wallet
+ *   arrived    - in the receiving wallet, or in another of your own wallets
+ *                (`ownAddresses`: every wallet of every set), or it arrived
+ *                once and was sent on since (28 Oct 2026, Raphael: 10
+ *                Devikins sent on to a friend's wallet showed as overdue)
  *   overdue    - marked requested, not arrived after `overdueMinutes`
  *   requested  - marked requested, still within the time
  *   requested-elsewhere - same, but in someone else's wallet (a warning)
  * For NFTs that aren't marked requested, where they are:
  *   in-game / main / elsewhere / not-found / unchecked
- * `place` always says where it is: 'receiving' | 'in-game' | 'main' |
+ * `place` always says where it is: 'receiving' | 'own' | 'in-game' | 'main' |
  * 'elsewhere' | 'not-found' | 'unchecked'.
  */
-export function statusOf(item, { fromAddress, toAddress, overdueMinutes, now = Date.now() }) {
+export function statusOf(item, { fromAddress, toAddress, overdueMinutes, now = Date.now(), ownAddresses = [] }) {
   let place;
   if (!item.checked_at) place = 'unchecked';
   else if (!item.holder) place = 'not-found';
   else if (item.holder === toAddress) place = 'receiving';
   else if (item.holder === fromAddress) place = 'in-game';
   else if (item.holder === GAME_MAIN_WALLET) place = 'main';
+  else if (ownAddresses.includes(item.holder)) place = 'own';
   else place = 'elsewhere';
 
-  if (place === 'receiving') return { status: 'arrived', place };
+  if (place === 'receiving' || place === 'own') return { status: 'arrived', place };
+  // Arrived once and sent on since (to a friend, sold …): done - never overdue again.
+  if (item.arrived_at) return { status: 'arrived', place };
   if (item.requested_at) {
     const minutes = (now - item.requested_at) / 60000;
     if (minutes >= (overdueMinutes || DEFAULT_OVERDUE_MINUTES)) return { status: 'overdue', place };
@@ -306,7 +312,7 @@ export async function lookUpHolders(list, { guesses = [], onProgress, shouldCanc
  *   knownHashes  arrivals already in the log
  *   onProgress   ({ phase, current, total }) for the progress line
  */
-export async function runWithdrawalCheck({ items, fromAddress, toAddress, full, knownHashes, onProgress, shouldCancel }) {
+export async function runWithdrawalCheck({ items, fromAddress, toAddress, full, knownHashes, onProgress, shouldCancel, ownAddresses = [] }) {
   const checkedAt = Date.now();
   const errors = [];
   const holderByKey = new Map();
@@ -329,14 +335,17 @@ export async function runWithdrawalCheck({ items, fromAddress, toAddress, full, 
   // right, so every NFT is looked up on its own.)
 
   // 3. One by one for the rest.
+  const own = new Set(ownAddresses);
   const toLookUp = items.filter((item) => {
     if (full) return true;
     if (!item.checked_at) return true; // new on the list
-    return item.holder !== toAddress; // not arrived yet
+    // (arrived: in the receiving wallet or another of mine, or arrived once and sent on)
+    return item.holder !== toAddress && !own.has(item.holder) && !item.arrived_at;
   });
   const found = await lookUpHolders(
     toLookUp.map((item) => ({ kind: item.kind, nonce: item.nonce, known: item.holder })),
-    { guesses: [fromAddress, GAME_MAIN_WALLET, toAddress], onProgress, shouldCancel, errors }
+    // (my other wallets are likely places too: asking them first is quick, unlike the API's "who holds it")
+    { guesses: [fromAddress, GAME_MAIN_WALLET, toAddress, ...[...own].filter((a) => a && a !== fromAddress && a !== toAddress).slice(0, 10)], onProgress, shouldCancel, errors }
   );
   for (const [key, holder] of found) holderByKey.set(key, holder);
 
@@ -358,6 +367,11 @@ export async function runWithdrawalCheck({ items, fromAddress, toAddress, full, 
       update.arrivedAt = a ? a.timestamp : checkedAt;
       update.arrivedFrom = a ? a.from : null;
       update.arrivedTx = a ? a.txHash : null;
+    } else if (holder && own.has(holder) && holder !== fromAddress && !item.arrived_at) {
+      // Straight into another of my wallets (the arrivals log only reads the receiving wallet).
+      update.arrivedAt = checkedAt;
+      update.arrivedFrom = null;
+      update.arrivedTx = null;
     }
     updates.push(update);
   }

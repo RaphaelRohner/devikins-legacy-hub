@@ -307,11 +307,13 @@ test('"Check" skips arrived NFTs; "Check selected" can look at an arrived one ag
   await expect(page.getByText(/Looking up|Reading arrivals/)).toHaveCount(0);
   expect(lookups(3265)).toBe(first3265);
 
-  // Later #3265 is sold on (the marketplace case): Check selected sees it.
+  // Later #3265 is sold on (the marketplace case): Check selected sees it -
+  // and it stays "Arrived" (it did arrive; 28 Oct 2026), saying where it is now.
   fake.chain.holders.set('weapon:3265', SELLER);
   await row(page, 'Weapon #3265').click();
   await page.getByText('Check selected', { exact: true }).click();
-  await expect(row(page, 'Weapon #3265')).toContainText('In another wallet');
+  await expect(row(page, 'Weapon #3265')).toContainText('sent on since: now in another wallet (klv1ssss');
+  await expect(row(page, 'Weapon #3265')).toContainText('Arrived');
   expect(lookups(3265)).toBeGreaterThan(first3265);
 });
 
@@ -451,4 +453,48 @@ test('the buttons for ticked rows explain themselves; "Undo request" undoes the 
   await page.getByText('Select all 2 shown', { exact: true }).click();
   await page.getByTestId('bar-undo').click();
   await expect(page.getByText('Not requested (2)', { exact: true })).toBeVisible();
+});
+
+test('NFTs in any of my wallets count as arrived, and an arrived NFT sent on is never overdue (28 Oct 2026)', async ({ page }) => {
+  const start = new Date('2026-10-28T12:00:00Z');
+  await page.clock.install({ time: start });
+  const FRIEND = fakeAddress('f');
+  const now = Math.floor(start.getTime() / 1000);
+  // #3265 came to the receiving wallet; #1442 went straight to another of my wallets (a friend's, in my set); #1450 still in the game.
+  fake.chain.holders.set('weapon:3265', RECEIVING);
+  fake.chain.transfers.push({ hash: 'tx3265c', kind: 'weapon', nonce: 3265, from: IN_GAME, to: RECEIVING, timestamp: now - 60 });
+  fake.chain.holders.set('weapon:1442', FRIEND);
+  fake.chain.holders.set('weapon:1450', IN_GAME);
+  await openHub(page);
+  await openMenuEntry(page, 'Wallets');
+  await page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(FRIEND);
+  await page.getByText('Add', { exact: true }).click();
+  await nameNewWallet(page);
+  await expect(page.getByText(FRIEND).first()).toBeVisible();
+  await page.getByText('‹').first().click();
+  await openMenuEntry(page, 'Withdrawals');
+  await page.getByPlaceholder('klv1… (in-game wallet)').fill(IN_GAME);
+  await page.getByPlaceholder('klv1… (receiving wallet)').fill(RECEIVING);
+  await page.getByText('Save', { exact: true }).click();
+  await page.locator('textarea').fill('W3265 W1442 W1450');
+  await page.getByText('Add to the list', { exact: true }).click();
+  await expect(page.getByText(/3 added/)).toBeVisible();
+  for (const n of ['3265', '1442', '1450']) await row(page, `Weapon #${n}`).click();
+  await page.getByText('Mark requested', { exact: true }).click();
+  await expect(page.getByText(/Looking up NFTs/)).toHaveCount(0);
+  await page.getByText('Check', { exact: true }).click();
+  await expect(page.getByText(/Last check:/)).toBeVisible();
+  await expect(row(page, 'Weapon #1442')).toContainText('Arrived');
+  await expect(row(page, 'Weapon #1442')).toContainText('in your wallet "klv1ffff');
+  await expect(row(page, 'Weapon #3265')).toContainText('in your receiving wallet');
+
+  // #3265 is passed on to a stranger; 40 minutes later nothing is overdue but #1450.
+  fake.chain.holders.set('weapon:3265', STRANGER);
+  await row(page, 'Weapon #3265').click();
+  await page.getByText('Check selected', { exact: true }).click();
+  await expect(row(page, 'Weapon #3265')).toContainText('sent on since: now in another wallet (klv1xxxx');
+  await page.clock.fastForward('40:00');
+  await expect(row(page, 'Weapon #1450')).toContainText('Overdue');
+  await expect(page.getByText('Overdue (1)')).toBeVisible();
+  await expect(page.getByText('Arrived (2)')).toBeVisible();
 });

@@ -238,6 +238,7 @@ export async function runOverviewCheck({ wallets = [], rowsByKind, listItems = [
       toAddress,
       full: true,
       knownHashes,
+      ownAddresses: [...ownAddresses],
       shouldCancel,
       onProgress: (p) => (p.phase === 'lookups' || p.phase === 'waiting') && onProgress?.({ current: ownNfts.length + p.current, total, waiting: p.phase === 'waiting' }),
     });

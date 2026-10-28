@@ -96,6 +96,7 @@ const STATUS_TEXT = {
 };
 const PLACE_TEXT = {
   receiving: 'in your receiving wallet',
+  own: 'in one of your wallets',
   'in-game': 'still in your in-game wallet',
   main: "still in the game's main wallet",
   elsewhere: 'in another wallet',
@@ -152,7 +153,7 @@ const CHIP_HELP = {
   all: 'All: every NFT the other chips above let through.',
   requested: 'Requested: NFTs you marked as requested that haven\'t arrived yet (Overdue ones included). One marked in red sits in someone else\'s wallet - worth a look.',
   overdue: 'Overdue: marked as requested, but not arrived within the time set in step 1. These are the ones for a support ticket.',
-  arrived: 'Arrived: NFTs found in your receiving wallet ("Receive in" in step 1).',
+  arrived: 'Arrived: NFTs in your receiving wallet ("Receive in" in step 1) or in another of your wallets (any wallet set), and NFTs that arrived once and were sent on since.',
   'not-requested': "Not requested: NFTs on the list you haven't marked as requested and that haven't arrived - the Hub only tells you where they are.",
 };
 // Kind chips use the key 'all' too; they get no explanation.
@@ -248,6 +249,8 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
   const [now, setNow] = useState(Date.now());
   const [pickerFor, setPickerFor] = useState(null); // 'from' | 'to' | null
   const [myWallets, setMyWallets] = useState(null); // null = not loaded yet
+  // Every wallet of every set (28 Oct 2026): a requested NFT in any of them has arrived.
+  const [ownWallets, setOwnWallets] = useState([]);
   const cancelRef = useRef(false);
   // True when step 1 was filled in from the wallet names (shown as a note).
   const [autoFilledNote, setAutoFilledNote] = useState(false);
@@ -309,6 +312,7 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
       setOverdueMinutes(minutes);
       setOverdueDraft(String(minutes));
       setLastCheck(last ? Number(last) : null);
+      setOwnWallets(await getWalletsFromAllSets().catch(() => []));
       await reload();
       setLoaded(true);
     })();
@@ -320,7 +324,8 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
     };
   }, [reload]);
 
-  const ctx = useMemo(() => ({ fromAddress, toAddress, overdueMinutes, now }), [fromAddress, toAddress, overdueMinutes, now]);
+  const ownAddresses = useMemo(() => [...new Set(ownWallets.map((w) => w.address))], [ownWallets]);
+  const ctx = useMemo(() => ({ fromAddress, toAddress, overdueMinutes, now, ownAddresses }), [fromAddress, toAddress, overdueMinutes, now, ownAddresses]);
 
   const withStatus = useMemo(() => {
     const list = items.map((item) => ({ ...item, ...statusOf(item, ctx) }));
@@ -565,6 +570,7 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
         toAddress,
         full: onlyItems ? true : full,
         knownHashes,
+        ownAddresses,
         shouldCancel: () => cancelRef.current,
         onProgress: (p) => {
           if (p.phase === 'arrivals') setProgress('Reading arrivals in your receiving wallet…');
@@ -663,14 +669,21 @@ export default function WithdrawalTrackerView({ onClose, isMySetActive = false, 
     if (address === fromAddress) return 'your in-game wallet';
     if (address === toAddress) return 'your receiving wallet';
     if (address === GAME_MAIN_WALLET) return "the game's main wallet";
+    const own = ownWallets.find((w) => w.address === address);
+    if (own) return `your wallet "${own.alias || shortAddress(address)}"`;
     return shortAddress(address);
   }
 
   function describe(item) {
     if (item.status === 'arrived') {
       const when = item.arrived_at ? formatTime(item.arrived_at) : '';
-      if (item.arrived_tx) return `${when}, sent from ${walletName(item.arrived_from)}`;
-      return `found in your receiving wallet${when ? ` (${when})` : ''}`;
+      const how = item.arrived_tx ? `${when}, sent from ${walletName(item.arrived_from)}` : when;
+      let where;
+      if (item.place === 'receiving') where = 'in your receiving wallet';
+      else if (item.place === 'own') where = `in ${walletName(item.holder)}`;
+      else if (item.place === 'elsewhere') where = `sent on since: now in another wallet (${shortAddress(item.holder)})`;
+      else where = `sent on since: now ${PLACE_TEXT[item.place] || 'somewhere else'}`;
+      return how ? `${how} · ${where}` : where;
     }
     const parts = [];
     if (item.requested_at) {
