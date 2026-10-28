@@ -51,7 +51,7 @@ function metadataFor(kind, nft) {
   return {
     name: nft.name,
     description: `Made-up ${kind} for the Hub's automatic tests.`,
-    image: IMAGE_URL[kind](nft.nonce),
+    image: nft.image || IMAGE_URL[kind](nft.nonce), // (an extra NFT can bring its own, e.g. a Devikin in folder 7)
     attributes: Object.entries(nft.attributes).map(([trait_type, value]) => ({ trait_type, value })),
   };
 }

@@ -629,3 +629,106 @@ test('Collectors Albums: a player publishes an album with notes; a visitor witho
     postman.stop();
   }
 });
+
+test('Collectors Albums with a big wallet: picker by kind with "show more", sections, filters, pictures straight from Moonlabs', async ({ browser }) => {
+  test.setTimeout(300_000);
+  const postman = await startPostman();
+  try {
+    const wallet = await postman.newWallet(3);
+    const alice = await openPlayer(browser, postman, wallet);
+    await signInAs(alice.page, 'Alice');
+    await alice.page.getByTestId('chat-dock-minimise').click();
+    // A big wallet: 150 Devikins, 40 Weapons, 20 Equipment, every rarity; Devikin pictures in folders 0-11 like Moonlabs'.
+    const RARITIES = ['Common', 'Uncommon', 'Rare', 'Mythic', 'Eldritch'];
+    const ANCESTRIES = ['Faery', 'Demon', 'Elf', 'Undead'];
+    const visitorNfts = [];
+    const add = (kind, nonce, i) => {
+      const attributes = kind === 'devikin'
+        ? { Rarity: RARITIES[i % 5], Ancestry: ANCESTRIES[i % 4], 'Life Stage': 'Adult', 'Overall Affinity': 50 + (i % 40) }
+        : { Rarity: RARITIES[i % 5], Type: kind === 'weapon' ? 'Sword' : 'Boots', Quality: 'Fine' };
+      const nft = { name: `#${nonce}`, attributes, ...(kind === 'devikin' ? { image: `https://img.devikins.com/${i % 12}/${nonce}.png` } : {}) };
+      visitorNfts.push([`${kind}:${nonce}`, nft]);
+    };
+    for (let i = 0; i < 150; i += 1) add('devikin', 5000 + i, i);
+    for (let i = 0; i < 40; i += 1) add('weapon', 6000 + i, i);
+    for (let i = 0; i < 20; i += 1) add('equipment', 7000 + i, i);
+    for (const [id, nft] of visitorNfts) {
+      alice.fake.extraNfts.set(id, nft);
+      alice.fake.chain.holders.set(id, wallet.address);
+    }
+    await openMenuEntry(alice.page, 'Wallets');
+    await alice.page.getByPlaceholder('Paste a Klever wallet address (klv1...)').fill(wallet.address);
+    await alice.page.getByText('Add', { exact: true }).click();
+    await nameNewWallet(alice.page);
+    await goBack(alice.page);
+    await openMenuEntry(alice.page, 'Fetch/Update');
+    await expect.poll(() => new Set(alice.fake.requests.filter((u) => /devikins\.com\/.+\.png$/.test(u))).size, { timeout: 180_000 }).toBeGreaterThanOrEqual(210);
+    await expect(alice.page.getByText(/^\d+%$/)).toHaveCount(0, { timeout: 60_000 });
+
+    await openMenuEntry(alice.page, 'Collectors Albums');
+    await alice.page.getByTestId('albums-mine').click();
+    await alice.page.getByTestId('album-new').click();
+    await alice.page.getByTestId('album-sign').click();
+    await alice.page.getByTestId('album-title-input').fill('The big one');
+
+    // The picker: one kind at a time, with counts, 60 at a time.
+    await expect(alice.page.getByTestId('album-pick-kind-devikin')).toHaveText('Devikins (150)');
+    await expect(alice.page.getByTestId('album-pick-kind-weapon')).toHaveText('Weapons (40)');
+    await expect(alice.page.getByTestId('album-pick-kind-equipment')).toHaveText('Equipment (20)');
+    await expect(alice.page.getByTestId('album-pick')).toHaveCount(60);
+    await expect(alice.page.getByTestId('album-pick-more')).toHaveText('Show more (90 left)');
+    await alice.page.getByTestId('album-pick-more').click();
+    await expect(alice.page.getByTestId('album-pick')).toHaveCount(120);
+    await alice.page.getByTestId('album-pick-more').click();
+    await expect(alice.page.getByTestId('album-pick')).toHaveCount(150);
+    await expect(alice.page.getByTestId('album-pick-more')).toHaveCount(0);
+    // Search by rarity: every fifth one is Eldritch.
+    await alice.page.getByTestId('album-search').fill('eldritch');
+    await expect(alice.page.getByTestId('album-pick')).toHaveCount(30);
+    await alice.page.getByTestId('album-search').fill('');
+
+    // 10 Devikins, 5 Weapons, 3 Equipment (the list moves up as they're picked).
+    for (let i = 0; i < 10; i += 1) await alice.page.getByTestId('album-pick').first().click();
+    await alice.page.getByTestId('album-pick-kind-weapon').click();
+    await expect(alice.page.getByTestId('album-pick')).toHaveCount(40);
+    for (let i = 0; i < 5; i += 1) await alice.page.getByTestId('album-pick').first().click();
+    await alice.page.getByTestId('album-pick-kind-equipment').click();
+    for (let i = 0; i < 3; i += 1) await alice.page.getByTestId('album-pick').first().click();
+    await expect(alice.page.getByTestId('album-picked')).toHaveCount(18);
+    // Two sections: the first two Devikins in "Bonded", the first weapon in "Event swords" (the chip offers a used section).
+    const picked = alice.page.getByTestId('album-picked');
+    await picked.nth(0).getByTestId('album-section-input').fill('Bonded');
+    await picked.nth(1).getByTestId('album-section-chip').filter({ hasText: 'Bonded' }).click();
+    await picked.nth(10).getByTestId('album-section-input').fill('Event swords');
+    await alice.page.getByTestId('album-publish').click();
+    await expect(alice.page.getByTestId('album-published')).toBeVisible();
+
+    // A visitor sees it all, grouped, and can filter and sort.
+    const visitor = await openPlayer(browser, postman, null, { extension: false, openChat: false });
+    for (const [id, nft] of visitorNfts) {
+      visitor.fake.extraNfts.set(id, nft);
+      visitor.fake.chain.holders.set(id, wallet.address);
+    }
+    await openMenuEntry(visitor.page, 'Collectors Albums');
+    await visitor.page.getByTestId('album-row').filter({ hasText: 'The big one' }).click();
+    await expect(visitor.page.getByTestId('album-item')).toHaveCount(18);
+    await expect(visitor.page.getByTestId('album-section')).toHaveText(['Bonded', 'Event swords']);
+    await expect(visitor.page.getByTestId('album-item').filter({ hasText: "✓ in the owner's wallet" })).toHaveCount(18, { timeout: 60_000 });
+    // Pictures came straight from Moonlabs' picture server, also from a Devikin's own folder (5003 is in folder 3).
+    await expect.poll(() => visitor.fake.requests.includes('https://img.devikins.com/3/5003.png')).toBe(true);
+    await visitor.page.getByTestId('album-filter-devikin').click();
+    await expect(visitor.page.getByTestId('album-item')).toHaveCount(10);
+    await expect(visitor.page.getByTestId('album-shown-count')).toHaveText('Showing 10 of 18');
+    await visitor.page.getByTestId('album-filter-rarity-Eldritch').click();
+    await expect(visitor.page.getByTestId('album-item')).toHaveCount(2);
+    await visitor.page.getByTestId('album-filter-kind-all').click();
+    await expect(visitor.page.getByTestId('album-item')).toHaveCount(18);
+    // Rarest first: the Eldritch ones lead, and the sections step aside.
+    await visitor.page.getByTestId('album-sort-rarity').click();
+    await expect(visitor.page.getByTestId('album-item').first()).toContainText('Eldritch');
+    await expect(visitor.page.getByTestId('album-section')).toHaveCount(0);
+    for (const p of [alice, visitor]) await p.context.close();
+  } finally {
+    postman.stop();
+  }
+});
