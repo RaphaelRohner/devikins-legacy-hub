@@ -793,8 +793,21 @@ test('Collectors Albums: comments with confirm votes, hiding in my album, and th
     // (no voting on one's own comment; deleting it is possible)
     await expect(bob.page.getByTestId('album-comment-confirm')).toHaveCount(0);
     await expect(bob.page.getByTestId('album-comment-delete')).toBeVisible();
+    // Bob edits it.
+    await bob.page.getByTestId('album-comment-edit').click();
+    await bob.page.getByTestId('album-comment-edit-input').fill('From the May 2025 event (bonded)');
+    await bob.page.getByTestId('album-comment-save').click();
+    await expect(bob.page.getByTestId('album-comment')).toContainText('From the May 2025 event (bonded)');
+    await expect(bob.page.getByTestId('album-comment')).toContainText('edited');
+    // A second comment, then the most per player is reached.
+    await bob.page.getByTestId('album-comment-input').fill('Bred twice');
+    await bob.page.getByTestId('album-comment-send').click();
+    await expect(bob.page.getByTestId('album-comment')).toHaveCount(2);
+    await expect(bob.page.getByTestId('album-comment-max')).toBeVisible();
+    await bob.page.getByTestId('album-comment').filter({ hasText: 'Bred twice' }).getByTestId('album-comment-delete').click();
+    await expect(bob.page.getByTestId('album-comment')).toHaveCount(1);
     await bob.page.getByTestId('album-panel-close').click();
-    await expect(bob.page.getByTestId('album-item').filter({ hasText: 'Testy the Brave' }).getByTestId('album-item-comments')).toContainText('💬 1 · From the May 2025 event');
+    await expect(bob.page.getByTestId('album-item').filter({ hasText: 'Testy the Brave' }).getByTestId('album-item-comments')).toContainText('💬 1 · From the May 2025 event (bonded)');
 
     // Bob writes to the owner.
     await bob.page.getByTestId('album-message-owner').click();
@@ -821,8 +834,11 @@ test('Collectors Albums: comments with confirm votes, hiding in my album, and th
     await alice.page.getByTestId('album-item').filter({ hasText: 'Testy the Brave' }).click();
     await alice.page.getByTestId('album-comment-confirm').click();
     await expect(alice.page.getByTestId('album-comment-confirm')).toHaveText('✓ I can confirm (1)');
-    await alice.page.getByTestId('album-comment-hide').click();
-    await expect(alice.page.getByTestId('album-comment')).toContainText('hidden in your album');
+    // (the buttons wait while the last change is being saved)
+    await expect(async () => {
+      await alice.page.getByTestId('album-comment-hide').click();
+      await expect(alice.page.getByTestId('album-comment')).toContainText('hidden in your album', { timeout: 2000 });
+    }).toPass({ timeout: 20_000 });
 
     // Bob's next visit: the comment isn't shown in this album any more.
     await goBack(bob.page);

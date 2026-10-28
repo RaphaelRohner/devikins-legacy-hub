@@ -238,6 +238,25 @@ test('comments (28 Oct 2026): holders comment on an NFT in an album, others conf
   assert.deepEqual(await r.comments(key), []);
 });
 
+test('comments: two per player on one NFT; the writer can edit one, and its votes start again (28 Oct 2026)', async () => {
+  const { w, key, bob, cara } = await albumWithVisitors();
+  const r = reader(w);
+  const { id } = await bob.commentOnNft(key, 'devikin', 123, 'May 2025 event');
+  await bob.commentOnNft(key, 'devikin', 123, 'Bonded');
+  await assert.rejects(bob.commentOnNft(key, 'devikin', 123, 'A third'), /already have 2 comments on this NFT/);
+  await bob.commentOnNft(key, 'weapon', 7, 'Another NFT is fine'); // (the limit is per NFT)
+  await cara.voteOnComment(id, 1);
+  assert.deepEqual(await cara.myCommentVotes(await r.comments(key)), { [id]: 1 });
+  w.clock.t += 60 * 1000;
+  await assert.rejects(cara.editComment(id, 'Not mine to change'), /isn't yours/);
+  assert.deepEqual(await bob.editComment(id, 'June 2025 event'), { edited: true });
+  const c = (await r.comments(key)).find((x) => x.id === id);
+  assert.deepEqual([c.text, c.confirms, c.disputes, c.edited], ['June 2025 event', 0, 0, w.clock.t]);
+  // Cara's vote was for the old text: it no longer shows as hers.
+  assert.deepEqual(await cara.myCommentVotes(await r.comments(key)), {});
+  await assert.rejects(bob.editComment(id, ''), /empty/);
+});
+
 test('comments belong to the NFT: they show in another album with it, and go with the writer\'s account', async () => {
   const { w, key, bob } = await albumWithVisitors();
   await bob.commentOnNft(key, 'weapon', 7, 'Best hammer of season 1');

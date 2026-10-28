@@ -59,6 +59,8 @@ export const MAX_ALBUMS = 5000;
 export const MAX_COMMENT_CHARS = 200;
 export const MAX_COMMENTS_PER_NFT = 50;
 export const DAILY_COMMENTS_PER_PLAYER = 30;
+/** Raphael, 28 Oct 2026: two comments per player on one NFT (edit one to change it). */
+export const MAX_COMMENTS_PER_PLAYER_PER_NFT = 2;
 /** The album mailbox (28 Oct 2026): new conversations a player may start per day; messages are kept 30 days. */
 export const DAILY_ALBUM_THREADS_PER_PLAYER = 10;
 /** Linked devices (28 Oct 2026): a device that hasn't checked its mail for this long is taken out of the account. */
@@ -206,7 +208,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
   // 28 Oct 2026: devices.seen = the day a device last checked its mail (rounded to the day), so a player
   // sees which of their devices is still in use, and devices idle for DEVICE_IDLE_DAYS are taken out.
   const hadSeen = sql.exec('PRAGMA table_info(devices)').toArray().some((c) => c.name === 'seen');
-  for (const [table, name, type] of [['groups', 'epoch', 'INTEGER NOT NULL DEFAULT 1'], ['groups', 'needs_rekey', 'INTEGER NOT NULL DEFAULT 0'], ['votes', 'closing', 'INTEGER NOT NULL DEFAULT 0'], ['groups', 'alone_since', 'INTEGER'], ['devices', 'seen', 'INTEGER']]) {
+  for (const [table, name, type] of [['groups', 'epoch', 'INTEGER NOT NULL DEFAULT 1'], ['groups', 'needs_rekey', 'INTEGER NOT NULL DEFAULT 0'], ['votes', 'closing', 'INTEGER NOT NULL DEFAULT 0'], ['groups', 'alone_since', 'INTEGER'], ['devices', 'seen', 'INTEGER'], ['comments', 'edited', 'INTEGER']]) {
     if (!sql.exec(`PRAGMA table_info(${table})`).toArray().some((c) => c.name === name)) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
   }
   // groups.alone_since (24 Oct 2026): since when only the owner is in it
@@ -733,7 +735,7 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       const out = [];
       for (const id of items) {
         const [kind, nonce] = id.split('/');
-        out.push(...rows(`SELECT c.id, c.kind, c.nonce, c.nickname, c.text, c.at,
+        out.push(...rows(`SELECT c.id, c.kind, c.nonce, c.nickname, c.text, c.at, c.edited,
             (SELECT COUNT(*) FROM comment_votes v WHERE v.comment = c.id AND v.vote = 1) AS confirms,
             (SELECT COUNT(*) FROM comment_votes v WHERE v.comment = c.id AND v.vote = -1) AS disputes,
             EXISTS (SELECT 1 FROM album_hidden h WHERE h.album = ? AND h.comment = c.id) AS hidden
@@ -752,6 +754,9 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       const text = cleanText(typeof body.text === 'string' ? body.text : '');
       if (!text) refuse(400, 'The comment is empty.');
       if ([...text].length > MAX_COMMENT_CHARS) refuse(413, `A comment can have at most ${MAX_COMMENT_CHARS} characters.`);
+      if (row('SELECT COUNT(*) AS n FROM comments WHERE kind = ? AND nonce = ? AND account = ?', body.kind, body.nonce, account.id).n >= MAX_COMMENTS_PER_PLAYER_PER_NFT) {
+        refuse(409, `You already have ${MAX_COMMENTS_PER_PLAYER_PER_NFT} comments on this NFT: edit or delete one of them.`);
+      }
       if (row('SELECT COUNT(*) AS n FROM comments WHERE kind = ? AND nonce = ?', body.kind, body.nonce).n >= MAX_COMMENTS_PER_NFT) {
         refuse(507, 'This NFT has as many comments as it can hold.');
       }
@@ -773,6 +778,24 @@ export function createPostOffice({ sql, now = () => Date.now(), fetchKlever = (.
       if (body.vote === 0) run('DELETE FROM comment_votes WHERE comment = ? AND account = ?', c.id, account.id);
       else run('INSERT INTO comment_votes (comment, account, vote) VALUES (?, ?, ?) ON CONFLICT (comment, account) DO UPDATE SET vote = excluded.vote', c.id, account.id, body.vote);
       return { voted: body.vote };
+    },
+
+    /**
+     * { comment, text } - the writer changes their comment. The votes start
+     * again (they were for the old text).
+     */
+    'POST /comments/edit': ({ device, body, t }) => {
+      const account = verifiedAccount(device, t);
+      const c = row('SELECT id, text FROM comments WHERE id = ? AND account = ?', Number(body.comment), account.id);
+      if (!c) refuse(404, 'This comment no longer exists (or isn\'t yours).');
+      const text = cleanText(typeof body.text === 'string' ? body.text : '');
+      if (!text) refuse(400, 'The comment is empty.');
+      if ([...text].length > MAX_COMMENT_CHARS) refuse(413, `A comment can have at most ${MAX_COMMENT_CHARS} characters.`);
+      if (text === c.text) return { edited: false };
+      spend(account.wallet_fp, DAILY_ACTIONS_PER_PLAYER, t);
+      run('UPDATE comments SET text = ?, edited = ? WHERE id = ?', text, t, c.id);
+      run('DELETE FROM comment_votes WHERE comment = ?', c.id);
+      return { edited: true };
     },
 
     /** { comment } - deleting one's own comment. */

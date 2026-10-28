@@ -285,17 +285,17 @@ function AlbumDetail({ albumKey, onTalk }) {
   const [viewer, setViewer] = useState({ ready: false, nickname: null, mine: false, votes: {} });
   const [openId, setOpenId] = useState(null);
 
-  const loadComments = useCallback(async () => {
-    try { setComments(await reader().comments(albumKey)); } catch { /* (shown without comments) */ }
-  }, [albumKey]);
-  const loadViewer = useCallback(async () => {
+  // (comments first: a vote cast before a comment was edited no longer counts)
+  const loadAll = useCallback(async () => {
+    let list = [];
+    try { list = await reader().comments(albumKey); setComments(list); } catch { /* (shown without comments) */ }
     try {
       const m = await getMessenger();
       const st = await m.status();
-      setViewer({ ready: st.state === 'ready', nickname: st.nickname, mine: await m.isMyAlbum(albumKey), votes: await m.myCommentVotes() });
+      setViewer({ ready: st.state === 'ready', nickname: st.nickname, mine: await m.isMyAlbum(albumKey), votes: await m.myCommentVotes(list) });
     } catch { /* (a visitor without the chat: read only) */ }
   }, [albumKey]);
-  useEffect(() => { loadComments(); loadViewer(); }, [loadComments, loadViewer]);
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   useEffect(() => {
     let stopped = false;
@@ -465,7 +465,7 @@ function AlbumDetail({ albumKey, onTalk }) {
           albumKey={albumKey}
           comments={visibleComments(comments, entries.find((e) => e.id === openId).item, viewer.mine)}
           viewer={viewer}
-          onChanged={async () => { await loadComments(); await loadViewer(); }}
+          onChanged={loadAll}
           onClose={() => setOpenId(null)}
         />
       ) : null}
@@ -548,6 +548,7 @@ function NftPanel({ entry, held, albumKey, comments, viewer, onChanged, onClose 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showDisputed, setShowDisputed] = useState(false);
+  const [editing, setEditing] = useState(null); // { id, text } - my comment being changed
   const { item, traits } = entry;
   const keyboard = useKeyboardHeight();
   const panelScroll = useRef(null);
@@ -618,9 +619,22 @@ function NftPanel({ entry, held, albumKey, comments, viewer, onChanged, onClose 
             </Text>
             {shown.map((c) => (
               <View key={c.id} testID="album-comment" style={[styles.comment, { borderColor: colors.border }, c.hidden && { opacity: 0.5 }]}>
-                <Text style={[styles.text, { color: colors.text }]}>{c.text}</Text>
+                {editing?.id === c.id ? (
+                  <>
+                    <TextInput
+                      style={[styles.input, { color: colors.text, borderColor: colors.primary, backgroundColor: colors.surface }]}
+                      value={editing.text}
+                      maxLength={200}
+                      onChangeText={(t) => setEditing({ id: c.id, text: t })}
+                      testID="album-comment-edit-input"
+                    />
+                    <Text style={[styles.small, { color: colors.secondaryText }]}>Saving starts the confirmations again (they were for the old text).</Text>
+                  </>
+                ) : (
+                  <Text style={[styles.text, { color: colors.text }]}>{c.text}</Text>
+                )}
                 <Text style={[styles.small, { color: colors.secondaryText }]}>
-                  {c.nickname} · {dateText(c.at)}{c.hidden ? ' · hidden in your album' : ''}{c.disputed ? ' · disputed' : ''}
+                  {c.nickname} · {dateText(c.at)}{c.edited ? ` · edited ${dateText(c.edited)}` : ''}{c.hidden ? ' · hidden in your album' : ''}{c.disputed ? ' · disputed' : ''}
                 </Text>
                 <View style={styles.chipRow}>
                   {viewer.ready && c.nickname !== viewer.nickname ? (
@@ -637,10 +651,29 @@ function NftPanel({ entry, held, albumKey, comments, viewer, onChanged, onClose 
                   ) : (
                     <Text style={[styles.small, { color: colors.secondaryText }]} testID="album-comment-votes">✓ {c.confirms} · ✗ {c.disputes}</Text>
                   )}
-                  {viewer.ready && c.nickname === viewer.nickname ? (
-                    <TouchableOpacity disabled={busy} onPress={() => act((m) => m.deleteComment(c.id))} style={[styles.chip, { borderColor: colors.border }]} testID="album-comment-delete">
-                      <Text style={{ color: colors.text, fontSize: 13 }}>Delete</Text>
-                    </TouchableOpacity>
+                  {viewer.ready && c.nickname === viewer.nickname && editing?.id === c.id ? (
+                    <>
+                      <TouchableOpacity
+                        disabled={busy || !editing.text.trim()}
+                        onPress={() => act(async (m) => { await m.editComment(c.id, editing.text); setEditing(null); })}
+                        style={[styles.chip, { borderColor: colors.primary }]}
+                        testID="album-comment-save"
+                      >
+                        <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>Save</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setEditing(null)} style={[styles.chip, { borderColor: colors.border }]}>
+                        <Text style={{ color: colors.text, fontSize: 13 }}>Cancel</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : viewer.ready && c.nickname === viewer.nickname ? (
+                    <>
+                      <TouchableOpacity disabled={busy} onPress={() => setEditing({ id: c.id, text: c.text })} style={[styles.chip, { borderColor: colors.border }]} testID="album-comment-edit">
+                        <Text style={{ color: colors.text, fontSize: 13 }}>Edit</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity disabled={busy} onPress={() => act((m) => m.deleteComment(c.id))} style={[styles.chip, { borderColor: colors.border }]} testID="album-comment-delete">
+                        <Text style={{ color: colors.text, fontSize: 13 }}>Delete</Text>
+                      </TouchableOpacity>
+                    </>
                   ) : null}
                   {viewer.mine ? (
                     <TouchableOpacity disabled={busy} onPress={() => act((m) => m.hideCommentInAlbum(albumKey, c.id, !c.hidden))} style={[styles.chip, { borderColor: colors.border }]} testID="album-comment-hide">
@@ -656,7 +689,11 @@ function NftPanel({ entry, held, albumKey, comments, viewer, onChanged, onClose 
                 <Text style={[styles.small, { color: colors.primary }]}>Show {disputedCount} disputed comment{disputedCount === 1 ? '' : 's'}</Text>
               </TouchableOpacity>
             ) : null}
-            {viewer.ready ? (
+            {viewer.ready && comments.filter((c) => c.nickname === viewer.nickname).length >= 2 ? (
+              <Text style={[styles.small, { color: colors.secondaryText }]} testID="album-comment-max">
+                You have two comments on this NFT (the most per player): edit or delete one to write another.
+              </Text>
+            ) : viewer.ready ? (
               <>
                 <TextInput
                   style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}

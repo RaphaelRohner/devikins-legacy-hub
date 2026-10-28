@@ -69,7 +69,8 @@ Keeps:
   player (against spam), so in that moment the postman sees which device
   publishes which album (and forgets).
 - **Comments on NFTs** (28 Oct 2026), public on purpose: the NFT (kind and
-  number), the text, the writer's nickname and account number, when; and
+  number), the text, the writer's nickname and account number, when (and
+  when it was last edited); and
   per comment which accounts voted "I can confirm" / "not right". Which
   comments an album's owner hid in their album (by album key). A player's
   comments and votes go with their account.
@@ -121,8 +122,8 @@ that many. The daily posting allowance is the band's lower end.
 ## Limits against misuse (all per day, so the free plan can't be used up)
 
 - 1,500 actions per player (contact requests, drop-code changes, group posts;
-  publishing an album counts as 10; comments: 30 a day, 50 per NFT, 200
-  characters; the album mailbox: 10 new conversations a day);
+  publishing an album counts as 10; comments: 30 a day, 2 per player on
+  one NFT, 50 per NFT, 200 characters; the album mailbox: 10 new conversations a day);
 - 300 envelopes per drop code (one contact can't flood a mailbox; blocking
   = removing that code);
 - 3,000 envelopes per player to their own other devices (linked devices);
@@ -186,6 +187,7 @@ someone who intercepted it (no request today is harmful to repeat).
 | `GET /comments?album=` | anyone | the comments on that album's NFTs, with confirm / dispute counts and whether the owner hid them there |
 | `POST /comments/add` | signed-in | `{album, kind, nonce, text}` – a comment on an NFT in that album, under the player's nickname |
 | `POST /comments/vote` | signed-in | `{comment, vote}` – 1 I can confirm, -1 not right, 0 take back (not on one's own) |
+| `POST /comments/edit` | the writer | `{comment, text}` – change one's own comment (its votes start again) |
 | `POST /comments/delete` | the writer | delete one's own comment |
 | `POST /albums/hide-comment` | the album's key | `{comment, hidden}` – hide a comment in that album |
 | `POST /albums/talk/send` | signed-in | `{album, items}` – sealed message to the album's owner (and copies for the player's devices) |

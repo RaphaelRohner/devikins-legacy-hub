@@ -86,6 +86,7 @@ export function createPostmanClient({ baseUrl, identity, fetchFn = (...a) => fet
     addComment: ({ album, kind, nonce, text }) => call('POST', '/comments/add', { album, kind, nonce, text }),
     voteComment: (comment, vote) => call('POST', '/comments/vote', { comment, vote }),
     deleteComment: (comment) => call('POST', '/comments/delete', { comment }),
+    editComment: (comment, text) => call('POST', '/comments/edit', { comment, text }),
     hideComment: (comment, hidden) => call('POST', '/albums/hide-comment', { comment, hidden }),
     // The album mailbox (28 Oct 2026; reply / block: signed with the album key)
     albumTalkSend: (album, items) => call('POST', '/albums/talk/send', { album, items }),

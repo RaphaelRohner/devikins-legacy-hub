@@ -211,6 +211,8 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     chat_groups: [['owner_account', 'TEXT'], ['paused_until', 'INTEGER NOT NULL DEFAULT 0']],
     // (28 Oct 2026: the day each of my other devices last checked its mail, from the postman)
     chat_devices: [['seen', 'INTEGER']],
+    // (28 Oct 2026: when I voted - a comment edited after that has lost my vote)
+    chat_comment_votes: [['at', 'INTEGER']],
   };
   for (const [table, cols] of Object.entries(added)) {
     const columns = new Set((await all(`PRAGMA table_info(${table})`)).map((c) => c.name));
@@ -1875,12 +1877,23 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
   async function voteOnComment(comment, vote) {
     await postman.voteComment(comment, vote);
     if (vote === 0) await run('DELETE FROM chat_comment_votes WHERE comment = ?', [comment]);
-    else await run('INSERT OR REPLACE INTO chat_comment_votes (comment, vote) VALUES (?, ?)', [comment, vote]);
+    else await run('INSERT OR REPLACE INTO chat_comment_votes (comment, vote, at) VALUES (?, ?, ?)', [comment, vote, now()]);
   }
 
-  /** My votes: { [commentId]: 1 | -1 } */
-  async function myCommentVotes() {
-    return Object.fromEntries((await all('SELECT comment, vote FROM chat_comment_votes')).map((r) => [r.comment, r.vote]));
+  /**
+   * My votes: { [commentId]: 1 | -1 }. With `comments` (from the postman), a
+   * vote cast before the comment was edited doesn't count any more.
+   */
+  async function myCommentVotes(comments = null) {
+    const editedAt = new Map((comments || []).map((c) => [c.id, Number(c.edited) || 0]));
+    return Object.fromEntries((await all('SELECT comment, vote, at FROM chat_comment_votes'))
+      .filter((r) => !editedAt.get(r.comment) || (Number(r.at) || 0) > editedAt.get(r.comment))
+      .map((r) => [r.comment, r.vote]));
+  }
+
+  /** Changing my own comment (its votes start again). */
+  async function editComment(comment, text) {
+    return postman.editComment(comment, text);
   }
 
   async function deleteComment(comment) {
@@ -2237,6 +2250,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     voteOnComment,
     myCommentVotes,
     deleteComment,
+    editComment,
     hideCommentInAlbum,
     isMyAlbum,
     messageAlbumOwner,
