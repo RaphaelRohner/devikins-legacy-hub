@@ -23,13 +23,18 @@
  *     "really?"). An edited message shows "edited" next to its time; a
  *     deleted one stays as "Message deleted". When editing is over, the
  *     option stays greyed out with the reason: "Edit (24h)" or "Edit (2×)".
+ *   - the group owner (29 Oct 2026) can remove other people's posts the same
+ *     way (🗑️ Remove, with an optional short reason); everyone then sees
+ *     "Removed by the group owner" (and the reason) in its place.
  *
  * items: [{ id, mine, author (who - for grouping and colour), nickname, text, at,
  *           pid, reactions: { counts: { emoji: n }, mine: emoji | '' },
- *           edited, deleted, canEdit, canDelete, editsLeft, editOver ('time' | 'count' | null) }]
+ *           edited, deleted, canEdit, canDelete, editsLeft, editOver ('time' | 'count' | null),
+ *           removedByOwner, removedReason, canRemove }]
  * onReact(pid, emoji) - reactions on (groups); left out: none (1:1 chats)
  * onEdit(item, text) / onDelete(item) - editing and deleting my own messages
  *   (both chats); each returns a promise of true when it worked
+ * onRemove(item, reason) - the group owner removes someone else's post
  * scrollRef - the chat's ScrollView: what opens under the LAST message (the
  *   emojis, the options, the edit box) is scrolled into view, and the edit box
  *   stays above the phone's keyboard (Raphael, 29 Oct 2026)
@@ -119,7 +124,7 @@ export function Avatar({ name, size = 32 }) {
   );
 }
 
-export default function ChatMessages({ items, showAuthors = false, onReact = null, onEdit = null, onDelete = null, busy = false, scrollRef = null }) {
+export default function ChatMessages({ items, showAuthors = false, onReact = null, onEdit = null, onDelete = null, onRemove = null, busy = false, scrollRef = null }) {
   const { colors, isDark } = useTheme();
   const [pickerFor, setPickerFor] = useState(null);
   // Editing and deleting (29 Oct 2026): the message whose options are open,
@@ -129,6 +134,8 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
   const [hoverId, setHoverId] = useState(null);
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  // (the owner's optional reason while removing someone else's post)
+  const [removeReason, setRemoveReason] = useState('');
   const closeOptions = () => {
     setMenuFor(null);
     setConfirmDelete(null);
@@ -203,12 +210,14 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
     const name = m.nickname || 'a former member';
     const time = m.edited && !m.deleted ? `edited ${clock(m.at)}` : clock(m.at);
     const textColor = m.mine ? colors.primaryText : colors.text;
-    const changeable = !m.deleted && ((m.canEdit && !!onEdit) || (m.canDelete && !!onDelete));
+    const canRemoveHere = !m.mine && !!m.canRemove && !!onRemove;
+    const changeable = !m.deleted && ((m.canEdit && !!onEdit) || (m.canDelete && !!onDelete) || canRemoveHere);
     const isEditing = editing?.id === m.id;
     const openOptions = () => {
       if (!changeable || busy) return;
       setPickerFor(null);
       setConfirmDelete(null);
+      setRemoveReason('');
       setMenuFor(menuFor === m.id ? null : m.id);
     };
     const saveEdit = async () => {
@@ -259,7 +268,7 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
           </View>
         ) : m.deleted ? (
           <Text style={[styles.text, styles.deletedText, { color: textColor }]} testID="chat-message-deleted">
-            🗑️ Message deleted
+            {m.removedByOwner ? `🗑️ Removed by the group owner${m.removedReason ? `: ${m.removedReason}` : ''}` : '🗑️ Message deleted'}
             <Text style={styles.timeRoom}>{timeRoom(time)}</Text>
           </Text>
         ) : (
@@ -282,7 +291,7 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
         onPress={Platform.OS === 'web' ? undefined : openOptions}
         onLongPress={openOptions}
         delayLongPress={350}
-        accessibilityHint="Opens the options: edit or delete"
+        accessibilityHint={canRemoveHere ? 'Opens the option to remove this post' : 'Opens the options: edit or delete'}
         testID="chat-message-press"
       >
         {bubble}
@@ -290,7 +299,34 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
     ) : bubble;
     const options = menuFor === m.id && changeable ? (
       <View style={[styles.options, { backgroundColor: otherBubble, borderColor: colors.border }]} testID="chat-msg-options">
-        {confirmDelete === m.id ? (
+        {confirmDelete === m.id && canRemoveHere ? (
+          <>
+            <Text style={[styles.optionText, { color: colors.text }]}>Remove this post for everyone?</Text>
+            <TextInput
+              value={removeReason}
+              onChangeText={setRemoveReason}
+              placeholder="Reason (optional)"
+              placeholderTextColor={colors.secondaryText}
+              maxLength={80}
+              style={[styles.reasonInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+              testID="chat-msg-remove-reason"
+            />
+            <TouchableOpacity
+              onPress={async () => {
+                const ok = await onRemove(m, removeReason.trim());
+                if (ok !== false) closeOptions();
+              }}
+              disabled={busy}
+              style={[styles.optionButton, { backgroundColor: colors.cancelText }]}
+              testID="chat-msg-remove-yes"
+            >
+              <Text style={[styles.optionText, { color: '#fff', fontWeight: '700' }]}>Remove</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setConfirmDelete(null)} style={styles.optionButton} testID="chat-msg-delete-no">
+              <Text style={[styles.optionText, { color: colors.text }]}>Keep</Text>
+            </TouchableOpacity>
+          </>
+        ) : confirmDelete === m.id ? (
           <>
             <Text style={[styles.optionText, { color: colors.text }]}>Delete for everyone?</Text>
             <TouchableOpacity
@@ -336,6 +372,11 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
                 <Text style={[styles.optionText, { color: colors.text }]}>🗑️ Delete</Text>
               </TouchableOpacity>
             ) : null}
+            {canRemoveHere ? (
+              <TouchableOpacity onPress={() => setConfirmDelete(m.id)} style={styles.optionButton} testID="chat-msg-remove">
+                <Text style={[styles.optionText, { color: colors.text }]}>🗑️ Remove (owner)</Text>
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity onPress={closeOptions} style={styles.optionButton} accessibilityLabel="Close the options" testID="chat-msg-options-close">
               <Text style={[styles.optionText, { color: colors.secondaryText }]}>✕</Text>
             </TouchableOpacity>
@@ -348,7 +389,7 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
       <TouchableOpacity
         onPress={openOptions}
         style={[styles.moreButton, { opacity: hoverId === m.id || menuFor === m.id ? 1 : 0 }]}
-        accessibilityLabel="Options: edit or delete"
+        accessibilityLabel={canRemoveHere ? 'Options: remove' : 'Options: edit or delete'}
         testID="chat-msg-more"
       >
         <Text style={[styles.reactIcon, { color: colors.secondaryText }]}>⋯</Text>
@@ -435,6 +476,7 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
             </View>
           ) : null}
         </View>
+        {!m.mine ? moreButton : null}
         {canReact ? (
           <TouchableOpacity
             onPress={() => setPickerFor(pickerFor === m.id ? null : m.id)}
@@ -481,6 +523,7 @@ const styles = StyleSheet.create({
   editInput: { fontSize: 15, lineHeight: 21, borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, minHeight: 44, maxHeight: 200 },
   editButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 6 },
   deletedText: { fontStyle: 'italic', opacity: 0.8 },
+  reasonInput: { fontSize: 14, borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, minWidth: 160 },
   reactIcon: { fontSize: 18 },
   bubble: { maxWidth: '100%', borderRadius: 14, paddingTop: 6, paddingBottom: 6, paddingHorizontal: 11 },
   author: { fontSize: 13, fontWeight: '700', marginBottom: 1 },

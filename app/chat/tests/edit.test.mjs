@@ -233,16 +233,23 @@ test('groups: my post can be edited twice within 24 hours and deleted any time -
 test('groups: a forged edit or delete from another member is ignored; reading the mailbox again doesn\'t count edits twice', async () => {
   const w = world();
   const { alice, bob, gid } = await inGroup(w);
+  // Carol: a member, not the owner
+  const carol = await w.player('Carol', 5);
+  await carol.listGroups();
+  await carol.joinGroup(gid);
+  await alice.checkMail();
+  await carol.checkMail();
   await bob.postToGroup(gid, 'My post');
   await alice.checkMail();
-  const [post] = await alice.groupPosts(gid);
-  // Alice's Hub, modified, seals an edit and a delete for Bob's post
-  const g = (await alice.db.getAllAsync('SELECT * FROM chat_groups WHERE id = ?', [gid]))[0];
-  const aliceKey = JSON.parse((await alice.db.getAllAsync("SELECT v FROM chat_me WHERE k = 'identity'"))[0].v);
-  const badge = JSON.parse((await alice.db.getAllAsync("SELECT v FROM chat_me WHERE k = 'badge'"))[0].v);
+  await carol.checkMail();
+  const [post] = await carol.groupPosts(gid);
+  // Carol's Hub, modified, seals an edit and a delete for Bob's post
+  const g = (await carol.db.getAllAsync('SELECT * FROM chat_groups WHERE id = ?', [gid]))[0];
+  const carolKey = JSON.parse((await carol.db.getAllAsync("SELECT v FROM chat_me WHERE k = 'identity'"))[0].v);
+  const badge = JSON.parse((await carol.db.getAllAsync("SELECT v FROM chat_me WHERE k = 'badge'"))[0].v);
   const group = { id: g.id, epoch: g.epoch, key: g.key };
-  await alice.postman.groupPost(sealGroupEdit({ group, from: aliceKey, postId: post.pid, text: 'Forged', badge, now: w.clock.t }), { reaction: true });
-  await alice.postman.groupPost(sealGroupDelete({ group, from: aliceKey, postId: post.pid, badge, now: w.clock.t }), { reaction: true });
+  await carol.postman.groupPost(sealGroupEdit({ group, from: carolKey, postId: post.pid, text: 'Forged', badge, now: w.clock.t }), { reaction: true });
+  await carol.postman.groupPost(sealGroupDelete({ group, from: carolKey, postId: post.pid, badge, now: w.clock.t }), { reaction: true });
   await bob.checkMail();
   await alice.checkMail();
   assert.deepEqual(await posts(bob, gid), [['My post', 0, false]]);
@@ -277,4 +284,44 @@ test('groups: my other device may edit and delete my posts too', async () => {
   await phone.deleteGroupPost(gid, onPhone.pid);
   await alice.checkMail();
   assert.deepEqual(await posts(alice, gid), [['', 1, true]]);
+});
+
+test('groups: the owner removes someone else\'s post or poll (with an optional reason); everyone sees "removed by the group owner"; members can\'t', async () => {
+  const w = world();
+  const { alice, bob, gid } = await inGroup(w);
+  await bob.postToGroup(gid, 'Buy cheap KLV here: scam.example');
+  await alice.checkMail();
+  const [post] = await alice.groupPosts(gid);
+  assert.deepEqual([post.canRemove, post.canEdit, post.canDelete], [true, false, false]);
+  assert.equal((await bob.groupPosts(gid))[0].canRemove, false); // (Bob isn't the owner)
+  await assert.rejects(bob.removeGroupPost(gid, post.pid), /Only the group's owner/);
+  await alice.reactToPost(gid, post.pid, '👎');
+  await alice.removeGroupPost(gid, post.pid, 'Spam');
+  await bob.checkMail();
+  for (const m of [alice, bob]) {
+    const [p] = await m.groupPosts(gid);
+    assert.deepEqual([p.text, p.deleted, p.removedByOwner, p.removedReason, p.reactions.counts], ['', true, true, 'Spam', {}]);
+  }
+  // Bob deleting his own post is not "removed by the owner"
+  w.clock.t += 25 * HOUR;
+  await bob.postToGroup(gid, 'Sorry');
+  await bob.deleteGroupPost(gid, (await bob.groupPosts(gid))[1].pid);
+  await alice.checkMail();
+  const own = (await alice.groupPosts(gid))[1];
+  assert.deepEqual([own.deleted, own.removedByOwner], [true, false]);
+  // A poll: removed by the owner (no reason), out of the polls list, the poll line says so
+  w.clock.t += HOUR;
+  await bob.startPoll(gid, 'Fire or Water?', ['Fire', 'Water'], HOUR);
+  await alice.checkMail();
+  const [poll] = await alice.groupPolls(gid);
+  await alice.removeGroupPost(gid, poll.id);
+  await bob.checkMail();
+  const after = (await bob.groupPolls(gid))[0];
+  assert.deepEqual([after.removed, after.removedReason, after.open], [true, null, false]);
+  // Kept in the backup
+  const other = await w.blank();
+  await other.restoreBackupData(await alice.backupData());
+  const restored = (await other.groupPosts(gid))[0];
+  assert.deepEqual([restored.removedByOwner, restored.removedReason], [true, 'Spam']);
+  assert.equal((await other.groupPolls(gid))[0].removed, true);
 });

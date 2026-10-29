@@ -485,6 +485,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
         onReact={(pid, emoji) => act(() => messenger.reactToPost(openGroup.id, pid, emoji))}
         onEditPost={(pid, text) => act(() => messenger.editGroupPost(openGroup.id, pid, text))}
         onDeletePost={(pid) => act(() => messenger.deleteGroupPost(openGroup.id, pid))}
+        onRemovePost={(pid, reason) => act(() => messenger.removeGroupPost(openGroup.id, pid, reason))}
         votes={groupVotes}
         polls={groupPolls}
         onStartPoll={(question, options, durationMs) => act(() => messenger.startPoll(openGroup.id, question, options, durationMs))}

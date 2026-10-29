@@ -440,6 +440,21 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await expect(alice.page.getByTestId('chat-reaction')).toHaveCount(0); // (its reactions go with it)
   await expect(bob.page.getByTestId('chat-group-limit')).toContainText('9 of 10 posts left for today');
 
+  // The group owner removes someone else's post, with a short reason (29 Oct 2026)
+  await bob.page.waitForTimeout(10_500); // (the postman's 10 seconds between posts)
+  await bob.page.getByTestId('chat-group-draft').fill('Cheap KLV here!!!');
+  await bob.page.getByTestId('chat-group-post').click();
+  const spam = alice.page.getByTestId('chat-message').filter({ hasText: 'Cheap KLV here!!!' });
+  await expect(spam).toBeVisible({ timeout: 30_000 });
+  await spam.hover();
+  await alice.page.getByTestId('chat-msg-more').last().click();
+  await expect(alice.page.getByTestId('chat-msg-edit')).toHaveCount(0); // (no editing of other people's posts)
+  await alice.page.getByTestId('chat-msg-remove').click();
+  await alice.page.getByTestId('chat-msg-remove-reason').fill('Spam');
+  await alice.page.getByTestId('chat-msg-remove-yes').click();
+  await expect(alice.page.getByText('🗑️ Removed by the group owner: Spam')).toBeVisible();
+  await expect(bob.page.getByText('🗑️ Removed by the group owner: Spam')).toBeVisible({ timeout: 30_000 });
+
   await alice.context.close();
   await bob.context.close();
   postman.stop();

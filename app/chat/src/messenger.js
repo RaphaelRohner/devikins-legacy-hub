@@ -219,7 +219,11 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     // For group posts: the author's account (so their other devices may edit
     // too), the ids of the edits already applied (each counts once, also when
     // the mailbox is read again), deleted or not.
-    chat_group_posts: [['account', 'TEXT'], ['edit_ids', 'TEXT'], ['deleted', 'INTEGER NOT NULL DEFAULT 0']],
+    chat_group_posts: [['account', 'TEXT'], ['edit_ids', 'TEXT'], ['deleted', 'INTEGER NOT NULL DEFAULT 0'],
+      // (the group owner removed it - 29 Oct 2026 - and why, if they said)
+      ['removed_by_owner', 'INTEGER NOT NULL DEFAULT 0'], ['removed_reason', 'TEXT']],
+    // A poll the group owner removed (29 Oct 2026), and why
+    chat_group_polls: [['removed', 'INTEGER NOT NULL DEFAULT 0'], ['removed_reason', 'TEXT']],
   };
   for (const [table, cols] of Object.entries(added)) {
     const columns = new Set((await all(`PRAGMA table_info(${table})`)).map((c) => c.name));
@@ -1178,13 +1182,17 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       if (!groupOk(p) || typeof p.text !== 'string') continue;
       const editIds = typeof p.edit_ids === 'string' ? p.edit_ids : null;
       const r = await run(
-        'INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine, account, edit_ids, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine, account, edit_ids, deleted, removed_by_owner, removed_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [p.grp, Number(p.seq) || 0, typeof p.pid === 'string' ? p.pid : null, String(p.author ?? ''), p.nickname ?? null, p.deleted ? '' : p.text,
-          Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine || isMe(p.author) ? 1 : 0, p.account ?? null, editIds, p.deleted ? 1 : 0]);
+          Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine || isMe(p.author) ? 1 : 0, p.account ?? null, editIds, p.deleted ? 1 : 0,
+          p.removed_by_owner ? 1 : 0, p.removed_reason ?? null]);
       if (!r?.changes) {
         // Already here: the other copy may know more (edited more often, or deleted).
         const here = await first('SELECT * FROM chat_group_posts WHERE grp = ? AND seq = ?', [p.grp, Number(p.seq) || 0]);
-        if (here && p.deleted && !here.deleted) await run("UPDATE chat_group_posts SET text = '', deleted = 1 WHERE id = ?", [here.id]);
+        if (here && p.deleted && !here.deleted) {
+          await run("UPDATE chat_group_posts SET text = '', deleted = 1, removed_by_owner = ?, removed_reason = ? WHERE id = ?",
+            [p.removed_by_owner ? 1 : 0, p.removed_reason ?? null, here.id]);
+        }
         else if (here && !p.deleted && !here.deleted && editCount(p) > editCount(here)) {
           await run('UPDATE chat_group_posts SET text = ?, edit_ids = ? WHERE id = ?', [p.text, editIds, here.id]);
         }
@@ -1193,11 +1201,14 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     for (const p of arr(data.groupPolls)) {
       if (!groupOk(p) || typeof p.pid !== 'string' || typeof p.question !== 'string' || typeof p.options !== 'string') continue;
       await run(
-        `INSERT OR IGNORE INTO chat_group_polls (grp, pid, seq, creator, author, nickname, question, options, opened_at, ends_at, closed_at, mine)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO chat_group_polls (grp, pid, seq, creator, author, nickname, question, options, opened_at, ends_at, closed_at, mine, removed, removed_reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [p.grp, p.pid, Number(p.seq) || 0, String(p.creator ?? ''), String(p.author ?? ''), p.nickname ?? null, p.question, p.options,
-          Number(p.opened_at) || 0, Number(p.ends_at) || 0, p.closed_at == null ? null : Number(p.closed_at), p.mine || isMe(p.author) ? 1 : 0],
+          Number(p.opened_at) || 0, Number(p.ends_at) || 0, p.closed_at == null ? null : Number(p.closed_at), p.mine || isMe(p.author) ? 1 : 0,
+          p.removed ? 1 : 0, p.removed_reason ?? null],
       );
+      // (removed by the owner on the other device: removed here too)
+      if (p.removed) await run('UPDATE chat_group_polls SET removed = 1, removed_reason = ? WHERE grp = ? AND pid = ?', [p.removed_reason ?? null, p.grp, p.pid]);
     }
     for (const v of arr(data.groupPollVotes)) {
       if (!groupOk(v) || typeof v.poll !== 'string' || typeof v.player !== 'string') continue;
@@ -1587,7 +1598,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       }
       // Edits and deletes (29 Oct 2026): free; only from the post's author.
       for (const { item, player } of acceptReactions(items, { postmanPublicKey: pk, seen, kinds: ['edit', 'delete'] })) {
-        await applyPostChange(g.id, item, player);
+        await applyPostChange(g, item, player);
       }
       // Poll answers and "closed" (free; in the order the postman got them, after the polls above).
       for (const { item, player } of acceptReactions(items, { postmanPublicKey: pk, seen, kinds: ['poll-vote', 'poll-close'] })) {
@@ -1625,17 +1636,34 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
    *     EDIT_WINDOW of the post (both times from the postman);
    *   - each edit counts once, also when the mailbox is read again (its id is
    *     kept with the post).
+   * The group's OWNER may remove anyone's post or poll too (29 Oct 2026,
+   * Raphael), never edit it; it then shows "Removed by the group owner" (and
+   * the owner's short reason, if any), so members see that it happened.
    */
-  async function applyPostChange(grp, item, player) {
+  async function applyPostChange(g, item, player) {
     const x = item.post;
+    const grp = g.id;
+    const isOwner = !!g.owner_account && player === g.owner_account;
     const p = await first('SELECT * FROM chat_group_posts WHERE grp = ? AND pid = ?', [grp, x.target]);
-    if (!p) return 'ignored';
-    const byAuthor = x.from === p.author || (!!p.account && player === p.account);
-    if (!byAuthor || item.receivedAt < p.received_at) return 'ignored';
-    if (x.kind === 'delete') {
-      if (!p.deleted) await run("UPDATE chat_group_posts SET text = '', deleted = 1 WHERE id = ?", [p.id]);
-      return 'deleted';
+    if (!p) {
+      // A poll? Only the owner removes polls (the creator can close theirs).
+      const poll = x.kind === 'delete' && isOwner ? await first('SELECT * FROM chat_group_polls WHERE grp = ? AND pid = ?', [grp, x.target]) : null;
+      if (!poll || item.receivedAt < poll.opened_at) return 'ignored';
+      if (!poll.removed) await run('UPDATE chat_group_polls SET removed = 1, removed_reason = ? WHERE grp = ? AND pid = ?', [x.reason || null, grp, poll.pid]);
+      return 'removed';
     }
+    const byAuthor = x.from === p.author || (!!p.account && player === p.account);
+    if (item.receivedAt < p.received_at) return 'ignored';
+    if (x.kind === 'delete') {
+      if (byAuthor) {
+        if (!p.deleted) await run("UPDATE chat_group_posts SET text = '', deleted = 1 WHERE id = ?", [p.id]);
+        return 'deleted';
+      }
+      if (!isOwner) return 'ignored';
+      if (!p.deleted) await run("UPDATE chat_group_posts SET text = '', deleted = 1, removed_by_owner = 1, removed_reason = ? WHERE id = ?", [x.reason || null, p.id]);
+      return 'removed';
+    }
+    if (!byAuthor) return 'ignored';
     let applied = [];
     try { applied = JSON.parse(p.edit_ids || '[]'); } catch { applied = []; }
     if (!Array.isArray(applied)) applied = [];
@@ -1795,6 +1823,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
 
   async function groupPosts(id) {
     await run('UPDATE chat_groups SET unread = 0 WHERE id = ?', [id]);
+    const isOwnerHere = !!(await first('SELECT is_owner FROM chat_groups WHERE id = ?', [id]))?.is_owner;
     const reactions = new Map();
     for (const r of await all("SELECT pid, value, mine FROM chat_group_reactions WHERE grp = ? AND value != ''", [id])) {
       const x = reactions.get(r.pid) || { counts: {}, mine: '' };
@@ -1813,6 +1842,9 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
         canEdit: !!p.mine && !!p.pid && !p.deleted && edits < MAX_EDITS && now() - p.received_at < EDIT_WINDOW,
         editsLeft: Math.max(0, MAX_EDITS - edits),
         canDelete: !!p.mine && !!p.pid && !p.deleted,
+        // The owner's removal (29 Oct 2026): shown as "Removed by the group owner"; the owner may remove others' posts
+        removedByOwner: !!p.removed_by_owner, removedReason: p.removed_reason ?? null,
+        canRemove: isOwnerHere && !p.mine && !!p.pid && !p.deleted,
         editOver: !!p.mine && !!p.pid && !p.deleted && (edits >= MAX_EDITS || now() - p.received_at >= EDIT_WINDOW)
           ? (edits >= MAX_EDITS ? 'count' : 'time') : null,
       };
@@ -1857,6 +1889,23 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     if (!clean) throw new Error('Nothing to send. (To remove the post, delete it.)');
     if (clean === p.text) return;
     const envelope = sealGroupEdit({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, postId: pid, text: clean, badge: await freshBadge(), now: now() });
+    await postman.groupPost(envelope, { reaction: true });
+    await collectGroup(g);
+  }
+
+  /**
+   * The group's owner removes someone else's post or poll (29 Oct 2026),
+   * with an optional short reason. Free. Everyone sees "Removed by the
+   * group owner" (and the reason).
+   */
+  async function removeGroupPost(id, pid, reason = '') {
+    const g = await myGroup(id);
+    if (!g.is_owner) throw new Error("Only the group's owner can remove other people's posts.");
+    const post = await first('SELECT * FROM chat_group_posts WHERE grp = ? AND pid = ?', [id, pid]);
+    const poll = post ? null : await first('SELECT * FROM chat_group_polls WHERE grp = ? AND pid = ?', [id, pid]);
+    if (!post && !poll) throw new Error('This post is no longer there.');
+    if ((post && post.deleted) || (poll && poll.removed)) return;
+    const envelope = sealGroupDelete({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, postId: pid, reason, badge: await freshBadge(), now: now() });
     await postman.groupPost(envelope, { reaction: true });
     await collectGroup(g);
   }
@@ -1981,7 +2030,10 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
         openedAt: p.opened_at,
         endsAt: p.ends_at,
         closedAt: p.closed_at ?? null,
-        open: now() < endedAt,
+        open: !p.removed && now() < endedAt,
+        // (removed by the group owner, 29 Oct 2026: left out of the polls, shown as a line in the chat)
+        removed: !!p.removed,
+        removedReason: p.removed_reason ?? null,
       });
     }
     return out;
@@ -2351,17 +2403,18 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     }
     for (const p of Array.isArray(data.groupPosts) ? data.groupPosts : []) {
       if (typeof p.grp !== 'string' || typeof p.text !== 'string') continue;
-      await run('INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine, account, edit_ids, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      await run('INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine, account, edit_ids, deleted, removed_by_owner, removed_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [p.grp, Number(p.seq) || 0, typeof p.pid === 'string' ? p.pid : null, String(p.author ?? ''), p.nickname ?? null, p.deleted ? '' : p.text, Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine ? 1 : 0,
-          p.account ?? null, typeof p.edit_ids === 'string' ? p.edit_ids : null, p.deleted ? 1 : 0]);
+          p.account ?? null, typeof p.edit_ids === 'string' ? p.edit_ids : null, p.deleted ? 1 : 0, p.removed_by_owner ? 1 : 0, p.removed_reason ?? null]);
     }
     for (const p of Array.isArray(data.groupPolls) ? data.groupPolls : []) {
       if (typeof p.grp !== 'string' || typeof p.pid !== 'string' || typeof p.question !== 'string' || typeof p.options !== 'string') continue;
       await run(
-        `INSERT OR REPLACE INTO chat_group_polls (grp, pid, seq, creator, author, nickname, question, options, opened_at, ends_at, closed_at, mine)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO chat_group_polls (grp, pid, seq, creator, author, nickname, question, options, opened_at, ends_at, closed_at, mine, removed, removed_reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [p.grp, p.pid, Number(p.seq) || 0, String(p.creator ?? ''), String(p.author ?? ''), p.nickname ?? null, p.question, p.options,
-          Number(p.opened_at) || 0, Number(p.ends_at) || 0, p.closed_at == null ? null : Number(p.closed_at), p.mine ? 1 : 0],
+          Number(p.opened_at) || 0, Number(p.ends_at) || 0, p.closed_at == null ? null : Number(p.closed_at), p.mine ? 1 : 0,
+          p.removed ? 1 : 0, p.removed_reason ?? null],
       );
     }
     for (const v of Array.isArray(data.groupPollVotes) ? data.groupPollVotes : []) {
@@ -2440,6 +2493,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     postToGroup,
     editGroupPost,
     deleteGroupPost,
+    removeGroupPost,
     nextGroupPostAt,
     setPinned,
     setPins,

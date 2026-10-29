@@ -136,10 +136,18 @@ export function sealGroupEdit({ group, from, postId, text, badge, now = Date.now
   return sealEvent({ group, from, badge, now, kind: GROUP_EDIT_KIND, content, tags: [['e', postId]] });
 }
 
-/** sealGroupDelete — removes my post `postId` for everyone. */
-export function sealGroupDelete({ group, from, postId, badge, now = Date.now() }) {
+/** The group owner's short reason when removing someone else's post (29 Oct 2026). */
+export const MAX_REMOVE_REASON_CHARS = 80;
+
+/**
+ * sealGroupDelete — removes post (or poll) `postId` for everyone: my own, or
+ * - as the group's owner - someone else's (29 Oct 2026), then with an
+ * optional short reason (NIP-09 keeps the reason in the content).
+ */
+export function sealGroupDelete({ group, from, postId, badge, reason = '', now = Date.now() }) {
   if (!HEX64.test(postId || '')) throw new Error('Unknown post.');
-  return sealEvent({ group, from, badge, now, kind: GROUP_DELETE_KIND, content: '', tags: [['e', postId]] });
+  const why = cleanText(reason || '').slice(0, MAX_REMOVE_REASON_CHARS);
+  return sealEvent({ group, from, badge, now, kind: GROUP_DELETE_KIND, content: why, tags: [['e', postId]] });
 }
 
 /** sealGroupPollClose — the creator ends poll `pollId` now. */
@@ -266,7 +274,7 @@ export function openGroupPost(envelope, { groupId, keys }) {
   if (post.kind === GROUP_EDIT_KIND || post.kind === GROUP_DELETE_KIND) {
     const target = tag(post, 'e');
     if (!HEX64.test(target || '')) throw new Error('Not about a post.');
-    if (post.kind === GROUP_DELETE_KIND) return { kind: 'delete', ...base, target };
+    if (post.kind === GROUP_DELETE_KIND) return { kind: 'delete', ...base, target, reason: cleanText(post.content || '').slice(0, MAX_REMOVE_REASON_CHARS) };
     const text = cleanText(post.content);
     if (!text) throw new Error('An empty edit.');
     return { kind: 'edit', ...base, target, text };

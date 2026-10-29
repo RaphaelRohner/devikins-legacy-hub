@@ -313,8 +313,11 @@ function pollStatus(p) {
 }
 
 /** One poll: the answers with their votes (tap one to vote while it's open). */
-function PollCard({ p, busy, open, onToggle, onVote, onClose }) {
+function PollCard({ p, busy, open, onToggle, onVote, onClose, onRemove }) {
   const { colors } = useTheme();
+  // The group owner removes a poll (29 Oct 2026): "really?" with an optional reason
+  const [removing, setRemoving] = useState(false);
+  const [reason, setReason] = useState('');
   const total = p.counts.reduce((a, b) => a + b, 0);
   const lead = Math.max(0, ...p.counts);
   const yourTurn = p.open && p.myChoice === null;
@@ -362,6 +365,30 @@ function PollCard({ p, busy, open, onToggle, onVote, onClose }) {
         <TouchableOpacity onPress={() => onClose(p.id)} disabled={busy} testID="chat-poll-close">
           <Text style={[styles.link, { color: colors.cancelText }]}>Close this poll now</Text>
         </TouchableOpacity>
+      ) : null}
+      {onRemove && !removing ? (
+        <TouchableOpacity onPress={() => setRemoving(true)} disabled={busy} testID="chat-poll-remove">
+          <Text style={[styles.link, { color: colors.cancelText }]}>🗑️ Remove this poll (owner)</Text>
+        </TouchableOpacity>
+      ) : null}
+      {onRemove && removing ? (
+        <View style={styles.row}>
+          <TextInput
+            value={reason}
+            onChangeText={setReason}
+            placeholder="Reason (optional)"
+            placeholderTextColor={colors.secondaryText}
+            maxLength={80}
+            style={[styles.input, { flex: 1, color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+            testID="chat-poll-remove-reason"
+          />
+          <TouchableOpacity onPress={() => onRemove(p.id, reason.trim())} disabled={busy} testID="chat-poll-remove-yes">
+            <Text style={[styles.link, { color: colors.cancelText, fontWeight: '700' }]}>Remove</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setRemoving(false)} testID="chat-poll-remove-no">
+            <Text style={[styles.link, { color: colors.secondaryText }]}>Keep</Text>
+          </TouchableOpacity>
+        </View>
       ) : null}
     </Card>
   );
@@ -437,7 +464,9 @@ function PollForm({ busy, onStart, onCancel }) {
  * polls. Open ones first (newest on top, removal votes red), then "Past"
  * folded again - kept for good in this Hub, so a guild can look back later.
  */
-function VotesAndPolls({ votes, polls, busy, onCastVote, onUpdateHoldings, onStartPoll, onVotePoll, onClosePoll, focus }) {
+function VotesAndPolls({ votes, polls: allPolls, busy, onCastVote, onUpdateHoldings, onStartPoll, onVotePoll, onClosePoll, onRemovePoll, focus }) {
+  // (polls the group owner removed don't show here - only as a line in the chat, 29 Oct 2026)
+  const polls = (allPolls || []).filter((p) => !p.removed);
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
   const [openCard, setOpenCard] = useState(null);
@@ -467,7 +496,7 @@ function VotesAndPolls({ votes, polls, busy, onCastVote, onUpdateHoldings, onSta
     return x.type === 'vote' ? (
       <VoteCard key={key} v={x.v} votes={votes} busy={busy} open={openCard === key} onToggle={toggle} onCastVote={onCastVote} onUpdateHoldings={onUpdateHoldings} />
     ) : (
-      <PollCard key={key} p={x.p} busy={busy} open={openCard === key} onToggle={toggle} onVote={onVotePoll} onClose={onClosePoll} />
+      <PollCard key={key} p={x.p} busy={busy} open={openCard === key} onToggle={toggle} onVote={onVotePoll} onClose={onClosePoll} onRemove={onRemovePoll} />
     );
   };
   return (
@@ -616,7 +645,7 @@ function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBa
 }
 
 export default function ChatGroupView({
-  group, me, posts, next, busy, error, onBack, onPost, onPins, onReact, onEditPost, onDeletePost, onLeave, votes, polls, loadMembers, onOpenVote, onCastVote, onLetBackIn, onUpdateHoldings,
+  group, me, posts, next, busy, error, onBack, onPost, onPins, onReact, onEditPost, onDeletePost, onRemovePost, onLeave, votes, polls, loadMembers, onOpenVote, onCastVote, onLetBackIn, onUpdateHoldings,
   onStartPoll, onVotePoll, onClosePoll,
 }) {
   const [showMembers, setShowMembers] = useState(false);
@@ -754,6 +783,7 @@ export default function ChatGroupView({
         onStartPoll={onStartPoll}
         onVotePoll={onVotePoll}
         onClosePoll={onClosePoll}
+        onRemovePoll={group.isOwner && onRemovePost ? (pollId, reason) => onRemovePost(pollId, reason) : null}
         focus={pollFocus}
       />
 
@@ -806,14 +836,22 @@ export default function ChatGroupView({
           onReact={onReact}
           onEdit={onEditPost ? (m, text) => onEditPost(m.pid, text) : null}
           onDelete={onDeletePost ? (m) => onDeletePost(m.pid) : null}
+          onRemove={group.isOwner && onRemovePost ? (m, reason) => onRemovePost(m.pid, reason) : null}
           items={[
             ...posts.map((p) => ({
               id: p.id, pid: p.pid, reactions: p.reactions, mine: p.mine, author: p.author, nickname: p.nickname, text: p.text, at: p.receivedAt,
               // (editing and deleting my own posts, 29 Oct 2026)
               edited: p.edited, deleted: p.deleted, canEdit: p.canEdit, canDelete: p.canDelete, editsLeft: p.editsLeft, editOver: p.editOver,
+              // (the owner removing others' posts, 29 Oct 2026)
+              removedByOwner: p.removedByOwner, removedReason: p.removedReason, canRemove: p.canRemove,
             })),
             // New polls show as a line in the chat too; a tap opens them above (25 Oct 2026)
-            ...(polls || []).map((p) => ({
+            ...(polls || []).map((p) => (p.removed ? {
+              // (removed by the group owner, 29 Oct 2026)
+              id: `poll-${p.id}`,
+              at: p.openedAt,
+              system: `📊 A poll was removed by the group owner${p.removedReason ? `: ${p.removedReason}` : ''}`,
+            } : {
               id: `poll-${p.id}`,
               at: p.openedAt,
               system: `📊 ${p.mine ? 'You' : p.creator ?? 'A member'} started a poll: ${p.question}`,
