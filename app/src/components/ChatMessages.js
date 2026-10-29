@@ -29,9 +29,12 @@
  * onReact(pid, emoji) - reactions on (groups); left out: none (1:1 chats)
  * onEdit(item, text) / onDelete(item) - editing and deleting my own messages
  *   (both chats); each returns a promise of true when it worked
+ * scrollRef - the chat's ScrollView: what opens under the LAST message (the
+ *   emojis, the options, the edit box) is scrolled into view, and the edit box
+ *   stays above the phone's keyboard (Raphael, 29 Oct 2026)
  */
-import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Pressable, Platform, StyleSheet } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Pressable, Platform, Keyboard, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { REACTIONS } from '../../chat/src/group.js';
 import { ANCESTRIES, HUB_FACES, isHubEmoji, hubEmojiLabel } from '../constants/hubEmojis';
@@ -54,9 +57,12 @@ function ReactionGlyph({ value, size }) {
     return <HubEmojiImage code={value} size={size} />;
   }
   // ("+1" is letters, not an emoji: bold, so it reads as a sign)
-  if (value === '+1') return <Text style={{ fontSize: size * 0.8, fontWeight: '800' }}>+1</Text>;
+  // (red and slanted, like a handwritten +1 - Raphael, 29 Oct 2026)
+  if (value === '+1') return <Text style={{ fontSize: size * 0.8, fontWeight: '800', fontStyle: 'italic', color: PLUS_ONE_RED }}>+1</Text>;
   return <Text style={{ fontSize: size * 0.85 }}>{value}</Text>;
 }
+
+const PLUS_ONE_RED = '#e53935';
 
 // Name colours: light ones on the dark theme, deeper ones on the light theme
 // (both readable on the bubble). Avatars use the deeper ones with white text.
@@ -112,7 +118,7 @@ export function Avatar({ name, size = 32 }) {
   );
 }
 
-export default function ChatMessages({ items, showAuthors = false, onReact = null, onEdit = null, onDelete = null, busy = false }) {
+export default function ChatMessages({ items, showAuthors = false, onReact = null, onEdit = null, onDelete = null, busy = false, scrollRef = null }) {
   const { colors, isDark } = useTheme();
   const [pickerFor, setPickerFor] = useState(null);
   // Editing and deleting (29 Oct 2026): the message whose options are open,
@@ -126,6 +132,34 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
     setMenuFor(null);
     setConfirmDelete(null);
   };
+
+  // Making room (29 Oct 2026): where each line sits in the chat (from its
+  // layout), so whatever opens under a message can be scrolled into view.
+  const lineY = useRef({});
+  const lastId = items.length ? items[items.length - 1].id : null;
+  const opened = pickerFor ?? menuFor ?? confirmDelete ?? editing?.id ?? null;
+  useEffect(() => {
+    if (opened === null || opened !== lastId || !scrollRef?.current) return undefined;
+    // (after the new part has its size)
+    const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+    return () => clearTimeout(timer);
+  }, [opened, lastId, scrollRef, confirmDelete]);
+  // The edit box: once the phone's keyboard is up, the message being edited
+  // goes to the top of what's left of the chat, so the keyboard never covers it.
+  const editingId = editing?.id ?? null;
+  useEffect(() => {
+    if (editingId === null || !scrollRef?.current) return undefined;
+    const reveal = () => {
+      const y = lineY.current[editingId];
+      if (typeof y === 'number') scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+    };
+    const timer = setTimeout(reveal, 300);
+    const sub = Keyboard.addListener('keyboardDidShow', () => setTimeout(reveal, 50));
+    return () => {
+      clearTimeout(timer);
+      sub.remove();
+    };
+  }, [editingId, scrollRef]);
   const [ancestry, setAncestryState] = useState(readAncestry);
   const setAncestry = (key) => {
     setAncestryState(key);
@@ -322,6 +356,7 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
     out.push(
       <Pressable
         key={m.id}
+        onLayout={(e) => { lineY.current[m.id] = e.nativeEvent.layout.y; }}
         // (website: the mouse over a line shows its ⋯; nothing happens on a click here)
         onHoverIn={changeable ? () => setHoverId(m.id) : undefined}
         onHoverOut={changeable ? () => setHoverId((h) => (h === m.id ? null : h)) : undefined}

@@ -91,6 +91,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
   const openGroupRef = useRef(null);
   openGroupRef.current = openGroupId;
   const scrollRef = useRef(null);
+  const shownThread = useRef('');
   // Minimised in the chat window (ChatDock.web.js): an open conversation or
   // group isn't being read, so new messages stay unread (and counted) until
   // the window is opened again (Raphael, 23 Oct 2026).
@@ -523,7 +524,14 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
           ref={scrollRef}
           style={[styles.thread, { borderColor: colors.border }]}
           contentContainerStyle={styles.threadContent}
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+          // (to the newest message when one arrives or the conversation opens - not when
+          // something opens under a message, e.g. the edit box: 29 Oct 2026)
+          onContentSizeChange={() => {
+            const key = `${openId}:${thread.length}`;
+            if (shownThread.current === key) return;
+            shownThread.current = key;
+            scrollRef.current?.scrollToEnd({ animated: false });
+          }}
         >
           {thread.length === 0 ? (
             <Text style={[styles.note, { color: colors.secondaryText, textAlign: 'center' }]}>
@@ -531,6 +539,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
             </Text>
           ) : null}
           <ChatMessages
+            scrollRef={scrollRef}
             busy={busy}
             items={thread.map((m) => ({
               id: m.id, mine: m.mine, author: m.mine ? 'me' : 'them', text: m.text, at: m.mine ? m.sentAt : m.receivedAt,

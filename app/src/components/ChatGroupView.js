@@ -630,6 +630,7 @@ export default function ChatGroupView({
   const [pinDraft, setPinDraft] = useState('');
   const [, setTick] = useState(0);
   const scrollRef = useRef(null);
+  const shownPosts = useRef('');
 
   // Keep "next post possible in …" fresh.
   useEffect(() => {
@@ -786,12 +787,20 @@ export default function ChatGroupView({
         ref={scrollRef}
         style={[styles.threadArea, { borderColor: colors.border }]}
         contentContainerStyle={styles.thread}
-        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+        // (to the newest post when one arrives or the group opens - not when something
+        // opens under a post, e.g. the emojis or the edit box: 29 Oct 2026)
+        onContentSizeChange={() => {
+          const key = `${group.id}:${posts.length}:${(polls || []).length}`;
+          if (shownPosts.current === key) return;
+          shownPosts.current = key;
+          scrollRef.current?.scrollToEnd({ animated: false });
+        }}
       >
         {posts.length === 0 ? (
           <Text style={[styles.note, { color: colors.secondaryText, textAlign: 'center' }]}>No posts yet since you joined.</Text>
         ) : null}
         <ChatMessages
+          scrollRef={scrollRef}
           showAuthors
           busy={busy}
           onReact={onReact}

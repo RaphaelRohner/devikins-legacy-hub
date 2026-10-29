@@ -390,6 +390,8 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await expect(alice.page.getByText('B', { exact: true })).toBeVisible();
   // Reactions (free): Alice gives Bob's post a 👍, then switches to 🔥; Bob sees it
   await alice.page.getByTestId('chat-react').last().click();
+  // (under the last post the emojis are scrolled into view - 29 Oct 2026)
+  await expect(alice.page.getByTestId('chat-reaction-picker').getByTestId('chat-hub-emoji').last()).toBeInViewport();
   await alice.page.getByTestId('chat-reaction-picker').getByText('👍').click();
   await expect(alice.page.getByTestId('chat-reaction')).toHaveText('👍 1');
   // +1 (letters, drawn bold) – added 29 Oct 2026 with 💯
@@ -413,6 +415,7 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await expect(bob.page.getByTestId('chat-msg-options')).toBeVisible();
   await bob.page.screenshot({ path: test.info().outputPath('post-options.png') });
   await bob.page.getByTestId('chat-msg-edit').click();
+  await expect(bob.page.getByTestId('chat-edit-save')).toBeInViewport();
   await bob.page.getByTestId('chat-edit-input').fill('Hi everyone, I breed Fire Devikins');
   await bob.page.getByTestId('chat-edit-save').click();
   await expect(bob.page.getByTestId('chat-message').filter({ hasText: 'I breed Fire Devikins' })).toContainText('edited');
