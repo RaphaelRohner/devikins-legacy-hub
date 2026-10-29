@@ -134,11 +134,14 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
   const [hoverId, setHoverId] = useState(null);
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  // (the owner's optional reason while removing someone else's post)
+  // (the owner's optional reason while removing someone else's post, and
+  // whose reason field is being typed in - it's kept above the keyboard too)
   const [removeReason, setRemoveReason] = useState('');
+  const [reasonFor, setReasonFor] = useState(null);
   const closeOptions = () => {
     setMenuFor(null);
     setConfirmDelete(null);
+    setReasonFor(null);
   };
 
   // Making room (29 Oct 2026): where each line sits in the chat (from its
@@ -152,9 +155,10 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
     const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
     return () => clearTimeout(timer);
   }, [opened, lastId, scrollRef, confirmDelete]);
-  // The edit box: once the phone's keyboard is up, the message being edited
-  // goes to the top of what's left of the chat, so the keyboard never covers it.
-  const editingId = editing?.id ?? null;
+  // The edit box (and the owner's reason field): once the phone's keyboard is
+  // up, that message goes to the top of what's left of the chat, so the
+  // keyboard never covers what's being typed.
+  const editingId = editing?.id ?? reasonFor ?? null;
   useEffect(() => {
     if (editingId === null || !scrollRef?.current) return undefined;
     const reveal = () => {
@@ -305,6 +309,7 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
             <TextInput
               value={removeReason}
               onChangeText={setRemoveReason}
+              onFocus={() => setReasonFor(m.id)}
               placeholder="Reason (optional)"
               placeholderTextColor={colors.secondaryText}
               maxLength={80}
@@ -322,7 +327,14 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
             >
               <Text style={[styles.optionText, { color: '#fff', fontWeight: '700' }]}>Remove</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setConfirmDelete(null)} style={styles.optionButton} testID="chat-msg-delete-no">
+            <TouchableOpacity
+              onPress={() => {
+                setConfirmDelete(null);
+                setReasonFor(null);
+              }}
+              style={styles.optionButton}
+              testID="chat-msg-delete-no"
+            >
               <Text style={[styles.optionText, { color: colors.text }]}>Keep</Text>
             </TouchableOpacity>
           </>
