@@ -47,12 +47,14 @@ test('1:1: my message can be edited twice within 24 hours, on both sides; free (
   assert.deepEqual(await view(bob, bid), [[false, 'Selling a Fire Devikin, 500 KLV', 2, false]]);
   assert.equal((await alice.messages(aid))[0].canEdit, false);
   await assert.rejects(alice.editMessage(aid, mine.id, 'third time'), /at most 2 times/);
+  assert.equal((await alice.messages(aid))[0].editOver, 'count'); // (shown greyed out: "Edit (2×)")
 
   // After 24 hours: no edits any more (a new message)
   await alice.sendMessage(aid, 'Still for sale');
   const second = (await alice.messages(aid))[1];
   w.clock.t += 24 * HOUR;
   assert.equal((await alice.messages(aid))[1].canEdit, false);
+  assert.equal((await alice.messages(aid))[1].editOver, 'time'); // (shown greyed out: "Edit (24h)")
   await assert.rejects(alice.editMessage(aid, second.id, 'Sold'), /within 24 hours/);
   // Bob's messages aren't Alice's to change
   await bob.checkMail();
@@ -216,6 +218,7 @@ test('groups: my post can be edited twice within 24 hours and deleted any time -
   await alice.reactToPost(gid, post.pid, '+1');
   w.clock.t += 25 * HOUR;
   assert.equal((await bob.groupPosts(gid))[0].canEdit, false);
+  assert.equal((await bob.groupPosts(gid))[0].editOver, 'count');
   await bob.deleteGroupPost(gid, post.pid);
   await alice.checkMail();
   const gone = (await alice.groupPosts(gid))[0];

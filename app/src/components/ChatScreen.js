@@ -544,7 +544,7 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
             items={thread.map((m) => ({
               id: m.id, mine: m.mine, author: m.mine ? 'me' : 'them', text: m.text, at: m.mine ? m.sentAt : m.receivedAt,
               // (editing and deleting my own messages, 29 Oct 2026)
-              edited: m.edited, deleted: m.deleted, canEdit: m.canEdit, canDelete: m.canDelete, editsLeft: m.editsLeft,
+              edited: m.edited, deleted: m.deleted, canEdit: m.canEdit, canDelete: m.canDelete, editsLeft: m.editsLeft, editOver: m.editOver,
             }))}
             onEdit={(m, text) => act(() => messenger.editMessage(openId, m.id, text))}
             onDelete={(m) => act(() => messenger.deleteMessage(openId, m.id))}

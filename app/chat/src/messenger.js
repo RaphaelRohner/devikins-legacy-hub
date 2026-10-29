@@ -544,6 +544,8 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
         mid: m.mid ?? null, edits: m.edits || 0, edited: (m.edits || 0) > 0, deleted: !!m.deleted,
         canEdit: canEditRow(m, m.sent_at), editsLeft: Math.max(0, MAX_EDITS - (m.edits || 0)),
         canDelete: !!m.mine && !!m.mid && !m.deleted,
+        // Why my message can't be edited any more (shown greyed out): 'count' (edited twice) or 'time' (24 hours over)
+        editOver: !!m.mine && !!m.mid && !m.deleted && !canEditRow(m, m.sent_at) ? ((m.edits || 0) >= MAX_EDITS ? 'count' : 'time') : null,
       }));
   }
 
@@ -1811,6 +1813,8 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
         canEdit: !!p.mine && !!p.pid && !p.deleted && edits < MAX_EDITS && now() - p.received_at < EDIT_WINDOW,
         editsLeft: Math.max(0, MAX_EDITS - edits),
         canDelete: !!p.mine && !!p.pid && !p.deleted,
+        editOver: !!p.mine && !!p.pid && !p.deleted && (edits >= MAX_EDITS || now() - p.received_at >= EDIT_WINDOW)
+          ? (edits >= MAX_EDITS ? 'count' : 'time') : null,
       };
     });
   }

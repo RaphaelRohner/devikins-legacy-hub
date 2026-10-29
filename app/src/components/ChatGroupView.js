@@ -810,7 +810,7 @@ export default function ChatGroupView({
             ...posts.map((p) => ({
               id: p.id, pid: p.pid, reactions: p.reactions, mine: p.mine, author: p.author, nickname: p.nickname, text: p.text, at: p.receivedAt,
               // (editing and deleting my own posts, 29 Oct 2026)
-              edited: p.edited, deleted: p.deleted, canEdit: p.canEdit, canDelete: p.canDelete, editsLeft: p.editsLeft,
+              edited: p.edited, deleted: p.deleted, canEdit: p.canEdit, canDelete: p.canDelete, editsLeft: p.editsLeft, editOver: p.editOver,
             })),
             // New polls show as a line in the chat too; a tap opens them above (25 Oct 2026)
             ...(polls || []).map((p) => ({

@@ -414,6 +414,7 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await bob.page.getByTestId('chat-msg-more').click();
   await expect(bob.page.getByTestId('chat-msg-options')).toBeVisible();
   await bob.page.screenshot({ path: test.info().outputPath('post-options.png') });
+  await expect(bob.page.getByTestId('chat-msg-edit')).toHaveText('✏️ Edit (24h)');
   await bob.page.getByTestId('chat-msg-edit').click();
   await expect(bob.page.getByTestId('chat-edit-save')).toBeInViewport();
   await bob.page.getByTestId('chat-edit-input').fill('Hi everyone, I breed Fire Devikins');
@@ -423,7 +424,16 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await expect(bob.page.getByTestId('chat-group-limit')).toContainText('9 of 10 posts left for today');
   await bob.page.getByTestId('chat-message').filter({ hasText: 'I breed Fire Devikins' }).hover();
   await bob.page.getByTestId('chat-msg-more').click();
-  await expect(bob.page.getByTestId('chat-msg-edit')).toHaveText('✏️ Edit (last time)');
+  await expect(bob.page.getByTestId('chat-msg-edit')).toHaveText('✏️ Edit (24h, last)');
+  await bob.page.getByTestId('chat-msg-edit').click();
+  await bob.page.getByTestId('chat-edit-input').fill('Hi everyone, I breed Fire Devikins!');
+  await bob.page.getByTestId('chat-edit-save').click();
+  await expect(bob.page.getByTestId('chat-message').filter({ hasText: 'Devikins!' })).toBeVisible();
+  // Edited twice: the option stays, greyed out with the reason (29 Oct 2026)
+  await bob.page.getByTestId('chat-message').filter({ hasText: 'Devikins!' }).hover();
+  await bob.page.getByTestId('chat-msg-more').first().click();
+  await expect(bob.page.getByTestId('chat-msg-edit-over')).toHaveText('✏️ Edit (2×)');
+  await expect(bob.page.getByTestId('chat-msg-edit')).toHaveCount(0);
   await bob.page.getByTestId('chat-msg-delete').click();
   await bob.page.getByTestId('chat-msg-delete-yes').click();
   await expect(alice.page.getByTestId('chat-message-deleted')).toHaveCount(1, { timeout: 30_000 });

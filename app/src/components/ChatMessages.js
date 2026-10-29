@@ -18,14 +18,15 @@
  *
  *   - editing and deleting my own messages (29 Oct 2026, Raphael: "like in
  *     Telegram"): on a phone, tap or keep a finger on your message; on the
- *     website, move the mouse over it and click ⋯. The options: ✏️ Edit
+ *     website, move the mouse over it and click ⋯. The options: ✏️ Edit (24h)
  *     (at most twice, within 24 hours) and 🗑️ Delete (always, after a
  *     "really?"). An edited message shows "edited" next to its time; a
- *     deleted one stays as "Message deleted".
+ *     deleted one stays as "Message deleted". When editing is over, the
+ *     option stays greyed out with the reason: "Edit (24h)" or "Edit (2×)".
  *
  * items: [{ id, mine, author (who - for grouping and colour), nickname, text, at,
  *           pid, reactions: { counts: { emoji: n }, mine: emoji | '' },
- *           edited, deleted, canEdit, canDelete, editsLeft }]
+ *           edited, deleted, canEdit, canDelete, editsLeft, editOver ('time' | 'count' | null) }]
  * onReact(pid, emoji) - reactions on (groups); left out: none (1:1 chats)
  * onEdit(item, text) / onDelete(item) - editing and deleting my own messages
  *   (both chats); each returns a promise of true when it worked
@@ -309,6 +310,12 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
           </>
         ) : (
           <>
+            {m.editOver && onEdit ? (
+              // (no edit any more - greyed out with the reason: 24 hours over, or edited twice already; 29 Oct 2026)
+              <View style={[styles.optionButton, { opacity: 0.45 }]} accessible accessibilityLabel={m.editOver === 'time' ? 'Edit: only within 24 hours' : 'Edit: already edited twice'} testID="chat-msg-edit-over">
+                <Text style={[styles.optionText, { color: colors.text }]}>✏️ Edit ({m.editOver === 'time' ? '24h' : '2×'})</Text>
+              </View>
+            ) : null}
             {m.canEdit && onEdit ? (
               <TouchableOpacity
                 onPress={() => {
@@ -319,7 +326,8 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
                 testID="chat-msg-edit"
               >
                 <Text style={[styles.optionText, { color: colors.text }]}>
-                  ✏️ Edit{m.editsLeft === 1 ? ' (last time)' : ''}
+                  {/* (the 24 hours always in sight - Raphael, 29 Oct 2026: "so it's clear every time you click it") */}
+                  ✏️ Edit (24h{m.editsLeft === 1 ? ', last' : ''})
                 </Text>
               </TouchableOpacity>
             ) : null}
