@@ -39,10 +39,10 @@
 
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { createIdentity, isPublicKey, secretBytes } from './identity.js';
-import { sealDirect, openDirect } from './direct.js';
-import { cleanText, nicknameKey, nextPostAllowedAt, MIN_POST_INTERVAL, POST_WINDOW, postsPerDay, postsLeft, holdingBand } from './rules.js';
+import { sealDirect, openDirect, MID } from './direct.js';
+import { cleanText, nicknameKey, nextPostAllowedAt, MIN_POST_INTERVAL, POST_WINDOW, postsPerDay, postsLeft, holdingBand, MAX_EDITS, EDIT_WINDOW } from './rules.js';
 import {
-  sealGroupPost, sealGroupReaction, sealGroupPoll, sealGroupPollVote, sealGroupPollClose, openGroupPost, acceptPosts, acceptReactions, readGroupKeyMessage, sealPinned, openPinned, groupKeyCheck, VOTE_REASON_KIND,
+  sealGroupPost, sealGroupReaction, sealGroupPoll, sealGroupPollVote, sealGroupPollClose, sealGroupEdit, sealGroupDelete, openGroupPost, acceptPosts, acceptReactions, readGroupKeyMessage, sealPinned, openPinned, groupKeyCheck, VOTE_REASON_KIND,
 } from './group.js';
 import { checkBadge } from './badge.js';
 import { createPostmanClient } from './client.js';
@@ -154,7 +154,7 @@ export const GROUP_STATUS = {
  * once more from the start (the last 30 days), so what an older page skipped
  * isn't lost - posts it already has aren't added or counted again.
  */
-const GROUP_FORMAT = 3; // 3 = polls (25 Oct 2026)
+const GROUP_FORMAT = 4; // 3 = polls (25 Oct 2026); 4 = edited and deleted posts (29 Oct 2026)
 
 const GROUP_TABLES = ['chat_groups', 'chat_group_posts', 'chat_group_last', 'chat_group_recent', 'chat_group_reactions', 'chat_group_polls',
   'chat_group_poll_votes', 'chat_vote_history', 'chat_group_names', 'chat_group_keys'];
@@ -213,6 +213,13 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     chat_devices: [['seen', 'INTEGER']],
     // (28 Oct 2026: when I voted - a comment edited after that has lost my vote)
     chat_comment_votes: [['at', 'INTEGER']],
+    // Editing and deleting (29 Oct 2026): a message's own id (the same on both
+    // sides and on all my devices), how often it was edited, deleted or not.
+    chat_messages: [['mid', 'TEXT'], ['edits', 'INTEGER NOT NULL DEFAULT 0'], ['deleted', 'INTEGER NOT NULL DEFAULT 0']],
+    // For group posts: the author's account (so their other devices may edit
+    // too), the ids of the edits already applied (each counts once, also when
+    // the mailbox is read again), deleted or not.
+    chat_group_posts: [['account', 'TEXT'], ['edit_ids', 'TEXT'], ['deleted', 'INTEGER NOT NULL DEFAULT 0']],
   };
   for (const [table, cols] of Object.entries(added)) {
     const columns = new Set((await all(`PRAGMA table_info(${table})`)).map((c) => c.name));
@@ -225,6 +232,9 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
   // database itself refuses a second one.
   await db.execAsync(`DELETE FROM chat_group_posts WHERE id NOT IN (SELECT MIN(id) FROM chat_group_posts GROUP BY grp, seq);
     CREATE UNIQUE INDEX IF NOT EXISTS chat_group_posts_once ON chat_group_posts (grp, seq);`);
+
+  // (finding a message by its own id, for edits and deletes)
+  await db.execAsync('CREATE INDEX IF NOT EXISTS chat_messages_by_mid ON chat_messages (contact, mid)');
 
   // Every key a group ever had (older posts stay readable after a new key).
   await db.execAsync('INSERT OR IGNORE INTO chat_group_keys (grp, epoch, key) SELECT id, epoch, key FROM chat_groups WHERE key IS NOT NULL');
@@ -443,9 +453,9 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     return c;
   }
 
-  async function sendControl(contact, type, body) {
+  async function sendControl(contact, type, body, { mid = null } = {}) {
     const c = contact.id ? await freshDevices(contact) : contact;
-    const items = sealDirect({ from: identity, toDevices: c.devices, type, body });
+    const items = sealDirect({ from: identity, toDevices: c.devices, type, body, mid });
     await postman.drop(c.theirCode, items);
   }
 
@@ -521,10 +531,100 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
 
   // --- messages ------------------------------------------------------------
 
+  /** May my message (row) still be edited? Within EDIT_WINDOW, at most MAX_EDITS times, not deleted, sent with an id. */
+  const canEditRow = (m, sentAt) => !!m.mine && !!m.mid && !m.deleted && (m.edits || 0) < MAX_EDITS && now() - sentAt < EDIT_WINDOW;
+
   async function messages(contactId) {
     await run('UPDATE chat_contacts SET unread = 0 WHERE id = ?', [contactId]);
     return (await all('SELECT * FROM chat_messages WHERE contact = ? ORDER BY id', [contactId]))
-      .map((m) => ({ id: m.id, mine: !!m.mine, text: m.text, sentAt: m.sent_at, receivedAt: m.received_at }));
+      .map((m) => ({
+        id: m.id, mine: !!m.mine, text: m.text, sentAt: m.sent_at, receivedAt: m.received_at,
+        // Editing and deleting (29 Oct 2026): only my own messages that have an id
+        // (sent from this version on); deleted ones show as "deleted".
+        mid: m.mid ?? null, edits: m.edits || 0, edited: (m.edits || 0) > 0, deleted: !!m.deleted,
+        canEdit: canEditRow(m, m.sent_at), editsLeft: Math.max(0, MAX_EDITS - (m.edits || 0)),
+        canDelete: !!m.mine && !!m.mid && !m.deleted,
+      }));
+  }
+
+  /** A new id for a message (16 random bytes, hex). */
+  function newMid() {
+    const b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    return bytesToHex(b);
+  }
+
+  /** The writable contact for an edit or delete (as for sending). */
+  async function writableContact(contactId) {
+    const c = await contactById(contactId);
+    if (!c || c.status !== STATUS.ACCEPTED || !c.theirCode) throw new Error('You can change messages once they have accepted.');
+    return c;
+  }
+
+  /** Sends a change to the contact; a 403 means they left or blocked me (as for sending). */
+  async function sendChange(c, type, body) {
+    try {
+      await sendControl(c, type, body);
+    } catch (e) {
+      if (e.status === 403) {
+        await run('UPDATE chat_contacts SET ended = 1 WHERE id = ?', [c.id]);
+        throw new Error(`${c.nickname} isn't receiving your messages any more (they left the chat or blocked you).`);
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * Edits one of my messages (its local id) - at most MAX_EDITS times, within
+   * EDIT_WINDOW (29 Oct 2026). Free: never counts as a message.
+   */
+  async function editMessage(contactId, messageId, text) {
+    const m = await first('SELECT * FROM chat_messages WHERE id = ? AND contact = ?', [messageId, contactId]);
+    if (!m || !m.mine) throw new Error('Only your own messages can be edited.');
+    if (!m.mid) throw new Error('Messages from before editing existed can\'t be edited.');
+    if (m.deleted) throw new Error('This message was deleted.');
+    if ((m.edits || 0) >= MAX_EDITS) throw new Error(`A message can be edited at most ${MAX_EDITS} times.`);
+    if (now() - m.sent_at >= EDIT_WINDOW) throw new Error('A message can only be edited within 24 hours.');
+    const clean = cleanText(text);
+    if (!clean) throw new Error('Nothing to send. (To remove the message, delete it.)');
+    if (clean === m.text) return;
+    const c = await writableContact(contactId);
+    await sendChange(c, 'msg-edit', { mid: m.mid, text: clean });
+    await run('UPDATE chat_messages SET text = ?, edits = edits + 1 WHERE id = ?', [clean, m.id]);
+    await queueSync({ t: 'msg-edit', peer: c.nickname, mid: m.mid, text: clean });
+  }
+
+  /** Deletes one of my messages for everyone (29 Oct 2026). Always possible; it stays as "deleted". */
+  async function deleteMessage(contactId, messageId) {
+    const m = await first('SELECT * FROM chat_messages WHERE id = ? AND contact = ?', [messageId, contactId]);
+    if (!m || !m.mine) throw new Error('Only your own messages can be deleted.');
+    if (!m.mid) throw new Error('Messages from before deleting existed can\'t be deleted.');
+    if (m.deleted) return;
+    const c = await contactById(contactId);
+    // (a contact who left or blocked me can't be told; it goes here and on my devices anyway)
+    if (c && c.status === STATUS.ACCEPTED && c.theirCode && !c.ended) await sendChange(c, 'msg-delete', { mid: m.mid }).catch(() => {});
+    await run("UPDATE chat_messages SET text = '', deleted = 1 WHERE id = ?", [m.id]);
+    if (c) await queueSync({ t: 'msg-delete', peer: c.nickname, mid: m.mid });
+  }
+
+  /**
+   * A change to a message (edit or delete) from its author, applied here.
+   * `mine` = it's one of my messages (from my other device), else the contact's.
+   * `at` = when the edit was made (the author's clock), for the 24 hours.
+   */
+  async function applyMessageChange(contactId, { mine, mid, text = null, deleted = false, at = now() }) {
+    if (!MID.test(mid || '')) return 'damaged';
+    const m = await first('SELECT * FROM chat_messages WHERE contact = ? AND mine = ? AND mid = ?', [contactId, mine ? 1 : 0, mid]);
+    if (!m) return 'ignored';
+    if (deleted) {
+      await run("UPDATE chat_messages SET text = '', deleted = 1 WHERE id = ?", [m.id]);
+      return mine ? 'synced' : 'changed';
+    }
+    const clean = cleanText(text || '');
+    // Every Hub keeps the limits itself: not after a delete, at most MAX_EDITS times, within 24 hours (+5 min for clocks).
+    if (!clean || m.deleted || (m.edits || 0) >= MAX_EDITS || at - m.sent_at > EDIT_WINDOW + 5 * 60 * 1000) return 'ignored';
+    await run('UPDATE chat_messages SET text = ?, edits = edits + 1 WHERE id = ?', [clean, m.id]);
+    return mine ? 'synced' : 'changed';
   }
 
   async function sendMessage(contactId, text) {
@@ -533,8 +633,9 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     const clean = cleanText(text);
     if (!clean) throw new Error('Nothing to send.');
     const t = now();
+    const mid = newMid();
     try {
-      await sendControl(c, 'text', clean);
+      await sendControl(c, 'text', clean, { mid });
     } catch (e) {
       if (e.status === 403) {
         await run('UPDATE chat_contacts SET ended = 1 WHERE id = ?', [contactId]);
@@ -542,10 +643,10 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       }
       throw e;
     }
-    await run('INSERT INTO chat_messages (contact, mine, text, sent_at, received_at) VALUES (?, 1, ?, ?, ?)', [contactId, clean, t, t]);
+    await run('INSERT INTO chat_messages (contact, mine, text, sent_at, received_at, mid) VALUES (?, 1, ?, ?, ?, ?)', [contactId, clean, t, t, mid]);
     await run('UPDATE chat_contacts SET last_at = ?, ended = 0 WHERE id = ?', [t, contactId]);
     // (my other devices show it too)
-    await queueSync({ t: 'msg', peer: c.nickname, text: clean, sentAt: t });
+    await queueSync({ t: 'msg', peer: c.nickname, text: clean, sentAt: t, mid });
   }
 
   // --- the mailbox -----------------------------------------------------------
@@ -587,7 +688,7 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
 
     // A contact writing from a device we don't know yet (e.g. they linked
     // their phone): ask the postman for my contacts' current devices once.
-    if (!known && (type === 'text' || type === 'contact-accept') && !refreshedThisRun) {
+    if (!known && ['text', 'contact-accept', 'msg-edit', 'msg-delete'].includes(type) && !refreshedThisRun) {
       refreshedThisRun = true;
       for (const c of await listContacts()) if (c.status !== STATUS.BLOCKED) await freshDevices(c);
       known = await contactByDevice(from);
@@ -692,10 +793,17 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
 
     if (type === 'text') {
       if (known.status !== STATUS.ACCEPTED) return 'ignored';
-      await run('INSERT INTO chat_messages (contact, mine, text, sent_at, received_at) VALUES (?, 0, ?, ?, ?)',
-        [known.id, opened.text, opened.sentAt, t]);
+      await run('INSERT INTO chat_messages (contact, mine, text, sent_at, received_at, mid) VALUES (?, 0, ?, ?, ?, ?)',
+        [known.id, opened.text, opened.sentAt, t, opened.mid ?? null]);
       await run('UPDATE chat_contacts SET last_at = ?, unread = unread + 1 WHERE id = ?', [t, known.id]);
       return 'message';
+    }
+    // The contact edited or deleted one of their messages (29 Oct 2026). Only
+    // their own: the message is looked up among the ones FROM this contact.
+    if (type === 'msg-edit' || type === 'msg-delete') {
+      if (known.status !== STATUS.ACCEPTED) return 'ignored';
+      const d = opened.data || {};
+      return applyMessageChange(known.id, { mine: false, mid: d.mid, text: d.text, deleted: type === 'msg-delete', at: opened.sentAt });
     }
     return 'unknown type';
   }
@@ -899,7 +1007,8 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       // (by the contact's nickname: the other device numbers its contacts itself)
       messages: (await all('SELECT * FROM chat_messages ORDER BY id'))
         .filter((m) => nameOf.has(m.contact))
-        .map((m) => ({ peer: nameOf.get(m.contact), mine: m.mine, text: m.text, sent_at: m.sent_at, received_at: m.received_at })),
+        .map((m) => ({ peer: nameOf.get(m.contact), mine: m.mine, text: m.text, sent_at: m.sent_at, received_at: m.received_at,
+          mid: m.mid ?? null, edits: m.edits || 0, deleted: m.deleted || 0 })),
       groups: await all('SELECT * FROM chat_groups'),
       groupKeys: await all('SELECT * FROM chat_group_keys'),
       groupPosts: await all('SELECT * FROM chat_group_posts ORDER BY id'),
@@ -998,12 +1107,26 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
   }
 
   /** A 1:1 message, unless it's here already. */
-  async function mergeMessage(contactId, { mine, text, sentAt, receivedAt }) {
-    const clean = typeof text === 'string' ? cleanText(text) : '';
-    if (!clean || !Number.isFinite(sentAt)) return false;
-    if (await first('SELECT id FROM chat_messages WHERE contact = ? AND mine = ? AND text = ? AND sent_at = ?', [contactId, mine ? 1 : 0, clean, sentAt])) return false;
-    await run('INSERT INTO chat_messages (contact, mine, text, sent_at, received_at) VALUES (?, ?, ?, ?, ?)',
-      [contactId, mine ? 1 : 0, clean, sentAt, Number.isFinite(receivedAt) ? receivedAt : now()]);
+  async function mergeMessage(contactId, { mine, text, sentAt, receivedAt, mid = null, edits = 0, deleted = false }) {
+    const id = MID.test(mid || '') ? mid : null;
+    const isDeleted = !!deleted && !!id;
+    const clean = isDeleted ? '' : typeof text === 'string' ? cleanText(text) : '';
+    if ((!clean && !isDeleted) || !Number.isFinite(sentAt)) return false;
+    const editCount = Math.min(MAX_EDITS, Math.max(0, Number(edits) || 0));
+    if (id) {
+      // (with an id: the same message, even if it was edited or deleted since)
+      const here = await first('SELECT * FROM chat_messages WHERE contact = ? AND mine = ? AND mid = ?', [contactId, mine ? 1 : 0, id]);
+      if (here) {
+        // The other copy knows more (edited more often, or deleted): take that.
+        if (isDeleted && !here.deleted) await run("UPDATE chat_messages SET text = '', deleted = 1 WHERE id = ?", [here.id]);
+        else if (!isDeleted && !here.deleted && editCount > (here.edits || 0)) await run('UPDATE chat_messages SET text = ?, edits = ? WHERE id = ?', [clean, editCount, here.id]);
+        return false;
+      }
+    } else if (await first('SELECT id FROM chat_messages WHERE contact = ? AND mine = ? AND text = ? AND sent_at = ?', [contactId, mine ? 1 : 0, clean, sentAt])) {
+      return false;
+    }
+    await run('INSERT INTO chat_messages (contact, mine, text, sent_at, received_at, mid, edits, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [contactId, mine ? 1 : 0, clean, sentAt, Number.isFinite(receivedAt) ? receivedAt : now(), id, editCount, isDeleted ? 1 : 0]);
     return true;
   }
 
@@ -1039,7 +1162,9 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     }
     for (const m of arr(data.messages)) {
       const id = typeof m?.peer === 'string' ? idOf.get(nicknameKey(m.peer)) : null;
-      if (id) await mergeMessage(id, { mine: !!m.mine, text: m.text, sentAt: Number(m.sent_at), receivedAt: Number(m.received_at) });
+      if (id) {
+        await mergeMessage(id, { mine: !!m.mine, text: m.text, sentAt: Number(m.sent_at), receivedAt: Number(m.received_at), mid: m.mid, edits: m.edits, deleted: !!m.deleted });
+      }
     }
     for (const c of await all('SELECT id FROM chat_contacts')) {
       const last = await first('SELECT MAX(received_at) AS t FROM chat_messages WHERE contact = ?', [c.id]);
@@ -1049,9 +1174,19 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     const groupOk = (x) => HEX32.test(x?.grp || '');
     for (const p of arr(data.groupPosts)) {
       if (!groupOk(p) || typeof p.text !== 'string') continue;
-      await run('INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [p.grp, Number(p.seq) || 0, typeof p.pid === 'string' ? p.pid : null, String(p.author ?? ''), p.nickname ?? null, p.text,
-          Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine || isMe(p.author) ? 1 : 0]);
+      const editIds = typeof p.edit_ids === 'string' ? p.edit_ids : null;
+      const r = await run(
+        'INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine, account, edit_ids, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [p.grp, Number(p.seq) || 0, typeof p.pid === 'string' ? p.pid : null, String(p.author ?? ''), p.nickname ?? null, p.deleted ? '' : p.text,
+          Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine || isMe(p.author) ? 1 : 0, p.account ?? null, editIds, p.deleted ? 1 : 0]);
+      if (!r?.changes) {
+        // Already here: the other copy may know more (edited more often, or deleted).
+        const here = await first('SELECT * FROM chat_group_posts WHERE grp = ? AND seq = ?', [p.grp, Number(p.seq) || 0]);
+        if (here && p.deleted && !here.deleted) await run("UPDATE chat_group_posts SET text = '', deleted = 1 WHERE id = ?", [here.id]);
+        else if (here && !p.deleted && !here.deleted && editCount(p) > editCount(here)) {
+          await run('UPDATE chat_group_posts SET text = ?, edit_ids = ? WHERE id = ?', [p.text, editIds, here.id]);
+        }
+      }
     }
     for (const p of arr(data.groupPolls)) {
       if (!groupOk(p) || typeof p.pid !== 'string' || typeof p.question !== 'string' || typeof p.options !== 'string') continue;
@@ -1144,10 +1279,17 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       await mergeHistory(data);
       return 'history';
     }
+    if (d.t === 'msg-edit' || d.t === 'msg-delete') {
+      // (I edited or deleted one of my messages on another of my devices)
+      const c = typeof d.peer === 'string' ? await contactByName(d.peer) : null;
+      if (!c) return 'ignored';
+      await applyMessageChange(c.id, { mine: true, mid: d.mid, text: d.text, deleted: d.t === 'msg-delete' });
+      return 'synced';
+    }
     if (d.t === 'msg') {
       const c = typeof d.peer === 'string' ? await contactByName(d.peer) : null;
       if (!c) return 'ignored';
-      if (await mergeMessage(c.id, { mine: true, text: d.text, sentAt: Number(d.sentAt), receivedAt: Number(d.sentAt) })) {
+      if (await mergeMessage(c.id, { mine: true, text: d.text, sentAt: Number(d.sentAt), receivedAt: Number(d.sentAt), mid: d.mid })) {
         await run('UPDATE chat_contacts SET last_at = MAX(last_at, ?), ended = 0 WHERE id = ?', [Number(d.sentAt), c.id]);
       }
       return 'synced';
@@ -1433,11 +1575,17 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
           if (!mine && r?.changes) added += 1;
           continue;
         }
+        // (the author's account, from the badge: their other devices may edit or delete it too)
+        const account = checkBadge(item.post.badge, { postmanPublicKey: pk, holder: item.post.from, at: item.receivedAt }).account ?? null;
         const r = await run(
-          'INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [g.id, item.seq, item.post.id ?? null, item.post.from, await authorName(g.id, item.post.from, runState), item.post.text, item.post.writtenAt, item.receivedAt, mine ? 1 : 0],
+          'INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine, account) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [g.id, item.seq, item.post.id ?? null, item.post.from, await authorName(g.id, item.post.from, runState), item.post.text, item.post.writtenAt, item.receivedAt, mine ? 1 : 0, account],
         );
         if (!mine && r?.changes) added += 1;
+      }
+      // Edits and deletes (29 Oct 2026): free; only from the post's author.
+      for (const { item, player } of acceptReactions(items, { postmanPublicKey: pk, seen, kinds: ['edit', 'delete'] })) {
+        await applyPostChange(g.id, item, player);
       }
       // Poll answers and "closed" (free; in the order the postman got them, after the polls above).
       for (const { item, player } of acceptReactions(items, { postmanPublicKey: pk, seen, kinds: ['poll-vote', 'poll-close'] })) {
@@ -1465,6 +1613,34 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       if (posts.length < 200) break;
     }
     return total;
+  }
+
+  /**
+   * An edit or delete of a group post, checked and applied (29 Oct 2026):
+   *   - only by the author: the same device, or the same player (account,
+   *     from the badge) on another device;
+   *   - an edit: not after a delete, at most MAX_EDITS times, within
+   *     EDIT_WINDOW of the post (both times from the postman);
+   *   - each edit counts once, also when the mailbox is read again (its id is
+   *     kept with the post).
+   */
+  async function applyPostChange(grp, item, player) {
+    const x = item.post;
+    const p = await first('SELECT * FROM chat_group_posts WHERE grp = ? AND pid = ?', [grp, x.target]);
+    if (!p) return 'ignored';
+    const byAuthor = x.from === p.author || (!!p.account && player === p.account);
+    if (!byAuthor || item.receivedAt < p.received_at) return 'ignored';
+    if (x.kind === 'delete') {
+      if (!p.deleted) await run("UPDATE chat_group_posts SET text = '', deleted = 1 WHERE id = ?", [p.id]);
+      return 'deleted';
+    }
+    let applied = [];
+    try { applied = JSON.parse(p.edit_ids || '[]'); } catch { applied = []; }
+    if (!Array.isArray(applied)) applied = [];
+    if (applied.includes(x.id) || p.deleted || applied.length >= MAX_EDITS || item.receivedAt - p.received_at > EDIT_WINDOW) return 'ignored';
+    applied.push(x.id);
+    await run('UPDATE chat_group_posts SET text = ?, edit_ids = ? WHERE id = ?', [x.text, JSON.stringify(applied), p.id]);
+    return 'edited';
   }
 
   /** The owner's pinned message, checked: it must be signed by one of the owner's devices. */
@@ -1624,11 +1800,71 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
       if (r.mine) x.mine = r.value;
       reactions.set(r.pid, x);
     }
-    return (await all('SELECT * FROM chat_group_posts WHERE grp = ? ORDER BY seq', [id])).map((p) => ({
-      id: p.id, pid: p.pid ?? null, mine: !!p.mine, author: p.author, nickname: p.nickname, text: p.text, writtenAt: p.written_at, receivedAt: p.received_at,
-      // { counts: { '👍': 2, '👎': 1 }, mine: '👍' | '👎' | '' }
-      reactions: (p.pid && reactions.get(p.pid)) || { counts: {}, mine: '' },
-    }));
+    return (await all('SELECT * FROM chat_group_posts WHERE grp = ? ORDER BY seq', [id])).map((p) => {
+      const edits = editCount(p);
+      return {
+        id: p.id, pid: p.pid ?? null, mine: !!p.mine, author: p.author, nickname: p.nickname, text: p.text, writtenAt: p.written_at, receivedAt: p.received_at,
+        // { counts: { '👍': 2, '👎': 1 }, mine: '👍' | '👎' | '' }  (none on a deleted post)
+        reactions: (!p.deleted && p.pid && reactions.get(p.pid)) || { counts: {}, mine: '' },
+        // Editing and deleting (29 Oct 2026)
+        edits, edited: edits > 0, deleted: !!p.deleted,
+        canEdit: !!p.mine && !!p.pid && !p.deleted && edits < MAX_EDITS && now() - p.received_at < EDIT_WINDOW,
+        editsLeft: Math.max(0, MAX_EDITS - edits),
+        canDelete: !!p.mine && !!p.pid && !p.deleted,
+      };
+    });
+  }
+
+  function editCount(p) {
+    try {
+      const list = JSON.parse(p.edit_ids || '[]');
+      return Array.isArray(list) ? list.length : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** My post `pid` in group `id`, for an edit or delete (on any of my devices). */
+  async function myPost(id, pid) {
+    const p = await first('SELECT * FROM chat_group_posts WHERE grp = ? AND pid = ?', [id, pid]);
+    if (!p || !p.mine) throw new Error('Only your own posts can be changed.');
+    return p;
+  }
+
+  /** The current badge, checked (needed to seal anything for a group). */
+  async function freshBadge() {
+    const badge = await getMe('badge');
+    const check = badge ? checkBadge(badge, { postmanPublicKey: await postmanKey(), holder: identity.publicKey, at: now() }) : { ok: false };
+    if (!check.ok) throw new Error('Please sign in again (your weekly check has run out).');
+    return badge;
+  }
+
+  /**
+   * Edits my post (29 Oct 2026): at most MAX_EDITS times, within 24 hours of
+   * posting it. Free: never counts as a post (no daily allowance, no 10-second gap).
+   */
+  async function editGroupPost(id, pid, text) {
+    const g = await myGroup(id);
+    const p = await myPost(id, pid);
+    if (p.deleted) throw new Error('This post was deleted.');
+    if (editCount(p) >= MAX_EDITS) throw new Error(`A post can be edited at most ${MAX_EDITS} times.`);
+    if (now() - p.received_at >= EDIT_WINDOW) throw new Error('A post can only be edited within 24 hours.');
+    const clean = cleanText(text);
+    if (!clean) throw new Error('Nothing to send. (To remove the post, delete it.)');
+    if (clean === p.text) return;
+    const envelope = sealGroupEdit({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, postId: pid, text: clean, badge: await freshBadge(), now: now() });
+    await postman.groupPost(envelope, { reaction: true });
+    await collectGroup(g);
+  }
+
+  /** Deletes my post for everyone (29 Oct 2026). Always possible, free; it stays as "deleted". */
+  async function deleteGroupPost(id, pid) {
+    const g = await myGroup(id);
+    const p = await myPost(id, pid);
+    if (p.deleted) return;
+    const envelope = sealGroupDelete({ group: { id: g.id, epoch: g.epoch, key: g.key }, from: identity, postId: pid, badge: await freshBadge(), now: now() });
+    await postman.groupPost(envelope, { reaction: true });
+    await collectGroup(g);
   }
 
   /** When this device may post in the group again (by the holdings in its badge). */
@@ -2111,8 +2347,9 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     }
     for (const p of Array.isArray(data.groupPosts) ? data.groupPosts : []) {
       if (typeof p.grp !== 'string' || typeof p.text !== 'string') continue;
-      await run('INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [p.grp, Number(p.seq) || 0, typeof p.pid === 'string' ? p.pid : null, String(p.author ?? ''), p.nickname ?? null, p.text, Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine ? 1 : 0]);
+      await run('INSERT OR IGNORE INTO chat_group_posts (grp, seq, pid, author, nickname, text, written_at, received_at, mine, account, edit_ids, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [p.grp, Number(p.seq) || 0, typeof p.pid === 'string' ? p.pid : null, String(p.author ?? ''), p.nickname ?? null, p.deleted ? '' : p.text, Number(p.written_at) || 0, Number(p.received_at) || 0, p.mine ? 1 : 0,
+          p.account ?? null, typeof p.edit_ids === 'string' ? p.edit_ids : null, p.deleted ? 1 : 0]);
     }
     for (const p of Array.isArray(data.groupPolls) ? data.groupPolls : []) {
       if (typeof p.grp !== 'string' || typeof p.pid !== 'string' || typeof p.question !== 'string' || typeof p.options !== 'string') continue;
@@ -2163,8 +2400,9 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     for (const m of data.messages) {
       const contact = idMap.get(m.contact);
       if (!contact || typeof m.text !== 'string') continue;
-      await run('INSERT INTO chat_messages (contact, mine, text, sent_at, received_at) VALUES (?, ?, ?, ?, ?)',
-        [contact, m.mine ? 1 : 0, m.text, Number(m.sent_at) || 0, Number(m.received_at) || 0]);
+      await run('INSERT INTO chat_messages (contact, mine, text, sent_at, received_at, mid, edits, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [contact, m.mine ? 1 : 0, m.deleted ? '' : m.text, Number(m.sent_at) || 0, Number(m.received_at) || 0,
+          MID.test(m.mid || '') ? m.mid : null, Math.min(MAX_EDITS, Number(m.edits) || 0), m.deleted ? 1 : 0]);
     }
   }
 
@@ -2196,6 +2434,8 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     leaveGroup,
     groupPosts,
     postToGroup,
+    editGroupPost,
+    deleteGroupPost,
     nextGroupPostAt,
     setPinned,
     setPins,
@@ -2229,6 +2469,8 @@ export async function createMessenger({ db, postmanUrl, deviceLabel = '', device
     removeContact,
     messages,
     sendMessage,
+    editMessage,
+    deleteMessage,
     checkMail,
     leave,
     // linked devices (27 Oct 2026)

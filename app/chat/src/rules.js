@@ -34,6 +34,15 @@ export function cleanText(text) {
 // (Raphael, 24 Oct 2026: "that's not how people chat" - instead of one post
 // every 24 h ÷ NFTs, a daily allowance that can be used in bursts.)
 
+/**
+ * Editing and deleting (29 Oct 2026, Raphael): a message or group post can
+ * be edited at most MAX_EDITS times, within EDIT_WINDOW of sending it;
+ * deleting is always possible. Neither counts towards the daily posts (in
+ * either direction). Every Hub applies these limits itself.
+ */
+export const MAX_EDITS = 2;
+export const EDIT_WINDOW = DAY;
+
 /** At least this long between two posts of the same player (against flooding). */
 export const MIN_POST_INTERVAL = 10 * 1000;
 

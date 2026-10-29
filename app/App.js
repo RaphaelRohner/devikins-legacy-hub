@@ -108,7 +108,7 @@ import WithdrawalTrackerView from './src/components/WithdrawalTrackerView';
 import WalletOverviewView from './src/components/WalletOverviewView';
 import ShortcutsHelp from './src/components/ShortcutsHelp';
 import ChatDock from './src/components/ChatDock';
-import { openChatDock, setHubReady, useChatUnread, setAppScreen, setChatScreenOpener } from './src/web/chatDock';
+import { openChatDock, setHubReady, useChatUnread, setAppScreen, setChatScreenOpener, setChatUnread } from './src/web/chatDock';
 import { useKeyboardShortcuts, showShortcutsHelp } from './src/web/shortcuts';
 import { useWebKeyboardRoom } from './src/web/keyboardRoom';
 import GettingStartedCard, { loadGuideState, setGuideHidden, GUIDE_KEYS } from './src/components/GettingStartedCard';
@@ -1521,7 +1521,8 @@ Continue anyway?`
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
-        <ChatView onClose={() => goToScreen(lastCollectionScreen)} />
+        {/* (onUnreadChange: the count on the 💬 handle and in the menu stays right while reading - 29 Oct 2026) */}
+        <ChatView onClose={() => goToScreen(lastCollectionScreen)} onUnreadChange={setChatUnread} />
       </SafeAreaView>
     );
   }

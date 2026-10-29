@@ -459,6 +459,8 @@ test('reactions: free (no allowance, no 10-second gap), one per player and post,
   assert.equal(await bob.reactToPost(gid, post.pid, '👍'), '👍');
   assert.equal(await bob.reactToPost(gid, post.pid, 'dvk:laugh:ochran'), 'dvk:laugh:ochran'); // the Hub's own emojis (25 Oct 2026)
   await assert.rejects(bob.reactToPost(gid, post.pid, 'dvk:<b>:x'), /Unknown reaction/);
+  assert.equal(await bob.reactToPost(gid, post.pid, '+1'), '+1'); // +1 and 💯 (29 Oct 2026)
+  assert.equal(await bob.reactToPost(gid, post.pid, '💯'), '💯');
   assert.equal(await bob.reactToPost(gid, post.pid, '❤️'), '❤️'); // switched
   await assert.rejects(bob.reactToPost(gid, post.pid, '🍕'), /Unknown reaction/);
   assert.deepEqual((await bob.groupPosts(gid))[0].reactions, { counts: { '❤️': 1 }, mine: '❤️' });

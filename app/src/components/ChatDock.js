@@ -9,15 +9,18 @@
  *   - It steps aside while the keyboard is open (so it never sits on what
  *     you're typing), on the chat screen itself, and while the Hub starts.
  *     Pop-ups (the ☰ menu, Kleverscan, pictures) cover it.
- *   - No unread count yet: in the app the chat only checks for new mail
- *     while it's open.
+ *   - Unread count (29 Oct 2026): a small red number on the handle, the
+ *     same as on the menu's "Chat (3)". While the Hub is open (not on the
+ *     chat), it looks for new mail every few minutes -
+ *     src/api/chatUnreadWatch.js.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Keyboard, PanResponder, StyleSheet, Text, useWindowDimensions } from 'react-native';
+import { Animated, Keyboard, PanResponder, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Storage } from 'expo-sqlite/kv-store';
 import { useTheme } from '../context/ThemeContext';
-import { openChatScreen, useAppScreen } from '../web/chatDock';
+import { openChatScreen, useAppScreen, useChatUnread } from '../web/chatDock';
+import { startAppUnreadWatch } from '../api/chatUnreadWatch';
 
 const HEIGHT = 52;
 const WIDTH = 44;
@@ -31,6 +34,23 @@ export default function ChatDock() {
   const { height } = useWindowDimensions();
   const screen = useAppScreen();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const unread = useChatUnread();
+
+  // The unread count: look for new mail now and then while the Hub is open
+  // (not on the chat screen - there the chat counts by itself).
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
+  const watch = useRef(null);
+  useEffect(() => {
+    watch.current = startAppUnreadWatch(() => screenRef.current === 'chat');
+    return () => watch.current?.stop();
+  }, []);
+  // Just left the chat screen: what was read there no longer counts.
+  const wasOnChat = useRef(false);
+  useEffect(() => {
+    if (wasOnChat.current && screen !== 'chat') watch.current?.afterChat();
+    wasOnChat.current = screen === 'chat';
+  }, [screen]);
 
   // Where it may go: below the top row, above the system buttons.
   const minY = insets.top + 72;
@@ -98,13 +118,18 @@ export default function ChatDock() {
       style={[styles.handle, { backgroundColor: colors.primary, transform: [{ translateY: y }] }]}
       accessible
       accessibilityRole="button"
-      accessibilityLabel="Chat"
+      accessibilityLabel={unread > 0 ? `Chat, ${unread} new` : 'Chat'}
       accessibilityHint="Opens the chat. Drag up or down to move this button."
       accessibilityActions={[{ name: 'activate' }]}
       onAccessibilityAction={() => openChatScreen()}
       testID="chat-handle"
     >
       <Text style={styles.icon}>💬</Text>
+      {unread > 0 ? (
+        <View style={[styles.badge, { backgroundColor: colors.cancelText }]} testID="chat-handle-count">
+          <Text style={styles.badgeText}>{unread > 99 ? '99+' : unread}</Text>
+        </View>
+      ) : null}
     </Animated.View>
   );
 }
@@ -129,4 +154,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   icon: { fontSize: 20 },
+  // (like the red number on the website's ☰ button, App.js menuBadge)
+  badge: {
+    position: 'absolute',
+    top: 2,
+    left: 0,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
 });

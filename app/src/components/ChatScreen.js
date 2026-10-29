@@ -482,6 +482,8 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
         onPost={(text) => act(() => messenger.postToGroup(openGroup.id, text))}
         onPins={(pins) => act(() => messenger.setPins(openGroup.id, pins))}
         onReact={(pid, emoji) => act(() => messenger.reactToPost(openGroup.id, pid, emoji))}
+        onEditPost={(pid, text) => act(() => messenger.editGroupPost(openGroup.id, pid, text))}
+        onDeletePost={(pid) => act(() => messenger.deleteGroupPost(openGroup.id, pid))}
         votes={groupVotes}
         polls={groupPolls}
         onStartPoll={(question, options, durationMs) => act(() => messenger.startPoll(openGroup.id, question, options, durationMs))}
@@ -528,7 +530,16 @@ export default function ChatView({ onClose, onUnreadChange, onSetUpChange, visib
               {open.status === CONTACT_STATUS.OUTGOING ? `Waiting for ${open.nickname} to accept your request.` : 'No messages yet.'}
             </Text>
           ) : null}
-          <ChatMessages items={thread.map((m) => ({ id: m.id, mine: m.mine, author: m.mine ? 'me' : 'them', text: m.text, at: m.mine ? m.sentAt : m.receivedAt }))} />
+          <ChatMessages
+            busy={busy}
+            items={thread.map((m) => ({
+              id: m.id, mine: m.mine, author: m.mine ? 'me' : 'them', text: m.text, at: m.mine ? m.sentAt : m.receivedAt,
+              // (editing and deleting my own messages, 29 Oct 2026)
+              edited: m.edited, deleted: m.deleted, canEdit: m.canEdit, canDelete: m.canDelete, editsLeft: m.editsLeft,
+            }))}
+            onEdit={(m, text) => act(() => messenger.editMessage(openId, m.id, text))}
+            onDelete={(m) => act(() => messenger.deleteMessage(openId, m.id))}
+          />
         </ScrollView>
         {open.ended ? (
           <Text style={[styles.note, styles.pad, { color: colors.secondaryText }]}>

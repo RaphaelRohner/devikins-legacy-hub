@@ -184,6 +184,28 @@ test('two players: sign in, find each other, request, accept, write, block', asy
   await alice.page.getByTestId('chat-send').click();
   await expect(bob.page.getByText('Back again')).toBeVisible();
 
+  // Editing and deleting (29 Oct 2026): the mouse over her message shows ⋯;
+  // Alice edits it (Bob sees the new text and "edited"), then deletes it
+  const backAgain = alice.page.getByTestId('chat-message').filter({ hasText: 'Back again' });
+  await backAgain.hover();
+  await alice.page.getByTestId('chat-msg-more').last().click();
+  await alice.page.getByTestId('chat-msg-edit').click();
+  await alice.page.getByTestId('chat-edit-input').fill('Back again :)');
+  await alice.page.getByTestId('chat-edit-save').click();
+  await expect(alice.page.getByTestId('chat-message').filter({ hasText: 'Back again :)' })).toContainText('edited');
+  await expect(bob.page.getByTestId('chat-message').filter({ hasText: 'Back again :)' })).toContainText('edited', { timeout: 30_000 });
+  await expect(bob.page.getByTestId('chat-message').filter({ hasText: 'Back again' })).toHaveCount(1); // (replaced, not added)
+  // (only Bob's own message has options on his side, not Alice's)
+  await expect(bob.page.getByTestId('chat-msg-more')).toHaveCount(1);
+  await alice.page.getByTestId('chat-message').filter({ hasText: 'Back again :)' }).hover();
+  await alice.page.getByTestId('chat-msg-more').last().click();
+  await alice.page.getByTestId('chat-msg-delete').click();
+  await expect(alice.page.getByText('Delete for everyone?')).toBeVisible();
+  await alice.page.getByTestId('chat-msg-delete-yes').click();
+  await expect(alice.page.getByTestId('chat-message-deleted')).toHaveCount(1);
+  await expect(bob.page.getByTestId('chat-message-deleted')).toHaveCount(1, { timeout: 30_000 });
+  await expect(bob.page.getByText('Back again :)')).toHaveCount(0);
+
   // History stays after a reload (it's kept in the browser)
   await alice.page.reload();
   const welcome = alice.page.getByTestId('welcome-box');
@@ -370,6 +392,10 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await alice.page.getByTestId('chat-react').last().click();
   await alice.page.getByTestId('chat-reaction-picker').getByText('👍').click();
   await expect(alice.page.getByTestId('chat-reaction')).toHaveText('👍 1');
+  // +1 (letters, drawn bold) – added 29 Oct 2026 with 💯
+  await alice.page.getByTestId('chat-react').last().click();
+  await alice.page.getByLabel('React with +1').click();
+  await expect(alice.page.getByTestId('chat-reaction')).toHaveText('+1 1');
   await alice.page.getByTestId('chat-react').last().click();
   await alice.page.getByTestId('chat-reaction-picker').getByText('🔥').click();
   await expect(alice.page.getByTestId('chat-reaction')).toHaveText('🔥 1');
@@ -380,6 +406,26 @@ test('groups: create with pinned rules, another player joins (let in by the owne
   await alice.page.getByLabel('React with Laughing (Ochran)').click();
   await expect(alice.page.getByTestId('chat-reaction')).toHaveAccessibleName('Laughing (Ochran) 1, yours');
   await expect(bob.page.getByTestId('chat-reaction')).toHaveAccessibleName('Laughing (Ochran) 1', { timeout: 30_000 });
+
+  // Editing and deleting a post (29 Oct 2026): free - Bob's posts left for today stay the same
+  await bob.page.getByTestId('chat-message').filter({ hasText: 'Hi everyone' }).hover();
+  await bob.page.getByTestId('chat-msg-more').click();
+  await expect(bob.page.getByTestId('chat-msg-options')).toBeVisible();
+  await bob.page.screenshot({ path: test.info().outputPath('post-options.png') });
+  await bob.page.getByTestId('chat-msg-edit').click();
+  await bob.page.getByTestId('chat-edit-input').fill('Hi everyone, I breed Fire Devikins');
+  await bob.page.getByTestId('chat-edit-save').click();
+  await expect(bob.page.getByTestId('chat-message').filter({ hasText: 'I breed Fire Devikins' })).toContainText('edited');
+  await expect(alice.page.getByTestId('chat-message').filter({ hasText: 'I breed Fire Devikins' })).toContainText('edited', { timeout: 30_000 });
+  await expect(bob.page.getByTestId('chat-group-limit')).toContainText('9 of 10 posts left for today');
+  await bob.page.getByTestId('chat-message').filter({ hasText: 'I breed Fire Devikins' }).hover();
+  await bob.page.getByTestId('chat-msg-more').click();
+  await expect(bob.page.getByTestId('chat-msg-edit')).toHaveText('✏️ Edit (last time)');
+  await bob.page.getByTestId('chat-msg-delete').click();
+  await bob.page.getByTestId('chat-msg-delete-yes').click();
+  await expect(alice.page.getByTestId('chat-message-deleted')).toHaveCount(1, { timeout: 30_000 });
+  await expect(alice.page.getByTestId('chat-reaction')).toHaveCount(0); // (its reactions go with it)
+  await expect(bob.page.getByTestId('chat-group-limit')).toContainText('9 of 10 posts left for today');
 
   await alice.context.close();
   await bob.context.close();

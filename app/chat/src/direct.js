@@ -27,6 +27,8 @@ export const DIRECT_KIND = 14;
 /** Envelopes bigger than this are refused before any work (against floods). */
 export const MAX_ENVELOPE_CHARS = 64 * 1024;
 const TYPES = /^[a-z][a-z0-9-]{0,31}$/;
+/** A message's own id (29 Oct 2026): 16 random bytes as hex. */
+export const MID = /^[0-9a-f]{32}$/;
 
 /**
  * sealDirect — envelopes for one message.
@@ -35,9 +37,13 @@ const TYPES = /^[a-z][a-z0-9-]{0,31}$/;
  *   ownDevices: the sender's OTHER devices (they get a copy), optional
  *   type:       'text' (default) or a control type
  *   body:       the text, or for control types a plain object
+ *   mid:        optional: the message's own id (32 hex characters), so it
+ *               can be edited or deleted later (29 Oct 2026). Older Hubs
+ *               ignore the extra tag.
  * → [{ to, envelope }]
  */
-export function sealDirect({ from, toDevices, ownDevices = [], type = 'text', body }) {
+export function sealDirect({ from, toDevices, ownDevices = [], type = 'text', body, mid = null }) {
+  if (mid !== null && !MID.test(mid)) throw new Error('Damaged message id.');
   if (!TYPES.test(type)) throw new Error('Unknown message type.');
   const content = type === 'text' ? cleanText(body) : JSON.stringify(body ?? {});
   if (!content) throw new Error('Nothing to send.');
@@ -47,14 +53,14 @@ export function sealDirect({ from, toDevices, ownDevices = [], type = 'text', bo
   const rumor = {
     kind: DIRECT_KIND,
     content,
-    tags: [['devi', type], ...(toDevices || []).map((p) => ['p', p])],
+    tags: [['devi', type], ...(mid ? [['mid', mid]] : []), ...(toDevices || []).map((p) => ['p', p])],
   };
   return receivers.map((to) => ({ to, envelope: wrapEvent(rumor, secret, to) }));
 }
 
 /**
  * openDirect — opens an envelope meant for this device.
- * → { from, type, text | data, sentAt } ; throws if it isn't genuine.
+ * → { from, type, text | data, sentAt, mid } ; throws if it isn't genuine.
  */
 export function openDirect(envelope, identity) {
   if (!envelope || typeof envelope !== 'object' || JSON.stringify(envelope).length > MAX_ENVELOPE_CHARS) {
@@ -66,7 +72,8 @@ export function openDirect(envelope, identity) {
   if (getEventHash(rumor) !== rumor.id) throw new Error('The message was changed.');
   const type = (rumor.tags || []).find((t) => t[0] === 'devi')?.[1] || 'text';
   if (!TYPES.test(type)) throw new Error('Unknown message type.');
-  const base = { from: rumor.pubkey, type, sentAt: rumor.created_at * 1000 };
+  const mid = (rumor.tags || []).find((t) => t[0] === 'mid')?.[1];
+  const base = { from: rumor.pubkey, type, sentAt: rumor.created_at * 1000, mid: MID.test(mid || '') ? mid : null };
   if (type === 'text') return { ...base, text: cleanText(rumor.content) };
   return { ...base, data: JSON.parse(rumor.content) };
 }

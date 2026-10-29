@@ -616,7 +616,7 @@ function MembersPanel({ group, me, votes, busy, loadMembers, onOpenVote, onLetBa
 }
 
 export default function ChatGroupView({
-  group, me, posts, next, busy, error, onBack, onPost, onPins, onReact, onLeave, votes, polls, loadMembers, onOpenVote, onCastVote, onLetBackIn, onUpdateHoldings,
+  group, me, posts, next, busy, error, onBack, onPost, onPins, onReact, onEditPost, onDeletePost, onLeave, votes, polls, loadMembers, onOpenVote, onCastVote, onLetBackIn, onUpdateHoldings,
   onStartPoll, onVotePoll, onClosePoll,
 }) {
   const [showMembers, setShowMembers] = useState(false);
@@ -795,8 +795,14 @@ export default function ChatGroupView({
           showAuthors
           busy={busy}
           onReact={onReact}
+          onEdit={onEditPost ? (m, text) => onEditPost(m.pid, text) : null}
+          onDelete={onDeletePost ? (m) => onDeletePost(m.pid) : null}
           items={[
-            ...posts.map((p) => ({ id: p.id, pid: p.pid, reactions: p.reactions, mine: p.mine, author: p.author, nickname: p.nickname, text: p.text, at: p.receivedAt })),
+            ...posts.map((p) => ({
+              id: p.id, pid: p.pid, reactions: p.reactions, mine: p.mine, author: p.author, nickname: p.nickname, text: p.text, at: p.receivedAt,
+              // (editing and deleting my own posts, 29 Oct 2026)
+              edited: p.edited, deleted: p.deleted, canEdit: p.canEdit, canDelete: p.canDelete, editsLeft: p.editsLeft,
+            })),
             // New polls show as a line in the chat too; a tap opens them above (25 Oct 2026)
             ...(polls || []).map((p) => ({
               id: `poll-${p.id}`,

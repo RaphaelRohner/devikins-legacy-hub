@@ -41,7 +41,9 @@ export const MAX_GROUP_ENVELOPE_CHARS = 64 * 1024;
  * player's latest reaction on a post counts.
  */
 export const GROUP_REACTION_KIND = 7;
-export const REACTIONS = ['👍', '👎', '❤️', '😂', '😮', '🔥'];
+// (+1 and 💯 added 29 Oct 2026 – Raphael: 👍 reads as "I like it", a literal
+// +1 says "I agree and want to push the post"; 💯 is plain agreement too)
+export const REACTIONS = ['👍', '+1', '💯', '👎', '❤️', '😂', '😮', '🔥'];
 export const REACTION_VALUES = [...REACTIONS, ''];
 /**
  * The Hub's own emojis (25 Oct 2026): short codes like "dvk:laugh:ochran"
@@ -64,6 +66,17 @@ export const isReactionValue = (v) => REACTION_VALUES.includes(v) || (typeof v =
 export const GROUP_POLL_KIND = 1068;
 export const GROUP_POLL_VOTE_KIND = 1018;
 export const GROUP_POLL_CLOSE_KIND = 21068;
+/**
+ * Editing and deleting a post (29 Oct 2026, Raphael): sealed in the group
+ * mailbox like a reaction (free, never a post). Every member's Hub applies
+ * them only if they come from the post's author (the same device, or
+ * another device of the same player - by the badge), an edit at most
+ * MAX_EDITS times and within EDIT_WINDOW (rules.js), counted by the
+ * postman's receive times. Nostr's kind for a deletion (NIP-09) and our own
+ * number for an edit. Older Hubs can't open these and skip them.
+ */
+export const GROUP_EDIT_KIND = 21009;
+export const GROUP_DELETE_KIND = 5;
 export const POLL_MIN_OPTIONS = 2;
 export const POLL_MAX_OPTIONS = 6;
 export const POLL_MAX_OPTION_CHARS = 80;
@@ -113,6 +126,20 @@ export function sealGroupPollVote({ group, from, pollId, option, badge, now = Da
   const choice = option === '' ? '' : String(option);
   if (choice !== '' && !/^[0-5]$/.test(choice)) throw new Error('Unknown answer.');
   return sealEvent({ group, from, badge, now, kind: GROUP_POLL_VOTE_KIND, content: '', tags: [['e', pollId], ['response', choice]] });
+}
+
+/** sealGroupEdit — the new text for my post `postId`. */
+export function sealGroupEdit({ group, from, postId, text, badge, now = Date.now() }) {
+  if (!HEX64.test(postId || '')) throw new Error('Unknown post.');
+  const content = cleanText(text);
+  if (!content) throw new Error('Nothing to send.');
+  return sealEvent({ group, from, badge, now, kind: GROUP_EDIT_KIND, content, tags: [['e', postId]] });
+}
+
+/** sealGroupDelete — removes my post `postId` for everyone. */
+export function sealGroupDelete({ group, from, postId, badge, now = Date.now() }) {
+  if (!HEX64.test(postId || '')) throw new Error('Unknown post.');
+  return sealEvent({ group, from, badge, now, kind: GROUP_DELETE_KIND, content: '', tags: [['e', postId]] });
 }
 
 /** sealGroupPollClose — the creator ends poll `pollId` now. */
@@ -214,7 +241,7 @@ export function openGroupPost(envelope, { groupId, keys }) {
   const key = keys && keys[envelope.epoch];
   if (!key) return null;
   const post = JSON.parse(nip44.decrypt(envelope.payload, hexToBytes(key)));
-  const KINDS = [GROUP_POST_KIND, GROUP_REACTION_KIND, GROUP_POLL_KIND, GROUP_POLL_VOTE_KIND, GROUP_POLL_CLOSE_KIND];
+  const KINDS = [GROUP_POST_KIND, GROUP_REACTION_KIND, GROUP_POLL_KIND, GROUP_POLL_VOTE_KIND, GROUP_POLL_CLOSE_KIND, GROUP_EDIT_KIND, GROUP_DELETE_KIND];
   if (!KINDS.includes(post.kind) || !verifyEvent(post)) throw new Error('The post was changed.');
   if (tag(post, 'h') !== groupId || Number(tag(post, 'epoch')) !== envelope.epoch) throw new Error('The post was moved from elsewhere.');
   let badge = null;
@@ -235,6 +262,14 @@ export function openGroupPost(envelope, { groupId, keys }) {
     const option = tag(post, 'response') ?? '';
     if (option !== '' && !/^[0-5]$/.test(option)) throw new Error('Not a poll answer.');
     return { kind: 'poll-vote', ...base, target, option: option === '' ? null : Number(option) };
+  }
+  if (post.kind === GROUP_EDIT_KIND || post.kind === GROUP_DELETE_KIND) {
+    const target = tag(post, 'e');
+    if (!HEX64.test(target || '')) throw new Error('Not about a post.');
+    if (post.kind === GROUP_DELETE_KIND) return { kind: 'delete', ...base, target };
+    const text = cleanText(post.content);
+    if (!text) throw new Error('An empty edit.');
+    return { kind: 'edit', ...base, target, text };
   }
   if (post.kind === GROUP_REACTION_KIND) {
     const target = tag(post, 'e');
@@ -289,8 +324,8 @@ export function acceptPosts(items, { postmanPublicKey, lastAccepted = {}, blocke
   return { shown, dropped };
 }
 
-// Free: they don't use the daily allowance (reactions, poll answers, closing a poll).
-const FREE_KINDS = ['reaction', 'poll-vote', 'poll-close'];
+// Free: they don't use the daily allowance (reactions, poll answers, closing a poll; edits and deletes, 29 Oct 2026).
+const FREE_KINDS = ['reaction', 'poll-vote', 'poll-close', 'edit', 'delete'];
 
 /**
  * acceptReactions — which opened reactions count: a valid badge at the time

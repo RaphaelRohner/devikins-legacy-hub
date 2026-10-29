@@ -16,12 +16,22 @@
  *     opens 👍 👎 ❤️ 😂 😮 🔥; the counts show under the bubble, yours
  *     highlighted - tap it again to take it back, another one to switch.
  *
+ *   - editing and deleting my own messages (29 Oct 2026, Raphael: "like in
+ *     Telegram"): on a phone, tap or keep a finger on your message; on the
+ *     website, move the mouse over it and click ⋯. The options: ✏️ Edit
+ *     (at most twice, within 24 hours) and 🗑️ Delete (always, after a
+ *     "really?"). An edited message shows "edited" next to its time; a
+ *     deleted one stays as "Message deleted".
+ *
  * items: [{ id, mine, author (who - for grouping and colour), nickname, text, at,
- *           pid, reactions: { counts: { emoji: n }, mine: emoji | '' } }]
+ *           pid, reactions: { counts: { emoji: n }, mine: emoji | '' },
+ *           edited, deleted, canEdit, canDelete, editsLeft }]
  * onReact(pid, emoji) - reactions on (groups); left out: none (1:1 chats)
+ * onEdit(item, text) / onDelete(item) - editing and deleting my own messages
+ *   (both chats); each returns a promise of true when it worked
  */
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Pressable, Platform, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { REACTIONS } from '../../chat/src/group.js';
 import { ANCESTRIES, HUB_FACES, isHubEmoji, hubEmojiLabel } from '../constants/hubEmojis';
@@ -43,6 +53,8 @@ function ReactionGlyph({ value, size }) {
   if (isHubEmoji(value)) {
     return <HubEmojiImage code={value} size={size} />;
   }
+  // ("+1" is letters, not an emoji: bold, so it reads as a sign)
+  if (value === '+1') return <Text style={{ fontSize: size * 0.8, fontWeight: '800' }}>+1</Text>;
   return <Text style={{ fontSize: size * 0.85 }}>{value}</Text>;
 }
 
@@ -84,6 +96,14 @@ function clock(ms) {
   return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+// Blank room at the end of a message for the time shown in the bubble's
+// corner: one normal space (so the room may move to its own line), then
+// "figure spaces" (U+2007, each as wide as a digit and never visible) -
+// a few more than the time has characters, for the gap and for "PM".
+function timeRoom(time) {
+  return ' ' + '\u2007'.repeat(time.length + 2);
+}
+
 export function Avatar({ name, size = 32 }) {
   return (
     <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: NAME_COLORS_LIGHT[colorIndex(name)] }]}>
@@ -92,9 +112,20 @@ export function Avatar({ name, size = 32 }) {
   );
 }
 
-export default function ChatMessages({ items, showAuthors = false, onReact = null, busy = false }) {
+export default function ChatMessages({ items, showAuthors = false, onReact = null, onEdit = null, onDelete = null, busy = false }) {
   const { colors, isDark } = useTheme();
   const [pickerFor, setPickerFor] = useState(null);
+  // Editing and deleting (29 Oct 2026): the message whose options are open,
+  // the one under the mouse (website), the one being edited (and its text),
+  // and the one waiting for "really delete?".
+  const [menuFor, setMenuFor] = useState(null);
+  const [hoverId, setHoverId] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const closeOptions = () => {
+    setMenuFor(null);
+    setConfirmDelete(null);
+  };
   const [ancestry, setAncestryState] = useState(readAncestry);
   const setAncestry = (key) => {
     setAncestryState(key);
@@ -135,8 +166,20 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
     }
     const together = !newDay && prev && prev.mine === m.mine && prev.author === m.author && m.at - prev.at < KEEP_TOGETHER_MS;
     const name = m.nickname || 'a former member';
-    const time = clock(m.at);
+    const time = m.edited && !m.deleted ? `edited ${clock(m.at)}` : clock(m.at);
     const textColor = m.mine ? colors.primaryText : colors.text;
+    const changeable = !m.deleted && ((m.canEdit && !!onEdit) || (m.canDelete && !!onDelete));
+    const isEditing = editing?.id === m.id;
+    const openOptions = () => {
+      if (!changeable || busy) return;
+      setPickerFor(null);
+      setConfirmDelete(null);
+      setMenuFor(menuFor === m.id ? null : m.id);
+    };
+    const saveEdit = async () => {
+      const ok = await onEdit(m, editing.text);
+      if (ok !== false) setEditing(null);
+    };
     const bubble = (
       <View
         style={[
@@ -153,31 +196,145 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
             {name}
           </Text>
         ) : null}
-        <Text selectable style={[styles.text, { color: textColor }]}>
-          {m.text}
-          {/* (room for the time, so it never covers the last word) */}
-          <Text style={[styles.timeRoom]}>{`   ${time}`}</Text>
-        </Text>
-        <Text style={[styles.time, { color: textColor }]}>{time}</Text>
+        {isEditing ? (
+          <View style={styles.editBox}>
+            <TextInput
+              value={editing.text}
+              onChangeText={(text) => setEditing({ id: m.id, text })}
+              multiline
+              autoFocus
+              maxLength={2000}
+              style={[styles.editInput, { color: colors.text, backgroundColor: colors.background, borderColor: colors.border }]}
+              accessibilityLabel="Edit your message"
+              testID="chat-edit-input"
+            />
+            <View style={styles.editButtons}>
+              <TouchableOpacity onPress={() => setEditing(null)} style={styles.optionButton} testID="chat-edit-cancel">
+                <Text style={[styles.optionText, { color: textColor }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={saveEdit}
+                disabled={busy || !editing.text.trim()}
+                style={[styles.optionButton, { backgroundColor: colors.background }]}
+                testID="chat-edit-save"
+              >
+                <Text style={[styles.optionText, { color: colors.text, fontWeight: '700' }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : m.deleted ? (
+          <Text style={[styles.text, styles.deletedText, { color: textColor }]} testID="chat-message-deleted">
+            🗑️ Message deleted
+            <Text style={styles.timeRoom}>{timeRoom(time)}</Text>
+          </Text>
+        ) : (
+          <Text selectable style={[styles.text, { color: textColor }]}>
+            {m.text}
+            {/* (room for the time, so it never covers the last word. Blank
+                "figure spaces" (each as wide as a digit) rather than the time
+                in see-through colour: on Android the see-through copy
+                sometimes showed as a shadow behind the real time - Raphael,
+                29 Oct 2026) */}
+            <Text style={styles.timeRoom}>{timeRoom(time)}</Text>
+          </Text>
+        )}
+        {isEditing ? null : <Text style={[styles.time, { color: textColor }]}>{time}</Text>}
       </View>
     );
+    // My own message: tap or keep pressed (phone), or ⋯ (website) opens the options.
+    const pressableBubble = changeable && !isEditing ? (
+      <Pressable
+        onPress={Platform.OS === 'web' ? undefined : openOptions}
+        onLongPress={openOptions}
+        delayLongPress={350}
+        accessibilityHint="Opens the options: edit or delete"
+        testID="chat-message-press"
+      >
+        {bubble}
+      </Pressable>
+    ) : bubble;
+    const options = menuFor === m.id && changeable ? (
+      <View style={[styles.options, { backgroundColor: otherBubble, borderColor: colors.border }]} testID="chat-msg-options">
+        {confirmDelete === m.id ? (
+          <>
+            <Text style={[styles.optionText, { color: colors.text }]}>Delete for everyone?</Text>
+            <TouchableOpacity
+              onPress={async () => {
+                const ok = await onDelete(m);
+                if (ok !== false) closeOptions();
+              }}
+              disabled={busy}
+              style={[styles.optionButton, { backgroundColor: colors.cancelText }]}
+              testID="chat-msg-delete-yes"
+            >
+              <Text style={[styles.optionText, { color: '#fff', fontWeight: '700' }]}>Delete</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setConfirmDelete(null)} style={styles.optionButton} testID="chat-msg-delete-no">
+              <Text style={[styles.optionText, { color: colors.text }]}>Keep</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            {m.canEdit && onEdit ? (
+              <TouchableOpacity
+                onPress={() => {
+                  closeOptions();
+                  setEditing({ id: m.id, text: m.text });
+                }}
+                style={styles.optionButton}
+                testID="chat-msg-edit"
+              >
+                <Text style={[styles.optionText, { color: colors.text }]}>
+                  ✏️ Edit{m.editsLeft === 1 ? ' (last time)' : ''}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+            {m.canDelete && onDelete ? (
+              <TouchableOpacity onPress={() => setConfirmDelete(m.id)} style={styles.optionButton} testID="chat-msg-delete">
+                <Text style={[styles.optionText, { color: colors.text }]}>🗑️ Delete</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity onPress={closeOptions} style={styles.optionButton} accessibilityLabel="Close the options" testID="chat-msg-options-close">
+              <Text style={[styles.optionText, { color: colors.secondaryText }]}>✕</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+    ) : null;
+    // Website: ⋯ next to my message while the mouse is over it (or its options are open).
+    const moreButton = Platform.OS === 'web' && changeable && !isEditing ? (
+      <TouchableOpacity
+        onPress={openOptions}
+        style={[styles.moreButton, { opacity: hoverId === m.id || menuFor === m.id ? 1 : 0 }]}
+        accessibilityLabel="Options: edit or delete"
+        testID="chat-msg-more"
+      >
+        <Text style={[styles.reactIcon, { color: colors.secondaryText }]}>⋯</Text>
+      </TouchableOpacity>
+    ) : null;
     // (codes of Hub emojis this version doesn't know yet are left out)
-    const counts = Object.entries(m.reactions?.counts || {}).filter(([v, n]) => n > 0 && (REACTIONS.includes(v) || isHubEmoji(v)));
-    const canReact = !!onReact && !m.mine && !!m.pid;
+    const counts = m.deleted ? [] : Object.entries(m.reactions?.counts || {}).filter(([v, n]) => n > 0 && (REACTIONS.includes(v) || isHubEmoji(v)));
+    const canReact = !!onReact && !m.mine && !!m.pid && !m.deleted;
     const react = (emoji) => {
       setPickerFor(null);
       onReact(m.pid, emoji);
     };
     out.push(
-      <View
+      <Pressable
         key={m.id}
+        // (website: the mouse over a line shows its ⋯; nothing happens on a click here)
+        onHoverIn={changeable ? () => setHoverId(m.id) : undefined}
+        onHoverOut={changeable ? () => setHoverId((h) => (h === m.id ? null : h)) : undefined}
+        focusable={false}
         style={[styles.line, { justifyContent: m.mine ? 'flex-end' : 'flex-start', marginTop: newDay ? 0 : together ? 2 : 10 }]}
       >
         {showAuthors && !m.mine ? (
           together ? <View style={styles.avatarRoom} /> : <Avatar name={name} />
         ) : null}
+        {m.mine ? moreButton : null}
         <View style={[styles.column, { alignItems: m.mine ? 'flex-end' : 'flex-start' }]}>
-          {bubble}
+          {pressableBubble}
+          {options}
           {counts.length > 0 ? (
             <View style={styles.chips} testID="chat-reactions">
               {counts.map(([emoji, n]) => {
@@ -203,7 +360,7 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
               <View style={styles.pickerRow}>
                 {REACTIONS.map((emoji) => (
                   <TouchableOpacity key={emoji} onPress={() => react(emoji)} disabled={busy} style={styles.pickerItem} accessibilityLabel={`React with ${emoji}`} testID="chat-reaction-pick">
-                    <Text style={styles.pickerEmoji}>{emoji}</Text>
+                    <ReactionGlyph value={emoji} size={26} />
                   </TouchableOpacity>
                 ))}
               </View>
@@ -245,7 +402,7 @@ export default function ChatMessages({ items, showAuthors = false, onReact = nul
             <Text style={[styles.reactIcon, { color: colors.secondaryText }]}>☺</Text>
           </TouchableOpacity>
         ) : null}
-      </View>,
+      </Pressable>,
     );
     prev = m;
   }
@@ -271,12 +428,20 @@ const styles = StyleSheet.create({
   ancestryDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1 },
   ancestryText: { fontSize: 11 },
   pickerItem: { paddingHorizontal: 4, paddingVertical: 2 },
-  pickerEmoji: { fontSize: 22 },
   reactButton: { alignSelf: 'center', paddingHorizontal: 4, opacity: 0.6 },
+  // Editing and deleting (29 Oct 2026)
+  moreButton: { alignSelf: 'center', paddingHorizontal: 6 },
+  options: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginTop: 4, borderRadius: 14, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 3 },
+  optionButton: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+  optionText: { fontSize: 14 },
+  editBox: { gap: 6, minWidth: 220 },
+  editInput: { fontSize: 15, lineHeight: 21, borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, minHeight: 44, maxHeight: 200 },
+  editButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 6 },
+  deletedText: { fontStyle: 'italic', opacity: 0.8 },
   reactIcon: { fontSize: 18 },
   bubble: { maxWidth: '100%', borderRadius: 14, paddingTop: 6, paddingBottom: 6, paddingHorizontal: 11 },
   author: { fontSize: 13, fontWeight: '700', marginBottom: 1 },
   text: { fontSize: 15, lineHeight: 21 },
-  timeRoom: { fontSize: 11, color: 'transparent', userSelect: 'none' },
+  timeRoom: { fontSize: 11, userSelect: 'none' },
   time: { position: 'absolute', right: 10, bottom: 5, fontSize: 11, opacity: 0.7 },
 });
