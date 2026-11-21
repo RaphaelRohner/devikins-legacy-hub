@@ -10,6 +10,7 @@
 
 import { getMessenger } from './chatStore';
 import { lockBackup, unlockBackup, MIN_PASSWORD_LENGTH } from '../../chat/src/backup.js';
+import { albumsPlainCopy } from '../../chat/src/album.js';
 
 export const CHAT_BACKUP_FILE_NAME = 'chat-backup.json';
 export { MIN_PASSWORD_LENGTH };
@@ -20,6 +21,21 @@ export async function hasChatToBackUp() {
     return await (await getMessenger()).hasChat();
   } catch {
     return false;
+  }
+}
+
+/**
+ * The open copy of my albums for the backup (21 Nov 2026, suggested by
+ * jenniferseward): { json, csv } or null when there's no published album.
+ * NOT locked – it holds only the album texts and NFT numbers, no keys or
+ * messages (album.js albumsPlainCopy). Never stops the backup: on any
+ * problem the backup simply goes without it.
+ */
+export async function makePlainAlbumsCopy() {
+  try {
+    return albumsPlainCopy(await (await getMessenger()).myAlbums());
+  } catch {
+    return null;
   }
 }
 

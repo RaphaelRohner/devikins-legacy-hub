@@ -6,5 +6,6 @@
 export const CHAT_BACKUP_FILE_NAME = 'chat-backup.json';
 export const MIN_PASSWORD_LENGTH = 8;
 export async function hasChatToBackUp() { return false; }
+export async function makePlainAlbumsCopy() { return null; } // albums are website-only too
 export async function makeChatBackupText() { throw new Error('The chat is only on the website for now.'); }
 export async function restoreChatBackupText() { throw new Error('The chat is only on the website for now.'); }

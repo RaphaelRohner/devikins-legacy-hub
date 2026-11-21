@@ -166,8 +166,11 @@ export async function exportWalletSet(walletSet, { onProgress } = {}) {
 /**
  * The full backup. `chatBackupText`: the chat, already locked with its
  * password (chatBackup.web.js), or nothing to leave the chat out.
+ * `plainAlbums` (21 Nov 2026): { json, csv } – an open copy of my albums
+ * (my-albums.json / my-albums.csv at the top of the zip), readable without
+ * the Hub; the import skips them (files without a folder are ignored).
  */
-export async function exportAllWalletSets(walletSets, { onProgress, chatBackupText } = {}) {
+export async function exportAllWalletSets(walletSets, { onProgress, chatBackupText, plainAlbums } = {}) {
   const files = {};
   const setSummaries = [];
   for (const walletSet of walletSets) {
@@ -179,6 +182,8 @@ export async function exportAllWalletSets(walletSets, { onProgress, chatBackupTe
   const tracker = await dumpWithdrawalTracker();
   if (tracker) files['withdrawals.json'] = strToU8(JSON.stringify(tracker));
   if (chatBackupText) files[CHAT_BACKUP_FILE_NAME] = strToU8(chatBackupText);
+  if (plainAlbums?.json) files['my-albums.json'] = strToU8(plainAlbums.json);
+  if (plainAlbums?.csv) files['my-albums.csv'] = strToU8(plainAlbums.csv);
   onProgress?.({ phase: 'writing' });
   const fileUri = buildZip(files, setSummaries);
   return { fileUri, fileName: `devikins-all-sets-${timestampForFileName()}.zip` };

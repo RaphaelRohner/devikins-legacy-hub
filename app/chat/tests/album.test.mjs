@@ -6,7 +6,7 @@ import { generateKeyPairSync, signMessageSync, prepareKlvMessage } from '@klever
 import { bech32Encode } from '@klever/connect-encoding';
 import {
   createAlbumKey, albumProofText, isAlbumProof, sealAlbum, checkAlbum, cleanAlbum, MAX_ALBUM_ITEMS, publicAlbums, DAY,
-  albumPictureUrl, pictureFolderOf, MAX_ALBUM_SECTIONS,
+  albumPictureUrl, pictureFolderOf, MAX_ALBUM_SECTIONS, albumsPlainCopy,
 } from '../src/index.js';
 import { world, BASE } from './world.mjs';
 
@@ -305,4 +305,37 @@ test('the album mailbox (28 Oct 2026): a player writes to the anonymous owner, w
   // Deleting the album ends its conversations.
   await alice.deleteAlbum(key);
   await assert.rejects(cara.messageAlbumOwner(key, 'Yodas', 'Hello'), /no longer exists/);
+});
+
+test('albumsPlainCopy (21 Nov 2026, jenniferseward): an open JSON + CSV copy of my albums for the backup', () => {
+  const w = wallet();
+  const key = createAlbumKey();
+  const items = [
+    { kind: 'devikin', nonce: 123, note: 'May event 2025, "Bonded" Yoda', section: 'Events' },
+    { kind: 'weapon', nonce: 7, note: '=HYPERLINK("x")' },
+    { kind: 'equipment', nonce: 9, section: 'Events' },
+  ];
+  const event = sealAlbum(key, { title: 'My Yodas', description: 'Best of', wallet: w.address, proof: w.sign(albumProofText(key.publicKey)), items });
+  const album = checkAlbum(event).album;
+  // Nothing published (or nothing at all): no files.
+  assert.equal(albumsPlainCopy([]), null);
+  assert.equal(albumsPlainCopy([{ key: 'k', published: 0, album: null }]), null);
+
+  const copy = albumsPlainCopy([{ key: key.publicKey, published: Date.UTC(2026, 10, 21), album }, { key: 'draft', published: 0, album: null }]);
+  const data = JSON.parse(copy.json);
+  assert.equal(data.albums.length, 1, 'only published albums');
+  assert.deepEqual(data.albums[0].sections, ['Events']);
+  assert.equal(data.albums[0].published, '2026-11-21');
+  assert.deepEqual(data.albums[0].items[0], { kind: 'devikin', number: 123, section: 'Events', note: 'May event 2025, "Bonded" Yoda' });
+  // No secrets: neither the album key's secret, nor the wallet's proof signature.
+  assert.ok(!copy.json.includes(key.secretKey) && !copy.json.includes(album.proof));
+  assert.ok(!copy.csv.includes(album.proof));
+
+  const lines = copy.csv.trim().split('\r\n');
+  assert.equal(lines[0], 'album,album_description,section,kind,nft_number,note,published');
+  assert.equal(lines.length, 4);
+  // commas and quotes are quoted correctly
+  assert.equal(lines[1], 'My Yodas,Best of,Events,devikin,123,"May event 2025, ""Bonded"" Yoda",2026-11-21');
+  // a note starting with = is kept as text, not run as a spreadsheet formula
+  assert.equal(lines[2], `My Yodas,Best of,,weapon,7,"'=HYPERLINK(""x"")",2026-11-21`);
 });

@@ -168,3 +168,57 @@ export function checkAlbum(input) {
     return { ok: false, problem: 'damaged' };
   }
 }
+
+/**
+ * albumsPlainCopy — my albums as plain, readable files for the backup
+ * (21 Nov 2026, suggested by jenniferseward on the Klever forum).
+ *
+ * Why: the albums already travel in the backup inside the chat part, but
+ * that part is locked with the chat password and only the Hub can read it.
+ * If the Hub ever went offline, the notes and sections collectors wrote
+ * themselves would be lost with it. So "Export all sets" now also writes an
+ * open copy: my-albums.json (structured) and my-albums.csv (opens in any
+ * spreadsheet). They hold only the album texts the owner wrote and which
+ * NFTs are in them – no keys, no proof signature, no chat, no messages.
+ * The import ignores these two files (the locked chat part brings albums back).
+ *
+ * @param {Array<{ key: string, published: number, album: object|null }>} rows  myAlbums() of the messenger
+ * @returns {null | { json: string, csv: string }}  null when there's no published album
+ */
+export function albumsPlainCopy(rows) {
+  const albums = (Array.isArray(rows) ? rows : []).filter((r) => r && r.album);
+  if (albums.length === 0) return null;
+  const date = (ms) => (Number(ms) > 0 ? new Date(Number(ms)).toISOString().slice(0, 10) : '');
+  const data = {
+    about: 'Your Collectors Albums from the Devikins Legacy Hub: titles, descriptions, sections and your notes on each NFT. '
+      + 'A plain copy you can read without the Hub. kind + number identify the NFT on the Klever chain '
+      + '(devikin = DVKNFT-1SW5, weapon = DVKWPNFT-169T, equipment = DVKEQNFT-1Q56).',
+    exported: new Date().toISOString(),
+    albums: albums.map(({ published, album }) => ({
+      title: album.title,
+      description: album.description || '',
+      wallet: album.wallet,
+      published: date(published),
+      sections: [...new Set(album.items.map((i) => i.section).filter(Boolean))],
+      items: album.items.map((i) => ({ kind: i.kind, number: i.nonce, section: i.section || '', note: i.note || '' })),
+    })),
+  };
+  const header = ['album', 'album_description', 'section', 'kind', 'nft_number', 'note', 'published'];
+  const lines = [header.join(',')];
+  for (const a of data.albums) {
+    for (const i of a.items) lines.push([a.title, a.description, i.section, i.kind, i.number, i.note, a.published].map(csvCell).join(','));
+  }
+  return { json: JSON.stringify(data, null, 2), csv: lines.join('\r\n') + '\r\n' };
+}
+
+/**
+ * One CSV cell: quoted when it holds a comma, quote or line break (quotes
+ * doubled). A text starting with = + - @ gets a leading apostrophe, so a
+ * spreadsheet shows it as text instead of running it as a formula (a note
+ * like "=HYPERLINK(...)" could otherwise do things when the file is opened).
+ */
+function csvCell(value) {
+  let s = String(value ?? '');
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}

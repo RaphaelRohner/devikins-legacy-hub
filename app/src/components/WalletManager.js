@@ -112,7 +112,7 @@ import { GUIDE_KEYS } from './GettingStartedCard';
 import { useTheme } from '../context/ThemeContext';
 import QrScannerModal from './QrScannerModal';
 import ChatBackupPasswordBox, { CANCELLED as CHAT_BOX_CANCELLED } from './ChatBackupPasswordBox';
-import { hasChatToBackUp, makeChatBackupText, restoreChatBackupText } from '../api/chatBackup';
+import { hasChatToBackUp, makeChatBackupText, makePlainAlbumsCopy, restoreChatBackupText } from '../api/chatBackup';
 // Website only: "Connect Klever Extension" reads the address of the
 // wallet open in the Klever browser extension and adds it here, so nobody
 // has to copy and paste it. Only the public address is read.
@@ -899,8 +899,12 @@ export default function WalletManager({
           chatBackupText = await makeChatBackupText(password);
         }
       }
+      // An open copy of my albums (notes, sections) that stays readable even
+      // without the Hub (21 Nov 2026, suggested by jenniferseward).
+      const plainAlbums = await makePlainAlbumsCopy();
       const { fileUri, fileName } = await exportAllWalletSets(walletSets, {
         chatBackupText,
+        plainAlbums,
         onProgress: (progress) => setExportProgressLabel(describeTransferProgress(progress)),
       });
       await presentSaveOrShareChoice(fileUri, fileName);

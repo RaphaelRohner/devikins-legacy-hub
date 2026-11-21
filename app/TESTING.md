@@ -268,6 +268,14 @@ it - your data is safe thanks to the backup:
 - [x] The Withdrawals list (wallets, IDs, marks) comes along with
       Export all sets.
 - [ part: phone > website] Website ↔ phone: a backup from one imports in the other.
+- [ ] 🌐 **Open copy of my albums** (21 Nov 2026, suggested by jenniferseward):
+      with at least one published album, **Export all sets** → the zip also
+      holds **my-albums.json** and **my-albums.csv** (top level, next to
+      export-manifest.json). The CSV opens in Numbers/Excel: one row per NFT
+      with album, description, section, kind, number and your note. No
+      password needed for these two (the chat part stays locked). Importing
+      the zip works as before (the two files are simply skipped). Without any
+      published album, the two files aren't there.
 
 **S8. Reset All Data** (only in a test browser / test phone!)
 - [x] Wallets → Danger zone → switch on → **Reset All Data**, confirm:

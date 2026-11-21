@@ -100,3 +100,9 @@ players.
 - No marketplace or trading.
 - A personal project, not affiliated with or endorsed by Moonlabs or
   Klever.
+
+## Thanks
+
+- **jenniferseward** (Klever forum) – suggested keeping an open copy of
+  your own album notes and sections in the backup, readable without the
+  Hub (21 Nov 2026).
