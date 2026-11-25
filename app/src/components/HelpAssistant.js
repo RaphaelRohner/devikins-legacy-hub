@@ -347,7 +347,7 @@ const ALL_FAQ_ENTRIES = [
     question: 'Can I install the Hub, or use it without the website?',
     keywords: ['install', 'app', 'home screen', 'desktop', 'offline', 'pwa', 'icon', 'dock', 'iphone', 'mac', 'windows', 'linux', 'update', 'new version'],
     answer:
-      "Yes. On a computer, Chrome or Edge show an \"Install\" icon in the address bar: the Hub then opens in its own window with its own icon. On an iPhone or iPad: Safari → Share → \"Add to Home Screen\" (the Hub there has its own storage, separate from Safari's, so import a backup once). On Android, Chrome offers \"Install app\" (or use the Android app). Once opened, the Hub keeps a copy of itself on your device, so it still starts if the website is ever offline - with your saved collection; fetching new data, pictures not stored yet, the chat and albums need the internet. When a new version is out, a note at the bottom offers \"Update\".",
+      "Yes. On a computer, Chrome or Edge show an \"Install\" icon in the address bar: the Hub then opens in its own window with its own icon. Chrome's installed Hub uses the same saved collection as the website in Chrome. On an iPhone or iPad: Safari → Share → \"Add to Home Screen\"; on a Mac, Safari → File → \"Add to Dock\". Apple gives these their own storage, separate from Safari's, so import a backup there once (Wallets → Import Set(s)). On Android, Chrome offers \"Install app\" (or use the Android app). Once opened, the Hub keeps a copy of itself on your device, so it still starts if the website is ever offline - with your saved collection; fetching new data, pictures not stored yet, the chat and albums need the internet. When a new version is out, a note at the bottom offers \"Update\".",
   },
   {
     id: 'website-storage',
