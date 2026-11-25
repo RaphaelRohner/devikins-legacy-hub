@@ -341,6 +341,15 @@ const ALL_FAQ_ENTRIES = [
       "On the Wallets screen, each wallet set has its own Export button, and \"Export all sets\" saves every set at once. The backup downloads as a zip file (usually into your Downloads folder) with your wallets, fetched NFTs, names, stars, comments and pictures. On the website it also holds an open copy of your Collectors Albums (my-albums.json and my-albums.csv: titles, sections, your notes, the names you gave the NFTs and the comments under them), readable in any spreadsheet even without the Hub. \"Import Set(s)\" reads such a file back in (one set or all of them). After an export on the website, the Hub confirms where the file went. Backups work both ways between the website and the Android app. Every file is checked against the backup's own checksum, so you'll be warned if anything didn't come through intact.",
   },
   {
+    id: 'install-hub-web',
+    topic: 'data-feedback',
+    platform: 'web',
+    question: 'Can I install the Hub, or use it without the website?',
+    keywords: ['install', 'app', 'home screen', 'desktop', 'offline', 'pwa', 'icon', 'dock', 'iphone', 'mac', 'windows', 'linux', 'update', 'new version'],
+    answer:
+      "Yes. On a computer, Chrome or Edge show an \"Install\" icon in the address bar: the Hub then opens in its own window with its own icon. On an iPhone or iPad: Safari → Share → \"Add to Home Screen\" (the Hub there has its own storage, separate from Safari's, so import a backup once). On Android, Chrome offers \"Install app\" (or use the Android app). Once opened, the Hub keeps a copy of itself on your device, so it still starts if the website is ever offline - with your saved collection; fetching new data, pictures not stored yet, the chat and albums need the internet. When a new version is out, a note at the bottom offers \"Update\".",
+  },
+  {
     id: 'website-storage',
     topic: 'data-feedback',
     platform: 'web',

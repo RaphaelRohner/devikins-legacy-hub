@@ -527,6 +527,21 @@ wallet - see the Signer's TESTING.md)
       can't vote. After 48 h with 3 votes and 60 % yes they're removed; the
       owner can "Let back in".
 
+- [ ] **W9. Install the Hub (25 Nov 2026):** on the computer, Chrome/Edge show
+      an "Install" icon in the address bar → the Hub opens in its own window
+      with its face icon (Dock / Start menu). iPhone: Safari → Share → "Add to
+      Home Screen" → the icon on the dark background; opening it shows the Hub
+      full screen (its storage is separate from Safari's: import a backup there
+      once). Android Chrome: "Install app".
+- [ ] **W10. Offline copy:** after opening the Hub once, switch Wi-Fi off and
+      open it again (installed or in the browser) → it starts and shows your
+      saved collection. (Fetching, pictures not stored yet, chat and albums
+      need the internet.)
+- [ ] **W11. Update note:** after the next website update (any push), open
+      the Hub → at the bottom "A new version of the Hub is available. Later |
+      Update". Later → the note goes; Update → the page reloads once with the
+      new version. (Automated: tests/web/pwa.spec.js.)
+
 ---
 
 ## When to test

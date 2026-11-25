@@ -107,6 +107,7 @@ import AboutView from './src/components/AboutView';
 import WithdrawalTrackerView from './src/components/WithdrawalTrackerView';
 import WalletOverviewView from './src/components/WalletOverviewView';
 import ShortcutsHelp from './src/components/ShortcutsHelp';
+import UpdateNote from './src/components/UpdateNote'; // installable website: "New version available" (25 Nov 2026)
 import ChatDock from './src/components/ChatDock';
 import { openChatDock, setHubReady, useChatUnread, setAppScreen, setChatScreenOpener, setChatUnread } from './src/web/chatDock';
 import { useKeyboardShortcuts, showShortcutsHelp } from './src/web/shortcuts';
@@ -197,6 +198,7 @@ export default function App() {
         <KleverscanLayer />
         <ShortcutsHelp />
         <ChatDock />
+        <UpdateNote />
       </ThemeProvider>
     </SafeAreaProvider>
   );

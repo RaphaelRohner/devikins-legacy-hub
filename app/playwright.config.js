@@ -34,6 +34,10 @@ module.exports = defineConfig({
     baseURL: 'http://localhost:8099/devikins-legacy-hub/',
     viewport: { width: 1200, height: 900 },
     acceptDownloads: true,
+    // The installable website's offline copy (public/sw.js) is switched off in the normal
+    // tests: a service worker's own requests would bypass the pretend servers. pwa.spec.js
+    // switches it on for its own checks.
+    serviceWorkers: 'block',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     launchOptions: chromiumPath ? { executablePath: chromiumPath } : {},

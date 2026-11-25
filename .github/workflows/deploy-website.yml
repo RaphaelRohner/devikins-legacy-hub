@@ -105,6 +105,10 @@ jobs:
       # of the app's page means reloading or sharing a deeper link still
       # opens the Hub instead of an error page.
       - run: cp dist/index.html dist/404.html
+      # The installable website (25 Nov 2026): each build gets its own number in
+      # the offline copy's helper, so browsers notice a new version and the Hub
+      # shows "New version available" (app/public/sw.js).
+      - run: sed -i "s/__BUILD__/${GITHUB_SHA}/" dist/sw.js && grep -q "${GITHUB_SHA}" dist/sw.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
