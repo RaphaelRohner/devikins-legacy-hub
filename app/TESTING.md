@@ -268,7 +268,7 @@ it - your data is safe thanks to the backup:
 - [x] The Withdrawals list (wallets, IDs, marks) comes along with
       Export all sets.
 - [ part: phone > website] Website ↔ phone: a backup from one imports in the other.
-- [ ] 🌐 **Open copy of my albums** (21 Nov 2026, suggested by jenniferseward):
+- [x] 🌐 **Open copy of my albums** (21 Nov 2026, suggested by jenniferseward):
       with at least one published album, **Export all sets** → the zip also
       holds **my-albums.json** and **my-albums.csv** (top level, next to
       export-manifest.json). The CSV opens in Numbers/Excel: one row per NFT
@@ -280,8 +280,8 @@ it - your data is safe thanks to the backup:
       the zip works as before (the two files are simply skipped). Without any
       published album, the two files aren't there.
       (First test 25 Nov: files there, but names and comments were missing →
-      added the same day.)
-- [ ] 🌐 The chat password box (Export all sets / import) has **Show password**:
+      added the same day; second test 25 Nov passed: names and comments there.)
+- [x] 🌐 The chat password box (Export all sets / import) has **Show password**:
       tap it → both boxes show what you typed; **Hide password** hides them.
       Closing and reopening the box hides them again.
 
