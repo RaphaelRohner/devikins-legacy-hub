@@ -272,10 +272,18 @@ it - your data is safe thanks to the backup:
       with at least one published album, **Export all sets** → the zip also
       holds **my-albums.json** and **my-albums.csv** (top level, next to
       export-manifest.json). The CSV opens in Numbers/Excel: one row per NFT
-      with album, description, section, kind, number and your note. No
+      with album, description, section, kind, number, the NFT's title as the
+      album shows it, the name you gave it in the Hub, your note, your Hub
+      comment and the comments holders wrote under it (text, nickname, date,
+      ✓/✗) – 25 Nov 2026, after Raphael's first test. No
       password needed for these two (the chat part stays locked). Importing
       the zip works as before (the two files are simply skipped). Without any
       published album, the two files aren't there.
+      (First test 25 Nov: files there, but names and comments were missing →
+      added the same day.)
+- [ ] 🌐 The chat password box (Export all sets / import) has **Show password**:
+      tap it → both boxes show what you typed; **Hide password** hides them.
+      Closing and reopening the box hides them again.
 
 **S8. Reset All Data** (only in a test browser / test phone!)
 - [x] Wallets → Danger zone → switch on → **Reset All Data**, confirm:

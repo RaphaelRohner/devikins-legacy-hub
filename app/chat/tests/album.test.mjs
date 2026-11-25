@@ -321,21 +321,39 @@ test('albumsPlainCopy (21 Nov 2026, jenniferseward): an open JSON + CSV copy of 
   assert.equal(albumsPlainCopy([]), null);
   assert.equal(albumsPlainCopy([{ key: 'k', published: 0, album: null }]), null);
 
-  const copy = albumsPlainCopy([{ key: key.publicKey, published: Date.UTC(2026, 10, 21), album }, { key: 'draft', published: 0, album: null }]);
+  const copy = albumsPlainCopy([{ key: key.publicKey, published: Date.UTC(2026, 10, 21), album }, { key: 'draft', published: 0, album: null }], {
+    // (25 Nov 2026) names/comments from the Hub's database, comments from the postman
+    nfts: { 'devikin/123': { title: 'Rare Glysian Devikin', yourName: 'Yoda', hubComment: 'got it in May' } },
+    comments: {
+      [key.publicKey]: [
+        { id: 1, kind: 'devikin', nonce: 123, text: 'May Event 2025', nickname: 'Bob', at: Date.UTC(2026, 10, 18), confirms: 1, disputes: 0 },
+        { id: 2, kind: 'weapon', nonce: 99, text: 'not in this album', nickname: 'X', at: 1, confirms: 0, disputes: 0 },
+      ],
+    },
+  });
   const data = JSON.parse(copy.json);
   assert.equal(data.albums.length, 1, 'only published albums');
   assert.deepEqual(data.albums[0].sections, ['Events']);
   assert.equal(data.albums[0].published, '2026-11-21');
-  assert.deepEqual(data.albums[0].items[0], { kind: 'devikin', number: 123, section: 'Events', note: 'May event 2025, "Bonded" Yoda' });
+  assert.equal(data.albums[0].commentsLoaded, true);
+  assert.deepEqual(data.albums[0].items[0], {
+    kind: 'devikin', number: 123, title: 'Rare Glysian Devikin', yourName: 'Yoda', section: 'Events',
+    note: 'May event 2025, "Bonded" Yoda', hubComment: 'got it in May',
+    comments: [{ text: 'May Event 2025', by: 'Bob', date: '2026-11-18', edited: '', confirms: 1, disputes: 0, hidden: false }],
+  });
+  assert.deepEqual(data.albums[0].items[1].comments, [], 'comments only under their own NFT');
   // No secrets: neither the album key's secret, nor the wallet's proof signature.
   assert.ok(!copy.json.includes(key.secretKey) && !copy.json.includes(album.proof));
   assert.ok(!copy.csv.includes(album.proof));
 
   const lines = copy.csv.trim().split('\r\n');
-  assert.equal(lines[0], 'album,album_description,section,kind,nft_number,note,published');
+  assert.equal(lines[0], 'album,album_description,section,kind,nft_number,nft_title,your_name,note,your_hub_comment,comments,published');
   assert.equal(lines.length, 4);
-  // commas and quotes are quoted correctly
-  assert.equal(lines[1], 'My Yodas,Best of,Events,devikin,123,"May event 2025, ""Bonded"" Yoda",2026-11-21');
+  // commas and quotes are quoted correctly; comments in one cell
+  assert.equal(lines[1], 'My Yodas,Best of,Events,devikin,123,Rare Glysian Devikin,Yoda,"May event 2025, ""Bonded"" Yoda",got it in May,"May Event 2025 (Bob, 2026-11-18, ✓ 1 ✗ 0)",2026-11-21');
   // a note starting with = is kept as text, not run as a spreadsheet formula
-  assert.equal(lines[2], `My Yodas,Best of,,weapon,7,"'=HYPERLINK(""x"")",2026-11-21`);
+  assert.equal(lines[2], `My Yodas,Best of,,weapon,7,,,"'=HYPERLINK(""x"")",,,2026-11-21`);
+  // postman unreachable: still a copy, marked as without comments
+  const offline = JSON.parse(albumsPlainCopy([{ key: key.publicKey, published: 1, album }], { comments: { [key.publicKey]: null } }).json);
+  assert.equal(offline.albums[0].commentsLoaded, false);
 });

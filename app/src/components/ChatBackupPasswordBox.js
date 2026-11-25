@@ -25,11 +25,14 @@ export default function ChatBackupPasswordBox({ ask, onAnswer }) {
   const [password, setPassword] = useState('');
   const [repeat, setRepeat] = useState('');
   const [problem, setProblem] = useState('');
+  // "Show" (25 Nov 2026, Raphael: no way to see what you typed): shows both boxes in plain text.
+  const [show, setShow] = useState(false);
 
   useEffect(() => {
     setPassword('');
     setRepeat('');
     setProblem(ask?.error || '');
+    setShow(false); // hidden again each time the box opens
   }, [ask]);
 
   if (!ask) return null;
@@ -62,7 +65,7 @@ export default function ChatBackupPasswordBox({ ask, onAnswer }) {
       }}
       placeholder={placeholder}
       placeholderTextColor={colors.secondaryText}
-      secureTextEntry
+      secureTextEntry={!show}
       autoComplete={isExport ? 'new-password' : 'current-password'}
       onSubmitEditing={last ? submit : undefined}
     />
@@ -96,6 +99,14 @@ export default function ChatBackupPasswordBox({ ask, onAnswer }) {
           </Text>
           {input(password, setPassword, 'Password', 'chat-backup-password', !isExport)}
           {isExport ? input(repeat, setRepeat, 'Repeat the password', 'chat-backup-repeat', true) : null}
+          <TouchableOpacity
+            onPress={() => setShow((on) => !on)}
+            accessibilityRole="button"
+            accessibilityLabel={show ? 'Hide the password' : 'Show the password'}
+            testID="chat-backup-show"
+          >
+            <Text style={[styles.showText, { color: colors.primary }]}>{show ? 'Hide password' : 'Show password'}</Text>
+          </TouchableOpacity>
           {problem ? <Text style={[styles.note, { color: colors.cancelText }]} testID="chat-backup-problem">{problem}</Text> : null}
           <TouchableOpacity style={[styles.button, { backgroundColor: colors.primary }]} onPress={submit} testID="chat-backup-ok">
             <Text style={[styles.buttonText, { color: colors.primaryText }]}>{isExport ? 'Back up with the chat' : 'Bring the chat back'}</Text>
@@ -122,4 +133,5 @@ const styles = StyleSheet.create({
   buttonText: { fontSize: 15, fontWeight: '700' },
   skip: { alignSelf: 'center', paddingVertical: 6, paddingHorizontal: 16 },
   skipText: { fontSize: 14, fontWeight: '600' },
+  showText: { fontSize: 14, fontWeight: '600', alignSelf: 'flex-start' },
 });

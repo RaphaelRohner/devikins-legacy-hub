@@ -178,35 +178,80 @@ export function checkAlbum(input) {
  * If the Hub ever went offline, the notes and sections collectors wrote
  * themselves would be lost with it. So "Export all sets" now also writes an
  * open copy: my-albums.json (structured) and my-albums.csv (opens in any
- * spreadsheet). They hold only the album texts the owner wrote and which
- * NFTs are in them – no keys, no proof signature, no chat, no messages.
+ * spreadsheet). No keys, no proof signature, no chat messages.
  * The import ignores these two files (the locked chat part brings albums back).
  *
+ * 25 Nov 2026 (Raphael's test): also each NFT's title as the album shows it,
+ * the name you gave it in the Hub, your Hub comment on it, and the comments
+ * holders wrote under it in the album ("May event 2025 …") – so that context
+ * isn't lost either. Those come from the caller (`extra`), because they live
+ * in the Hub's own database and on the postman, not in the album itself.
+ *
  * @param {Array<{ key: string, published: number, album: object|null }>} rows  myAlbums() of the messenger
+ * @param {object} [extra]
+ * @param {Record<string, { title?: string, yourName?: string, hubComment?: string }>} [extra.nfts]
+ *        per NFT, keyed "kind/number"
+ * @param {Record<string, Array<object>|null>} [extra.comments]  per album key: the postman's comments
+ *        ({ kind, nonce, text, nickname, at, edited, confirms, disputes, hidden }); null = couldn't be loaded
  * @returns {null | { json: string, csv: string }}  null when there's no published album
  */
-export function albumsPlainCopy(rows) {
+export function albumsPlainCopy(rows, extra = {}) {
   const albums = (Array.isArray(rows) ? rows : []).filter((r) => r && r.album);
   if (albums.length === 0) return null;
+  const nfts = extra.nfts || {};
+  const allComments = extra.comments || {};
   const date = (ms) => (Number(ms) > 0 ? new Date(Number(ms)).toISOString().slice(0, 10) : '');
   const data = {
-    about: 'Your Collectors Albums from the Devikins Legacy Hub: titles, descriptions, sections and your notes on each NFT. '
+    about: 'Your Collectors Albums from the Devikins Legacy Hub: titles, descriptions, sections, your notes, '
+      + 'the names and comments you gave each NFT in the Hub, and the comments holders wrote under them. '
       + 'A plain copy you can read without the Hub. kind + number identify the NFT on the Klever chain '
       + '(devikin = DVKNFT-1SW5, weapon = DVKWPNFT-169T, equipment = DVKEQNFT-1Q56).',
     exported: new Date().toISOString(),
-    albums: albums.map(({ published, album }) => ({
-      title: album.title,
-      description: album.description || '',
-      wallet: album.wallet,
-      published: date(published),
-      sections: [...new Set(album.items.map((i) => i.section).filter(Boolean))],
-      items: album.items.map((i) => ({ kind: i.kind, number: i.nonce, section: i.section || '', note: i.note || '' })),
-    })),
+    albums: albums.map(({ key, published, album }) => {
+      const comments = allComments[key];
+      return {
+        title: album.title,
+        description: album.description || '',
+        wallet: album.wallet,
+        published: date(published),
+        sections: [...new Set(album.items.map((i) => i.section).filter(Boolean))],
+        commentsLoaded: Array.isArray(comments),
+        items: album.items.map((i) => {
+          const info = nfts[`${i.kind}/${i.nonce}`] || {};
+          return {
+            kind: i.kind,
+            number: i.nonce,
+            title: info.title || '',
+            yourName: info.yourName || '',
+            section: i.section || '',
+            note: i.note || '',
+            hubComment: info.hubComment || '',
+            comments: (Array.isArray(comments) ? comments : [])
+              .filter((c) => c && c.kind === i.kind && c.nonce === i.nonce && typeof c.text === 'string')
+              .map((c) => ({
+                text: c.text,
+                by: typeof c.nickname === 'string' ? c.nickname : '',
+                date: date(c.at),
+                edited: date(c.edited),
+                confirms: Number(c.confirms) || 0,
+                disputes: Number(c.disputes) || 0,
+                hidden: !!c.hidden,
+              })),
+          };
+        }),
+      };
+    }),
   };
-  const header = ['album', 'album_description', 'section', 'kind', 'nft_number', 'note', 'published'];
+  const header = ['album', 'album_description', 'section', 'kind', 'nft_number', 'nft_title', 'your_name', 'note',
+    'your_hub_comment', 'comments', 'published'];
   const lines = [header.join(',')];
   for (const a of data.albums) {
-    for (const i of a.items) lines.push([a.title, a.description, i.section, i.kind, i.number, i.note, a.published].map(csvCell).join(','));
+    for (const i of a.items) {
+      // All comments in one cell: "text (by, date, ✓ 1 ✗ 0)", separated by " | ".
+      const comments = i.comments.map((c) => `${c.text} (${[c.by, c.date, `✓ ${c.confirms} ✗ ${c.disputes}`, c.hidden ? 'hidden' : ''].filter(Boolean).join(', ')})`).join(' | ');
+      lines.push([a.title, a.description, i.section, i.kind, i.number, i.title, i.yourName, i.note, i.hubComment,
+        comments, a.published].map(csvCell).join(','));
+    }
   }
   return { json: JSON.stringify(data, null, 2), csv: lines.join('\r\n') + '\r\n' };
 }
