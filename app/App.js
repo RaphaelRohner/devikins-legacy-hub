@@ -108,6 +108,7 @@ import WithdrawalTrackerView from './src/components/WithdrawalTrackerView';
 import WalletOverviewView from './src/components/WalletOverviewView';
 import ShortcutsHelp from './src/components/ShortcutsHelp';
 import UpdateNote from './src/components/UpdateNote'; // installable website: "New version available" (25 Nov 2026)
+import OfflineNote from './src/components/OfflineNote'; // website: "You're offline" note at the top (25 Nov 2026)
 import ChatDock from './src/components/ChatDock';
 import { openChatDock, setHubReady, useChatUnread, setAppScreen, setChatScreenOpener, setChatUnread } from './src/web/chatDock';
 import { useKeyboardShortcuts, showShortcutsHelp } from './src/web/shortcuts';
@@ -182,7 +183,13 @@ function SystemButtons() {
 function WebKeyboardRoom({ children }) {
   const room = useWebKeyboardRoom({ scrollField: true });
   if (Platform.OS !== 'web') return children;
-  return <View style={{ flex: 1, paddingBottom: room }}>{children}</View>;
+  // (the "You're offline" note sits above the Hub and pushes it down a little while shown)
+  return (
+    <View style={{ flex: 1, paddingBottom: room }}>
+      <OfflineNote />
+      <View style={{ flex: 1 }}>{children}</View>
+    </View>
+  );
 }
 
 export default function App() {

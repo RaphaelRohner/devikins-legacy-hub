@@ -73,3 +73,13 @@ test('a new version waits for "Update" in the note, then takes over', async ({ p
     fs.writeFileSync(swFile, original);
   }
 });
+
+test('offline: a note at the top says what needs the internet, and goes when it\'s back', async ({ page, context }) => {
+  await openHub(page);
+  await expect(page.getByTestId('offline-note')).toHaveCount(0);
+  await context.setOffline(true);
+  await expect(page.getByTestId('offline-note')).toBeVisible();
+  await expect(page.getByText(/Fetching, new pictures, chat and albums need the internet/)).toBeVisible();
+  await context.setOffline(false);
+  await expect(page.getByTestId('offline-note')).toHaveCount(0);
+});

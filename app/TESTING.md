@@ -535,10 +535,14 @@ wallet - see the Signer's TESTING.md)
       once; same on a Mac with Safari → File → "Add to Dock"). Chrome's
       installed Hub shares Chrome's saved data. Android Chrome: "Install app".
       (25 Nov: Chrome, Brave and Safari "Add to Dock" checked by Raphael.)
-- [ ] **W10. Offline copy:** after opening the Hub once, switch Wi-Fi off and
+- [x] **W10. Offline copy:** after opening the Hub once, switch Wi-Fi off and
       open it again (installed or in the browser) → it starts and shows your
       saved collection. (Fetching, pictures not stored yet, chat and albums
       need the internet.)
+- [ ] **W10b. "You're offline" note (25 Nov 2026):** turn Wi-Fi off with the Hub
+      open → a slim note at the top: "You're offline – showing your saved
+      collection. Fetching, new pictures, chat and albums need the internet."
+      Wi-Fi back on → it goes away by itself. (Automated: pwa.spec.js.)
 - [ ] **W11. Update note:** after the next website update (any push), open
       the Hub → at the bottom "A new version of the Hub is available. Later |
       Update". Later → the note goes; Update → the page reloads once with the
